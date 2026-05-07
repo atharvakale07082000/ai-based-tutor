@@ -1,0 +1,82 @@
+version: "1.0"
+
+settings:
+  max_path_length: 20
+  default_subtopics_per_domain: 4
+  default_domains:
+    - Python Programming
+    - Machine Learning
+    - Data Science
+
+topic_graph:
+  Python Programming:
+    - Variables & Data Types
+    - Control Flow & Loops
+    - Functions & Closures
+    - Object-Oriented Programming
+    - File I/O & Context Managers
+    - Async Programming
+    - Testing & Debugging
+    - Packaging & Modules
+
+  Machine Learning:
+    - Linear & Logistic Regression
+    - Decision Trees & Random Forests
+    - Support Vector Machines
+    - Neural Networks Basics
+    - Model Evaluation & Metrics
+    - Feature Engineering
+    - Cross-Validation & Overfitting
+    - Ensemble Methods
+
+  Data Science:
+    - NumPy & Array Operations
+    - Pandas DataFrames
+    - Exploratory Data Analysis
+    - Data Cleaning & Preprocessing
+    - Statistical Analysis
+    - Data Visualization (Matplotlib/Seaborn)
+    - SQL & Database Queries
+    - Big Data Concepts
+
+  Web Development:
+    - HTML & Semantic Markup
+    - CSS & Flexbox/Grid
+    - JavaScript Fundamentals
+    - React & Component Model
+    - REST API Design
+    - Authentication & Authorization
+    - Databases & ORM
+    - Deployment & CI/CD
+
+  Mathematics:
+    - Linear Algebra
+    - Calculus & Differentiation
+    - Probability Theory
+    - Statistics & Distributions
+    - Discrete Mathematics
+    - Optimization
+
+  Deep Learning:
+    - Backpropagation & Gradients
+    - CNNs for Vision
+    - RNNs & LSTMs
+    - Transformers & Attention
+    - Transfer Learning
+    - Model Fine-tuning
+
+  Natural Language Processing:
+    - Tokenization & Text Preprocessing
+    - Word Embeddings
+    - Sequence Models
+    - Named Entity Recognition
+    - Text Classification
+    - Large Language Models
+
+  Statistics:
+    - Descriptive Statistics
+    - Inferential Statistics
+    - Hypothesis Testing
+    - Regression Analysis
+    - Bayesian Statistics
+    - A/B Testing

@@ -1,0 +1,82 @@
+version: "1.0"
+
+system:
+  base: |
+    You are an expert quiz question generator for an AI tutoring platform.
+    Output ONLY the question in the exact format shown — no preamble, no explanation.
+    Rules:
+    1. The question must be directly about the specified topic.
+    2. Exactly one option must be unambiguously correct.
+    3. Distractors must be plausible but clearly wrong on reflection.
+    4. Avoid trick questions or double negatives.
+
+bloom_prompts:
+  remember: |
+    Generate a multiple-choice question testing factual recall about: {topic}.
+    Format exactly:
+    Q: [question]
+    A) [correct answer]
+    B) [wrong answer]
+    C) [wrong answer]
+    D) [wrong answer]
+    ANSWER: A
+
+  understand: |
+    Generate a multiple-choice comprehension question about: {topic}.
+    The question must test whether the learner can explain or paraphrase the concept.
+    Format exactly:
+    Q: [question]
+    A) [correct]
+    B) [wrong]
+    C) [wrong]
+    D) [wrong]
+    ANSWER: A
+
+  apply: |
+    Generate a multiple-choice application question about: {topic}.
+    Include a realistic scenario in the question stem. The learner must apply the concept.
+    Format exactly:
+    Q: [question describing a scenario]
+    A) [correct]
+    B) [wrong]
+    C) [wrong]
+    D) [wrong]
+    ANSWER: A
+
+  analyze: |
+    Generate a multiple-choice analysis question about: {topic}.
+    The learner must examine components, identify relationships, or distinguish causes.
+    Format exactly:
+    Q: [question]
+    A) [correct]
+    B) [wrong]
+    C) [wrong]
+    D) [wrong]
+    ANSWER: A
+
+  evaluate: |
+    Generate a multiple-choice evaluation question about: {topic}.
+    The learner must judge, critique, or justify a decision or approach.
+    Format exactly:
+    Q: [question]
+    A) [correct]
+    B) [wrong]
+    C) [wrong]
+    D) [wrong]
+    ANSWER: A
+
+  create: |
+    Generate a multiple-choice synthesis question about: {topic}.
+    The learner must design, propose, or select the best approach to build something.
+    Format exactly:
+    Q: [question]
+    A) [correct]
+    B) [wrong]
+    C) [wrong]
+    D) [wrong]
+    ANSWER: A
+
+limits:
+  max_tokens: 250
+  temperature: 0.8
+  retry_attempts: 3

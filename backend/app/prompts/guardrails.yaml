@@ -1,0 +1,35 @@
+version: "1.0"
+
+input:
+  max_length: 2000
+  min_length: 3
+  # Prompt-injection / jailbreak patterns (case-insensitive substring match)
+  blocked_patterns:
+    - "ignore previous instructions"
+    - "ignore all instructions"
+    - "disregard your system prompt"
+    - "forget everything"
+    - "you are now"
+    - "act as if"
+    - "pretend you are"
+    - "jailbreak"
+    - "prompt injection"
+    - "DAN mode"
+    - "developer mode"
+
+output:
+  min_length: 10
+  # Max before we truncate / warn (not hard-block — model rarely exceeds this)
+  max_length: 8000
+
+quiz:
+  required_fields:
+    - question
+    - options
+    - correct_index
+    - explanation
+    - bloom_level
+  min_option_count: 4
+  # correct_index must be in [0, 3]
+  valid_correct_index_range: [0, 3]
+  min_question_length: 10

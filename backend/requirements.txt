@@ -1,0 +1,9 @@
+# Dependencies are managed by uv via pyproject.toml.
+#
+# Install:   uv sync
+# Dev tools: uv sync --all-groups
+# Activate:  source .venv/bin/activate
+# Run:       uv run uvicorn app.main:socket_app --host 0.0.0.0 --port 8000 --reload
+#
+# To generate a pip-compatible requirements file:
+#   uv export --format requirements-txt --no-dev > requirements-pip.txt
