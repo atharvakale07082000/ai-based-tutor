@@ -15,6 +15,7 @@ type InterviewPhase =
   | 'recording'
   | 'evaluating'
   | 'feedback'
+  | 'scoring'
   | 'complete'
 
 interface AnswerResult {
@@ -25,8 +26,24 @@ interface AnswerResult {
   key_points_covered: string[]
 }
 
-function ScoreRing({ score }: { score: number }) {
-  const pct = score
+interface ScoringMatrixEntry {
+  question_id: number
+  score: number
+  justification: string
+  concepts_covered: string[]
+  concepts_missed: string[]
+}
+
+interface FinalResult {
+  final_score: number    // 0-10
+  passed: boolean
+  scoring_matrix: ScoringMatrixEntry[]
+  summary: string
+  total_questions: number
+}
+
+function ScoreRing({ score, outOf = 10 }: { score: number; outOf?: number }) {
+  const pct = Math.round((score / outOf) * 100)
   const r = 54
   const circ = 2 * Math.PI * r
   const color = pct >= 70 ? '#10B981' : pct >= 50 ? '#F59E0B' : '#F43F5E'
@@ -45,8 +62,8 @@ function ScoreRing({ score }: { score: number }) {
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-3xl font-bold text-paper">{pct}%</span>
-        <span className="text-xs text-paper/40">Score</span>
+        <span className="text-3xl font-bold text-paper">{score.toFixed(1)}</span>
+        <span className="text-xs text-paper/40">/ {outOf}</span>
       </div>
     </div>
   )
@@ -82,15 +99,24 @@ export default function ModuleInterviewPage() {
   const [currentQIdx, setCurrentQIdx] = useState(0)
   const [isRecording, setIsRecording] = useState(false)
   const [transcript, setTranscript] = useState('')
+  const [interimTranscript, setInterimTranscript] = useState('')
   const [answers, setAnswers] = useState<AnswerResult[]>([])
   const [currentEval, setCurrentEval] = useState<AnswerResult | null>(null)
-  const [finalResult, setFinalResult] = useState<{ final_score: number; passed: boolean } | null>(null)
+  const [finalResult, setFinalResult] = useState<FinalResult | null>(null)
   const [isSpeaking, setIsSpeaking] = useState(false)
 
   const mediaRef = useRef<MediaRecorder | null>(null)
-  const chunksRef = useRef<Blob[]>([])
+  const recognitionRef = useRef<any>(null)
+  const transcriptRef = useRef('')  // mirrors transcript state for stale-closure-safe reads
 
-  // Load plan info to show module title
+  const updateTranscript = useCallback((updater: string | ((prev: string) => string)) => {
+    setTranscript((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : updater
+      transcriptRef.current = next
+      return next
+    })
+  }, [])
+
   const { data: plan } = useQuery({
     queryKey: ['course', planId],
     queryFn: () => coursesAPI.get(planId!).then((r) => r.data),
@@ -99,7 +125,6 @@ export default function ModuleInterviewPage() {
 
   const module = plan?.modules.find((m) => m.id === moduleId)
 
-  // Start interview on mount
   useEffect(() => {
     if (!planId || !moduleId) return
     coursesAPI.startInterview(planId, moduleId)
@@ -131,36 +156,64 @@ export default function ModuleInterviewPage() {
   }, [currentQuestion, currentQIdx])
 
   const startRecording = async () => {
+    updateTranscript('')
+    setInterimTranscript('')
+
+    // Microphone audio capture
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       const recorder = new MediaRecorder(stream)
-      chunksRef.current = []
-      recorder.ondataavailable = (e) => chunksRef.current.push(e.data)
-      recorder.onstop = async () => {
-        stream.getTracks().forEach((t) => t.stop())
-        await processAudio()
-      }
+      recorder.ondataavailable = () => {}
+      recorder.onstop = () => stream.getTracks().forEach((t) => t.stop())
       recorder.start()
       mediaRef.current = recorder
-      setIsRecording(true)
-      setTranscript('')
     } catch {
-      toast.error('Microphone access denied')
+      // Proceed without MediaRecorder; STT still works
     }
+
+    // Real-time STT via Web Speech API
+    const SpeechRecognitionAPI =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    if (SpeechRecognitionAPI) {
+      const recognition = new SpeechRecognitionAPI()
+      recognition.continuous = true
+      recognition.interimResults = true
+      recognition.lang = 'en-US'
+
+      recognition.onresult = (event: any) => {
+        let finalText = ''
+        let interimText = ''
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          if (event.results[i].isFinal) finalText += event.results[i][0].transcript + ' '
+          else interimText += event.results[i][0].transcript
+        }
+        if (finalText) updateTranscript((prev) => prev + finalText)
+        setInterimTranscript(interimText)
+      }
+
+      recognition.onerror = () => {}
+      recognition.start()
+      recognitionRef.current = recognition
+      toast.success('Listening…', { duration: 1500 })
+    } else {
+      toast('Speech recognition not supported — type your answer below', { icon: 'ℹ️' })
+    }
+
+    setIsRecording(true)
   }
 
   const stopRecording = () => {
     mediaRef.current?.stop()
+    recognitionRef.current?.stop()
+    recognitionRef.current = null
+    setInterimTranscript('')
     setIsRecording(false)
     setPhase('evaluating')
-  }
 
-  const processAudio = async () => {
-    if (!interview || !currentQuestion) return
-
-    // Use Web Speech API for transcription (fallback: typed answer)
-    // If browser STT isn't available we skip and use typed text
-    await evaluateCurrentAnswer(transcript || '[No answer provided]')
+    // Small delay to let final STT result settle into transcriptRef
+    setTimeout(() => {
+      evaluateCurrentAnswer(transcriptRef.current || '[No answer recorded]')
+    }, 350)
   }
 
   const evaluateCurrentAnswer = async (answerText: string) => {
@@ -188,7 +241,7 @@ export default function ModuleInterviewPage() {
   const handleNext = () => {
     stop()
     setCurrentEval(null)
-    setTranscript('')
+    updateTranscript('')
     if (currentQIdx < (interview?.questions.length ?? 0) - 1) {
       setCurrentQIdx((i) => i + 1)
       setPhase('question')
@@ -199,31 +252,28 @@ export default function ModuleInterviewPage() {
 
   const handleComplete = async () => {
     if (!interview) return
-    setPhase('evaluating')
+    setPhase('scoring')
     try {
       const { data } = await coursesAPI.completeInterview(
         planId!,
         moduleId!,
         interview.interview_id,
       )
-      setFinalResult(data as { final_score: number; passed: boolean })
+      const result = data as FinalResult
+      setFinalResult(result)
       setPhase('complete')
-      const passed = (data as { passed: boolean }).passed
-      speak(passed
-        ? 'Congratulations! You have passed this module. Well done!'
-        : 'You did not pass this time. Review the module and try again.'
+      speak(
+        result.passed
+          ? `Congratulations! You scored ${result.final_score.toFixed(1)} out of 10 and passed this module.`
+          : `You scored ${result.final_score.toFixed(1)} out of 10. Review the module and try again.`
       )
     } catch {
       toast.error('Could not finalize interview')
+      setPhase('feedback')
     }
   }
 
-  const handleStartInterview = () => {
-    setPhase('question')
-    speakQuestion()
-  }
-
-  // ─── Render ───────────────────────────────────────────────────────────────
+  // ─── Loading ───────────────────────────────────────────────────────────────
 
   if (phase === 'loading') {
     return (
@@ -238,41 +288,101 @@ export default function ModuleInterviewPage() {
     )
   }
 
-  if (phase === 'complete' && finalResult) {
-    const scorePercent = Math.round(finalResult.final_score * 100)
+  // ─── Scoring (agent is running) ────────────────────────────────────────────
+
+  if (phase === 'scoring') {
     return (
       <PageWrapper>
-        <div className="min-h-screen flex items-center justify-center px-4">
+        <div className="min-h-[60vh] flex items-center justify-center">
           <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="glass-strong rounded-3xl p-8 max-w-md w-full text-center"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="glass-strong rounded-3xl p-10 max-w-sm w-full text-center"
           >
-            <h2 className="font-display text-2xl text-paper mb-6">Interview Complete</h2>
-            <ScoreRing score={scorePercent} />
-
-            <div className="mt-6 mb-6">
-              {finalResult.passed ? (
-                <Badge variant="emerald" className="text-base px-4 py-2">Module Passed 🎉</Badge>
-              ) : (
-                <Badge variant="rose" className="text-base px-4 py-2">Not Passed — Review & Retry</Badge>
-              )}
-            </div>
-
-            <div className="space-y-3 mb-6 text-left">
-              <p className="text-xs text-paper/40 uppercase tracking-wider">Per-question breakdown</p>
-              {answers.map((a, i) => (
-                <div key={i} className="bg-surface-2 rounded-xl p-3">
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="text-xs text-paper/60">Q{i + 1}</span>
-                    <Badge variant={a.score >= 7 ? 'emerald' : a.score >= 5 ? 'amber' : 'rose'}>
-                      {a.score}/10
-                    </Badge>
-                  </div>
-                  <p className="text-xs text-paper/50">{a.feedback}</p>
+            <div className="text-4xl mb-4">🧠</div>
+            <h2 className="font-display text-xl text-paper mb-3">Scoring Agent Running</h2>
+            <p className="text-sm text-paper/50 mb-6">
+              Analyzing your answers, cross-checking knowledge, building scoring matrix…
+            </p>
+            <div className="space-y-2 text-left">
+              {['Analyzing answers', 'Building scoring matrix', 'Computing final score'].map((step, i) => (
+                <div key={step} className="flex items-center gap-3 text-sm text-paper/60">
+                  <span
+                    className="w-2 h-2 rounded-full bg-violet shrink-0"
+                    style={{ animation: `blink 1.4s ease-in-out ${i * 0.35}s infinite` }}
+                  />
+                  {step}
                 </div>
               ))}
             </div>
+          </motion.div>
+        </div>
+      </PageWrapper>
+    )
+  }
+
+  // ─── Complete ──────────────────────────────────────────────────────────────
+
+  if (phase === 'complete' && finalResult) {
+    return (
+      <PageWrapper>
+        <div className="min-h-screen flex items-center justify-center px-4 py-12">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="glass-strong rounded-3xl p-8 max-w-lg w-full"
+          >
+            <h2 className="font-display text-2xl text-paper mb-6 text-center">Interview Complete</h2>
+
+            <ScoreRing score={finalResult.final_score} />
+
+            <div className="mt-5 mb-4 text-center">
+              {finalResult.passed ? (
+                <Badge variant="emerald" className="text-sm px-4 py-2">Module Passed 🎉</Badge>
+              ) : (
+                <Badge variant="rose" className="text-sm px-4 py-2">Not Passed — Review & Retry</Badge>
+              )}
+            </div>
+
+            {/* AI summary */}
+            {finalResult.summary && (
+              <div className="bg-violet/10 border border-violet/20 rounded-xl p-4 mb-5 text-sm text-paper/80 leading-relaxed">
+                <p className="text-xs text-paper/40 mb-1.5">AI Assessment</p>
+                {finalResult.summary}
+              </div>
+            )}
+
+            {/* Scoring matrix */}
+            {finalResult.scoring_matrix?.length > 0 && (
+              <div className="space-y-3 mb-6">
+                <p className="text-xs text-paper/40 uppercase tracking-wider">Scoring Matrix</p>
+                {finalResult.scoring_matrix.map((entry, i) => (
+                  <div key={i} className="bg-surface-2 rounded-xl p-3">
+                    <div className="flex justify-between items-center mb-1.5">
+                      <span className="text-xs text-paper/60">Q{entry.question_id}</span>
+                      <Badge variant={entry.score >= 7 ? 'emerald' : entry.score >= 5 ? 'amber' : 'rose'}>
+                        {entry.score}/10
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-paper/60 mb-2">{entry.justification}</p>
+                    {entry.concepts_covered?.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mb-1">
+                        {entry.concepts_covered.map((c) => (
+                          <span key={c} className="text-xs px-1.5 py-0.5 rounded-full bg-emerald/10 border border-emerald/20 text-emerald">{c}</span>
+                        ))}
+                      </div>
+                    )}
+                    {entry.concepts_missed?.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {entry.concepts_missed.map((c) => (
+                          <span key={c} className="text-xs px-1.5 py-0.5 rounded-full bg-rose/10 border border-rose/20 text-rose">{c}</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
 
             <div className="flex gap-3">
               <Button variant="secondary" className="flex-1" onClick={() => navigate(`/courses/${planId}`)}>
@@ -289,6 +399,8 @@ export default function ModuleInterviewPage() {
       </PageWrapper>
     )
   }
+
+  // ─── Main interview flow ───────────────────────────────────────────────────
 
   return (
     <PageWrapper>
@@ -318,24 +430,25 @@ export default function ModuleInterviewPage() {
                 <div className="text-5xl mb-4">🎙️</div>
                 <h2 className="font-display text-xl text-paper mb-3">Ready to be assessed?</h2>
                 <p className="text-sm text-paper/60 mb-2">
-                  {interview?.questions.length} questions about <strong className="text-paper">{module?.title}</strong>
+                  {interview?.questions.length} questions about{' '}
+                  <strong className="text-paper">{module?.title}</strong>
                 </p>
                 <p className="text-xs text-paper/40 mb-6">
-                  Questions will be read aloud. Answer verbally using the record button, or type your answer.
-                  You need 60% or higher to pass this module.
+                  Questions read aloud via TTS. Answer verbally (live transcription) or type your answer.
+                  A LangGraph scoring agent evaluates all answers at the end. Pass threshold: 6 / 10.
                 </p>
                 <div className="flex flex-wrap gap-2 justify-center mb-6">
                   {module?.topics.map((t) => (
                     <span key={t} className="text-xs px-2.5 py-1 rounded-full bg-surface-2 border border-surface-3 text-paper/50">{t}</span>
                   ))}
                 </div>
-                <Button onClick={handleStartInterview} className="w-full">
+                <Button onClick={() => { setPhase('question'); speakQuestion() }} className="w-full">
                   Start Interview →
                 </Button>
               </motion.div>
             )}
 
-            {/* Question */}
+            {/* Question + Recording */}
             {(phase === 'question' || phase === 'recording') && currentQuestion && (
               <motion.div
                 key={`question-${currentQIdx}`}
@@ -351,26 +464,33 @@ export default function ModuleInterviewPage() {
                   <h2 className="font-display text-xl text-paper leading-relaxed">{currentQuestion.text}</h2>
                 </div>
 
-                {/* Listen button */}
                 <button
                   onClick={speakQuestion}
                   disabled={isSpeaking}
-                  className="flex items-center gap-2 text-sm text-violet-light hover:text-paper mb-6 transition-colors"
+                  className="flex items-center gap-2 text-sm text-violet-light hover:text-paper mb-5 transition-colors"
                 >
                   <span>{isSpeaking ? '🔊' : '🔈'}</span>
                   {isSpeaking ? 'Speaking…' : 'Listen again'}
                 </button>
 
-                {/* Typed answer fallback */}
-                <textarea
-                  value={transcript}
-                  onChange={(e) => setTranscript(e.target.value)}
-                  placeholder="Type your answer here, or use the microphone below…"
-                  className="w-full bg-surface-2 border border-surface-3 rounded-xl px-4 py-3 text-sm text-paper placeholder-paper/30 focus:outline-none focus:ring-2 focus:ring-violet/50 resize-none h-28 mb-4"
-                  disabled={isRecording}
-                />
+                {/* Live transcription area */}
+                <div className="relative mb-4">
+                  <textarea
+                    value={transcript + (isRecording && interimTranscript ? interimTranscript : '')}
+                    onChange={(e) => !isRecording && updateTranscript(e.target.value)}
+                    placeholder={isRecording ? 'Listening… speak your answer' : 'Type your answer, or use the microphone below…'}
+                    className="w-full bg-surface-2 border border-surface-3 rounded-xl px-4 py-3 text-sm text-paper placeholder-paper/30 focus:outline-none focus:ring-2 focus:ring-violet/50 resize-none h-32"
+                    readOnly={isRecording}
+                  />
+                  {isRecording && (
+                    <div className="absolute top-2.5 right-3 flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-rose animate-ping" />
+                      <span className="text-xs text-rose">Live</span>
+                    </div>
+                  )}
+                </div>
 
-                {/* Record button */}
+                {/* Controls */}
                 <div className="flex gap-3">
                   {!isRecording ? (
                     <Button variant="secondary" onClick={startRecording} className="flex-1" leftIcon={<span>🎙️</span>}>
@@ -379,7 +499,7 @@ export default function ModuleInterviewPage() {
                   ) : (
                     <button
                       onClick={stopRecording}
-                      className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-rose/20 border border-rose text-rose text-sm font-medium animate-pulse"
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-rose/20 border border-rose text-rose text-sm font-medium"
                     >
                       <span className="w-2 h-2 rounded-full bg-rose animate-ping" />
                       Stop Recording
@@ -387,14 +507,14 @@ export default function ModuleInterviewPage() {
                   )}
                   {!isRecording && transcript.trim() && (
                     <Button onClick={() => evaluateCurrentAnswer(transcript)} className="flex-1">
-                      Submit Answer →
+                      Submit →
                     </Button>
                   )}
                 </div>
               </motion.div>
             )}
 
-            {/* Evaluating */}
+            {/* Evaluating per-question */}
             {phase === 'evaluating' && (
               <motion.div
                 key="evaluating"
@@ -414,7 +534,7 @@ export default function ModuleInterviewPage() {
               </motion.div>
             )}
 
-            {/* Feedback */}
+            {/* Per-question feedback */}
             {phase === 'feedback' && currentEval && (
               <motion.div
                 key="feedback"
@@ -431,12 +551,12 @@ export default function ModuleInterviewPage() {
                 </div>
 
                 <div className="bg-surface-2 rounded-xl p-4 mb-4">
-                  <p className="text-xs text-paper/40 mb-1">Your answer</p>
-                  <p className="text-sm text-paper/70">{currentEval.answer_text}</p>
+                  <p className="text-xs text-paper/40 mb-1">Your answer (transcribed)</p>
+                  <p className="text-sm text-paper/70 italic">"{currentEval.answer_text}"</p>
                 </div>
 
                 <div className="bg-violet/10 border border-violet/20 rounded-xl p-4 mb-4">
-                  <p className="text-xs text-paper/40 mb-1">AI Feedback</p>
+                  <p className="text-xs text-paper/40 mb-1">Quick feedback</p>
                   <p className="text-sm text-paper">{currentEval.feedback}</p>
                   {currentEval.key_points_covered?.length > 0 && (
                     <div className="flex flex-wrap gap-1.5 mt-2">
@@ -450,14 +570,14 @@ export default function ModuleInterviewPage() {
                 <Button onClick={handleNext} className="w-full">
                   {currentQIdx < (interview?.questions.length ?? 0) - 1
                     ? 'Next Question →'
-                    : 'See Final Results →'}
+                    : 'Submit for Final Scoring →'}
                 </Button>
               </motion.div>
             )}
           </AnimatePresence>
 
           {/* Progress dots */}
-          {interview && phase !== 'intro' && phase !== 'complete' && (
+          {interview && !['intro', 'complete', 'scoring', 'loading'].includes(phase) && (
             <div className="flex justify-center gap-2 mt-6">
               {interview.questions.map((_, i) => (
                 <div

@@ -1,65 +1,78 @@
 import uuid
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from datetime import datetime, timezone
+from fastapi import APIRouter, HTTPException, status
 
-from app.database import get_db
-from app.models.user import User
-from app.models.learner import LearnerProfile
+from app.db.mongo import col_users, col_learners
 from app.schemas.auth import LoginRequest, LoginResponse, RefreshResponse, UserSchema
 from app.auth.jwt import hash_password, verify_password, create_access_token, create_refresh_token, get_current_user_id
+from fastapi import Depends
 
 router = APIRouter()
 log = structlog.get_logger()
 
+PROJ = {"_id": 0}
+
 
 @router.post("/login", response_model=LoginResponse)
-async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(User).where(User.email == body.email))
-    user = result.scalar_one_or_none()
+async def login(body: LoginRequest):
+    user = col_users().find_one({"email": body.email}, PROJ)
 
     if not user:
-        # Auto-create user for demo
         user_id = str(uuid.uuid4())
-        user = User(
-            id=user_id,
-            email=body.email,
-            hashed_password=hash_password(body.password),
-            role="learner",
-        )
-        db.add(user)
-        learner = LearnerProfile(
-            id=str(uuid.uuid4()),
-            user_id=user_id,
-            name=body.email.split("@")[0],
-        )
-        db.add(learner)
-        await db.commit()
-        await db.refresh(user)
+        now = datetime.now(timezone.utc).isoformat()
+        user = {
+            "id": user_id,
+            "email": body.email,
+            "hashed_password": hash_password(body.password),
+            "role": "learner",
+            "is_active": True,
+            "created_at": now,
+        }
+        col_users().insert_one({**user})
 
-    if user.hashed_password and not verify_password(body.password, user.hashed_password):
+        learner_id = str(uuid.uuid4())
+        col_learners().insert_one({
+            "id": learner_id,
+            "user_id": user_id,
+            "email": body.email,
+            "name": body.email.split("@")[0],
+            "goal_vector": [],
+            "topic_proficiency_map": {},
+            "learning_style": "visual",
+            "xp": 0,
+            "streak": 0,
+            "session_cadence": {},
+            "curriculum_version": 1,
+            "created_at": now,
+            "updated_at": now,
+        })
+
+    if user.get("hashed_password") and not verify_password(body.password, user["hashed_password"]):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
-    payload = {"sub": str(user.id)}
+    payload = {"sub": str(user["id"])}
     access_token = create_access_token(payload)
     refresh_token = create_refresh_token(payload)
 
-    learner_result = await db.execute(select(LearnerProfile).where(LearnerProfile.user_id == user.id))
-    learner = learner_result.scalar_one_or_none()
+    learner = col_learners().find_one({"user_id": user["id"]}, PROJ)
+    log.info("auth_login", user_id=user["id"])
 
-    log.info("auth_login", user_id=str(user.id))
     return LoginResponse(
         access_token=access_token,
         refresh_token=refresh_token,
-        user=UserSchema(id=str(user.id), email=user.email, name=learner.name if learner else "", role=user.role),
+        user=UserSchema(
+            id=str(user["id"]),
+            email=user["email"],
+            name=learner["name"] if learner else "",
+            role=user.get("role", "learner"),
+        ),
     )
 
 
 @router.post("/refresh", response_model=RefreshResponse)
 async def refresh(user_id: str = Depends(get_current_user_id)):
-    access_token = create_access_token({"sub": user_id})
-    return RefreshResponse(access_token=access_token)
+    return RefreshResponse(access_token=create_access_token({"sub": user_id}))
 
 
 @router.post("/logout")

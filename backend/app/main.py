@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.database import create_all_tables
+from app.db.mongo import ensure_indexes
 from app.routers import auth, learner, curriculum, content, quiz, doubts, progress, hf, admin, session, evals, courses, assistant
 from app.websocket import sio
 
@@ -14,7 +14,8 @@ log = structlog.get_logger()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await create_all_tables()
+    ensure_indexes()
+    log.info("mongo_indexes_ensured")
     yield
 
 

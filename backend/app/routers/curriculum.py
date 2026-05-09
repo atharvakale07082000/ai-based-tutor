@@ -1,64 +1,48 @@
+import uuid
 import structlog
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 
-from app.database import get_db
-from app.models.learner import LearnerProfile
-from app.models.user import User
-from app.models.curriculum import CurriculumPath
+from app.db.mongo import col_learners, col_curricula
 from app.agents.orchestrator import orchestrator
 from app.auth.jwt import get_current_user_id
 
 router = APIRouter()
 log = structlog.get_logger()
 
+PROJ = {"_id": 0}
+
 
 @router.get("")
-async def get_curriculum(
-    user_id: str = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db),
-):
-    learner_result = await db.execute(
-        select(LearnerProfile).join(User, User.id == LearnerProfile.user_id).where(User.id == user_id)
-    )
-    learner = learner_result.scalar_one_or_none()
+async def get_curriculum(user_id: str = Depends(get_current_user_id)):
+    learner = col_learners().find_one({"user_id": user_id}, PROJ)
     if not learner:
         return []
-
-    curriculum_result = await db.execute(
-        select(CurriculumPath)
-        .where(CurriculumPath.learner_id == learner.id, CurriculumPath.is_active == True)
-        .order_by(CurriculumPath.generated_at.desc())
-        .limit(1)
+    curriculum = col_curricula().find_one(
+        {"learner_id": learner["id"], "is_active": True},
+        PROJ,
+        sort=[("generated_at", -1)],
     )
-    curriculum = curriculum_result.scalar_one_or_none()
-    return curriculum.topics if curriculum else []
+    return curriculum["topics"] if curriculum else []
 
 
 @router.post("/generate")
-async def generate_curriculum(
-    user_id: str = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db),
-):
-    learner_result = await db.execute(
-        select(LearnerProfile).join(User, User.id == LearnerProfile.user_id).where(User.id == user_id)
-    )
-    learner = learner_result.scalar_one_or_none()
+async def generate_curriculum(user_id: str = Depends(get_current_user_id)):
+    learner = col_learners().find_one({"user_id": user_id}, PROJ)
     if not learner:
         raise HTTPException(status_code=404, detail="Learner not found")
 
-    log.info("curriculum_generate_start", learner_id=str(learner.id))
+    log.info("curriculum_generate_start", learner_id=learner["id"])
 
     state = {
-        "learner_id": str(learner.id),
+        "learner_id": learner["id"],
         "task_type": "curriculum",
         "messages": [],
         "learner_profile": {
-            "goal_vector": learner.goal_vector or [],
-            "learning_style": learner.learning_style,
+            "goal_vector": learner.get("goal_vector") or [],
+            "learning_style": learner.get("learning_style", "visual"),
         },
-        "topic_proficiency": learner.topic_proficiency_map or {},
+        "topic_proficiency": learner.get("topic_proficiency_map") or {},
         "current_topic": "",
         "quiz_questions": [],
         "curriculum_path": [],
@@ -71,21 +55,24 @@ async def generate_curriculum(
     result = await orchestrator.ainvoke(state)
     curriculum_path = result.get("curriculum_path", [])
 
-    # Mark old curricula inactive
-    old_result = await db.execute(
-        select(CurriculumPath).where(CurriculumPath.learner_id == learner.id, CurriculumPath.is_active == True)
+    # Deactivate old curricula
+    col_curricula().update_many(
+        {"learner_id": learner["id"], "is_active": True},
+        {"$set": {"is_active": False}},
     )
-    for old in old_result.scalars():
-        old.is_active = False
 
-    new_curriculum = CurriculumPath(
-        learner_id=learner.id,
-        version=learner.curriculum_version + 1,
-        topics=curriculum_path,
-        is_active=True,
+    new_version = learner.get("curriculum_version", 1) + 1
+    col_curricula().insert_one({
+        "id": str(uuid.uuid4()),
+        "learner_id": learner["id"],
+        "version": new_version,
+        "topics": curriculum_path,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "is_active": True,
+    })
+    col_learners().update_one(
+        {"user_id": user_id},
+        {"$set": {"curriculum_version": new_version, "updated_at": datetime.now(timezone.utc).isoformat()}},
     )
-    learner.curriculum_version += 1
-    db.add(new_curriculum)
-    await db.commit()
 
-    return {"items": curriculum_path, "version": learner.curriculum_version}
+    return {"items": curriculum_path, "version": new_version}

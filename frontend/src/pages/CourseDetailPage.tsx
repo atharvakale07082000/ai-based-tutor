@@ -35,7 +35,8 @@ function ModuleCard({
 }) {
   const navigate = useNavigate()
   const cfg = STATUS_CONFIG[module.interview_status]
-  const scorePercent = module.interview_score != null ? Math.round(module.interview_score * 100) : null
+  // stored as 0-1, display as X.X/10
+  const scoreOutOf10 = module.interview_score != null ? (module.interview_score * 10).toFixed(1) : null
 
   return (
     <motion.div
@@ -75,10 +76,13 @@ function ModuleCard({
               <p className="text-xs text-paper/40 mb-1">Module {index + 1} · {module.duration_days} days</p>
               <h3 className="font-display text-lg text-paper leading-tight">{module.title}</h3>
             </div>
-            <div className="flex flex-col items-end gap-1 shrink-0 ml-4">
+            <div className="flex flex-col items-end gap-2 shrink-0 ml-4">
               <Badge variant={cfg.variant}>{cfg.label}</Badge>
-              {scorePercent != null && (
-                <span className="text-xs text-paper/40">{scorePercent}% score</span>
+              {scoreOutOf10 != null && (
+                <div className="flex items-baseline gap-0.5">
+                  <span className="text-lg font-bold text-paper">{scoreOutOf10}</span>
+                  <span className="text-xs text-paper/40">/ 10</span>
+                </div>
               )}
             </div>
           </div>
@@ -130,7 +134,7 @@ function ModuleCard({
 
           {!isUnlocked && (
             <p className="text-xs text-paper/30 flex items-center gap-1.5">
-              🔒 Complete the previous module's interview to unlock
+              🔒 Attempt the previous module's interview to unlock
             </p>
           )}
         </div>
@@ -223,14 +227,15 @@ export default function CourseDetailPage() {
         {/* Timeline */}
         <div>
           {plan.modules.map((module, i) => {
-            const prevPassed = i === 0 || plan.modules[i - 1].interview_status === 'passed'
+            const prevAttempted =
+              i === 0 || plan.modules[i - 1].interview_status !== 'pending'
             return (
               <ModuleCard
                 key={module.id}
                 module={module}
                 index={i}
                 planId={plan.plan_id}
-                isUnlocked={prevPassed}
+                isUnlocked={prevAttempted}
               />
             )
           })}

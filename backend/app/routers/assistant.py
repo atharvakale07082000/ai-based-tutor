@@ -3,10 +3,8 @@ import json
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.jwt import get_current_user_id
-from app.database import get_db
 from app.agents.chat_orchestrator import run_assistant
 
 router = APIRouter()
@@ -21,11 +19,10 @@ class ChatRequest(BaseModel):
 async def chat(
     body: ChatRequest,
     user_id: str = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db),
 ):
     async def event_stream():
         try:
-            async for event in run_assistant(body.message, body.history, user_id, db):
+            async for event in run_assistant(body.message, body.history, user_id):
                 yield f"data: {json.dumps(event)}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"

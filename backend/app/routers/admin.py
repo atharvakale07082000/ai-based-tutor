@@ -1,18 +1,14 @@
 import structlog
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
 
-from app.database import get_db
-from app.models.learner import LearnerProfile
-from app.models.user import User
-from app.models.doubts import DoubtSession
+from app.db.mongo import col_learners, col_doubts
 from app.auth.jwt import get_current_user_id
 
 router = APIRouter()
 log = structlog.get_logger()
 
-# In-memory agent config (in production this would be in Redis/DB)
+PROJ = {"_id": 0}
+
 _agent_config = {
     "quiz_frequency": 3,
     "difficulty_ceiling": 0.8,
@@ -26,37 +22,37 @@ async def get_learners(
     page: int = Query(1, ge=1),
     limit: int = Query(20),
     user_id: str = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db),
 ):
-    query = select(LearnerProfile, User).join(User, User.id == LearnerProfile.user_id)
+    query: dict = {}
     if search:
-        query = query.where(
-            (LearnerProfile.name.ilike(f"%{search}%")) | (User.email.ilike(f"%{search}%"))
-        )
+        query["$or"] = [
+            {"name": {"$regex": search, "$options": "i"}},
+            {"email": {"$regex": search, "$options": "i"}},
+        ]
 
-    result = await db.execute(query.offset((page - 1) * limit).limit(limit))
-    rows = result.all()
+    learners = list(
+        col_learners().find(query, PROJ)
+        .skip((page - 1) * limit).limit(limit)
+    )
 
     items = []
-    for learner, user in rows:
-        proficiency = learner.topic_proficiency_map or {}
+    for learner in learners:
+        proficiency = learner.get("topic_proficiency_map") or {}
         avg_proficiency = sum(proficiency.values()) / max(len(proficiency), 1) if proficiency else 0
 
-        # Get latest mood
-        mood_result = await db.execute(
-            select(DoubtSession.sentiment_mood)
-            .where(DoubtSession.learner_id == learner.id, DoubtSession.sentiment_mood != None)
-            .order_by(DoubtSession.started_at.desc())
-            .limit(1)
+        mood_doc = col_doubts().find_one(
+            {"learner_id": learner["id"], "sentiment_mood": {"$ne": None}},
+            {"sentiment_mood": 1, "_id": 0},
+            sort=[("started_at", -1)],
         )
-        mood = mood_result.scalar_one_or_none()
+        mood = mood_doc["sentiment_mood"] if mood_doc else None
 
         items.append({
-            "id": str(learner.id),
-            "name": learner.name,
-            "email": user.email,
+            "id": learner["id"],
+            "name": learner.get("name", ""),
+            "email": learner.get("email", ""),
             "avg_proficiency": avg_proficiency,
-            "last_active": learner.updated_at.isoformat() if learner.updated_at else "",
+            "last_active": learner.get("updated_at", ""),
             "mood": mood,
             "topic_proficiency": proficiency,
         })
@@ -65,12 +61,8 @@ async def get_learners(
 
 
 @router.put("/config")
-async def update_config(
-    config: dict,
-    user_id: str = Depends(get_current_user_id),
-):
+async def update_config(config: dict, user_id: str = Depends(get_current_user_id)):
     _agent_config.update({k: v for k, v in config.items() if k in _agent_config})
-    log.info("admin_config_updated", config=_agent_config)
     return {"config": _agent_config}
 
 
