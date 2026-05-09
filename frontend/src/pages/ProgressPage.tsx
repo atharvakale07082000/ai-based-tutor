@@ -7,7 +7,6 @@ import {
 } from 'recharts'
 import { PageWrapper } from '@/components/layout/PageWrapper'
 import { Card } from '@/components/ui/Card'
-import { Badge } from '@/components/ui/Badge'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { progressAPI } from '@/lib/api'
 import { useLearnerStore } from '@/stores/learnerStore'

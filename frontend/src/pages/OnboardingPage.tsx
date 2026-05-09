@@ -88,7 +88,6 @@ export default function OnboardingPage() {
         name,
         goal_vector: goals,
         learning_style: style,
-        session_cadence: { hours_per_week: hoursPerWeek },
       })
       setLearner({
         id: data.id,

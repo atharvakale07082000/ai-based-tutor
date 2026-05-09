@@ -4,8 +4,6 @@ import { motion, AnimatePresence } from 'framer-motion'
 import toast from 'react-hot-toast'
 import { PageWrapper } from '@/components/layout/PageWrapper'
 import { Button } from '@/components/ui/Button'
-import { Badge } from '@/components/ui/Badge'
-import { api } from '@/lib/api'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

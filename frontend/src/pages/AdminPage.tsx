@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Routes, Route, Link, useLocation, Navigate } from 'react-router-dom'
+import { Routes, Route, Link, Navigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import { Treemap, ResponsiveContainer, Tooltip } from 'recharts'
@@ -15,7 +15,7 @@ import toast from 'react-hot-toast'
 
 function AdminOverview() {
   const [search, setSearch] = useState('')
-  const [page, setPage] = useState(1)
+  const [page] = useState(1)
   const [config, setConfig] = useState({
     quiz_frequency: 3,
     difficulty_ceiling: 80,
@@ -243,12 +243,14 @@ function HFModelsPanel() {
                 <div className="flex items-center gap-4 text-xs text-paper/40 mb-4">
                   <span>
                     Last used:{' '}
-                    {status?.lastUsed
-                      ? new Date(status.lastUsed).toLocaleTimeString()
+                    {(status as any)?.lastUsed || (status as any)?.last_used
+                      ? new Date((status as any).lastUsed ?? (status as any).last_used).toLocaleTimeString()
                       : '—'}
                   </span>
                   <span>
-                    Latency: {status?.latencyMs != null ? `${status.latencyMs}ms` : '—'}
+                    Latency: {((status as any)?.latencyMs ?? (status as any)?.latency_ms) != null
+                      ? `${(status as any).latencyMs ?? (status as any).latency_ms}ms`
+                      : '—'}
                   </span>
                   <span>Tokens: {tokens.toLocaleString()}</span>
                 </div>
@@ -262,7 +264,7 @@ function HFModelsPanel() {
                   Test Model
                 </Button>
 
-                {testResults[key] && (
+                {!!testResults[key] && (
                   <pre className="mt-3 text-[10px] bg-surface-1 border border-surface-2 rounded-xl p-3 overflow-x-auto text-emerald max-h-32">
                     {JSON.stringify(testResults[key], null, 2)}
                   </pre>

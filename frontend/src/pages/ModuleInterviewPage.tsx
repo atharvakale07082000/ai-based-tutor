@@ -100,7 +100,6 @@ export default function ModuleInterviewPage() {
   const [isRecording, setIsRecording] = useState(false)
   const [transcript, setTranscript] = useState('')
   const [interimTranscript, setInterimTranscript] = useState('')
-  const [answers, setAnswers] = useState<AnswerResult[]>([])
   const [currentEval, setCurrentEval] = useState<AnswerResult | null>(null)
   const [finalResult, setFinalResult] = useState<FinalResult | null>(null)
   const [isSpeaking, setIsSpeaking] = useState(false)
@@ -229,7 +228,6 @@ export default function ModuleInterviewPage() {
       )
       const result = data as AnswerResult
       setCurrentEval(result)
-      setAnswers((prev) => [...prev, result])
       setPhase('feedback')
       speak(`Score: ${result.score} out of 10. ${result.feedback}`)
     } catch {
