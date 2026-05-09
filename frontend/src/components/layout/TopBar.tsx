@@ -34,9 +34,11 @@ export function TopBar() {
       <nav className="hidden md:flex items-center gap-1 flex-1">
         {[
           { to: '/dashboard', label: 'Dashboard' },
+          { to: '/courses', label: 'Courses' },
           { to: '/learn', label: 'Learn' },
           { to: '/doubts', label: 'Ask Doubt' },
           { to: '/progress', label: 'Progress' },
+          { to: '/assistant', label: 'Assistant' },
         ].map(({ to, label }) => (
           <Link
             key={to}

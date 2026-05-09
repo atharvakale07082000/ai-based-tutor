@@ -9,10 +9,20 @@ export const api = axios.create({
   withCredentials: true,
 })
 
-let accessToken: string | null = null
+const TOKEN_KEY = 'ai_tutor_token'
+
+let accessToken: string | null =
+  typeof localStorage !== 'undefined' ? localStorage.getItem(TOKEN_KEY) : null
 
 export function setAccessToken(token: string | null) {
   accessToken = token
+  if (typeof localStorage !== 'undefined') {
+    if (token) {
+      localStorage.setItem(TOKEN_KEY, token)
+    } else {
+      localStorage.removeItem(TOKEN_KEY)
+    }
+  }
 }
 
 export function getAccessToken() {
@@ -240,4 +250,70 @@ export const adminAPI = {
     api.get<{ items: AdminLearner[]; total: number }>('/admin/learners', { params: { search, page } }),
   updateConfig: (config: { quiz_frequency?: number; difficulty_ceiling?: number; escalation_threshold?: number }) =>
     api.put('/admin/config', config),
+}
+
+// ─── Courses ──────────────────────────────────────────────────────────────────
+
+export interface CourseResource {
+  title: string
+  url: string
+  type: 'video' | 'article' | 'course' | 'book' | 'tool'
+}
+
+export interface CourseModule {
+  id: string
+  title: string
+  description: string
+  topics: string[]
+  duration_days: number
+  resources: CourseResource[]
+  order: number
+  interview_status: 'pending' | 'in_progress' | 'passed' | 'failed'
+  interview_score: number | null
+}
+
+export interface CoursePlan {
+  plan_id: string
+  user_id: string
+  goal: string
+  title: string
+  description: string
+  total_duration_weeks: number
+  modules: CourseModule[]
+  created_at: string
+  status: string
+}
+
+export interface InterviewQuestion {
+  id: number
+  text: string
+  expected_depth: string
+}
+
+export interface Interview {
+  interview_id: string
+  plan_id: string
+  module_id: string
+  module_title: string
+  questions: InterviewQuestion[]
+  answers: Array<{ question_id: number; score: number; feedback: string; answer_text: string }>
+  final_score: number | null
+  passed: boolean | null
+  created_at: string
+  completed_at: string | null
+}
+
+export const coursesAPI = {
+  create: (goal: string) => api.post<CoursePlan>('/courses/plan', { goal }),
+  list: () => api.get<CoursePlan[]>('/courses/'),
+  get: (planId: string) => api.get<CoursePlan>(`/courses/${planId}`),
+  startInterview: (planId: string, moduleId: string) =>
+    api.post<Interview>(`/courses/${planId}/modules/${moduleId}/interview/start`),
+  submitAnswer: (planId: string, moduleId: string, interviewId: string, questionId: number, answerText: string) =>
+    api.post(`/courses/${planId}/modules/${moduleId}/interview/${interviewId}/answer`, {
+      question_id: questionId,
+      answer_text: answerText,
+    }),
+  completeInterview: (planId: string, moduleId: string, interviewId: string) =>
+    api.post(`/courses/${planId}/modules/${moduleId}/interview/${interviewId}/complete`),
 }

@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import create_all_tables
-from app.routers import auth, learner, curriculum, content, quiz, doubts, progress, hf, admin, session, evals
+from app.routers import auth, learner, curriculum, content, quiz, doubts, progress, hf, admin, session, evals, courses, assistant
 from app.websocket import sio
 
 log = structlog.get_logger()
@@ -45,6 +45,8 @@ app.include_router(hf.router, prefix="/api/v1/hf", tags=["hf"])
 app.include_router(admin.router, prefix="/api/v1/admin", tags=["admin"])
 app.include_router(session.router, prefix="/api/v1/session", tags=["session"])
 app.include_router(evals.router, prefix="/api/v1/evals", tags=["evals"])
+app.include_router(courses.router, prefix="/api/v1/courses", tags=["courses"])
+app.include_router(assistant.router, prefix="/api/v1/assistant", tags=["assistant"])
 
 
 @app.get("/health")

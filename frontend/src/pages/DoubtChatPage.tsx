@@ -6,7 +6,7 @@ import { doubtsAPI } from '@/lib/api'
 import { runSpeechToText, runSentiment } from '@/lib/hf'
 import { PageWrapper } from '@/components/layout/PageWrapper'
 import { Button } from '@/components/ui/Button'
-import { Badge, HFBadge } from '@/components/ui/Badge'
+import { Badge } from '@/components/ui/Badge'
 import { ChatBubbleSkeleton } from '@/components/ui/Skeleton'
 import { useLearnerStore } from '@/stores/learnerStore'
 import toast from 'react-hot-toast'
@@ -165,7 +165,7 @@ export default function DoubtChatPage() {
         try {
           const transcript = await runSpeechToText(blob)
           setInput(transcript)
-          toast.success('Transcribed by 🤗 Whisper')
+          toast.success('Transcription complete')
         } catch {
           // fallback to backend transcription
           try {
@@ -189,7 +189,7 @@ export default function DoubtChatPage() {
     try {
       const { data } = await doubtsAPI.caption(file)
       setInput((prev) => `[Image: ${data.caption}]\n${prev}`)
-      toast.success('Captioned by 🤗 BLIP')
+      toast.success('Image captioned')
     } catch {
       toast.error('Could not caption image')
     }
@@ -253,7 +253,7 @@ export default function DoubtChatPage() {
               placeholder="Topic context (optional)"
               className="flex-1 bg-transparent text-sm text-paper/60 placeholder-paper/30 focus:outline-none"
             />
-            <Badge variant="surface" className="text-[10px] shrink-0">Mistral-7B-Instruct 🤗</Badge>
+            <Badge variant="surface" className="text-[10px] shrink-0">AI Tutor</Badge>
             <span className="text-xs text-paper/30 font-mono shrink-0">{formatTime(sessionTimer)}</span>
           </div>
 
@@ -264,9 +264,8 @@ export default function DoubtChatPage() {
                 <div className="w-16 h-16 rounded-2xl bg-violet/20 flex items-center justify-center text-3xl mb-4">💡</div>
                 <h3 className="font-display text-xl text-paper mb-2">Ask your Doubt-Solver</h3>
                 <p className="text-sm text-paper/50 max-w-sm">
-                  Powered by Mistral-7B-Instruct. Ask any question about your current topic — get instant, context-aware answers.
+                  Ask any question about your current topic — get instant, context-aware answers.
                 </p>
-                <HFBadge className="mt-4" />
               </div>
             )}
 
@@ -351,7 +350,7 @@ export default function DoubtChatPage() {
               </Button>
             </div>
             <p className="text-[10px] text-paper/20 text-center mt-2">
-              Powered by 🤗 Mistral-7B-Instruct-v0.3 · Whisper STT · BLIP Vision
+              AI-powered answers · Voice input · Image understanding
             </p>
           </div>
         </div>

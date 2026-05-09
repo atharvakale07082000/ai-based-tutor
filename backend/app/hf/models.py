@@ -3,14 +3,14 @@ HF_MODELS: dict[str, dict] = {
     "DOUBT_SOLVER": {
         "model_id": "Qwen/Qwen2.5-7B-Instruct",
         "task": "text-generation",
-        "provider": "together",
-        "description": "Streaming doubt resolution chatbot (Qwen2.5-7B via Together)",
+        "provider": "auto",
+        "description": "Streaming doubt resolution chatbot (Qwen2.5-7B via HF auto-router)",
     },
     "QUIZ_GENERATOR": {
         "model_id": "Qwen/Qwen2.5-7B-Instruct",
         "task": "text-generation",
-        "provider": "together",
-        "description": "Quiz question generation via Qwen2.5-7B-Instruct",
+        "provider": "auto",
+        "description": "Quiz question generation via Qwen2.5-7B-Instruct (HF auto-router)",
     },
     # ── Classification / embedding tasks (provider: hf-inference) ────────────
     "TOPIC_CLASSIFIER": {

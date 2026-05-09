@@ -59,7 +59,7 @@ export default function LandingPage() {
           transition={{ delay: 0.1 }}
           className="text-violet-light text-[11px] font-medium tracking-[0.25em] uppercase mb-6"
         >
-          POWERED BY 4 AI AGENTS + 🤗 HUGGING FACE
+          ADAPTIVE AI TUTORING PLATFORM
         </motion.p>
 
         {/* H1 */}
@@ -108,16 +108,6 @@ export default function LandingPage() {
           ))}
         </motion.div>
 
-        {/* HF badge */}
-        <motion.div
-          initial={prefersReducedMotion ? {} : { opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.5 }}
-        >
-          <span className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium bg-orange-500/15 text-orange-400 border border-orange-500/25">
-            🤗 8 Hugging Face Models Active
-          </span>
-        </motion.div>
       </div>
 
       {/* RIGHT PANEL — 45% */}

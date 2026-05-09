@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
 
 export interface QuizSessionHistory {
   id: string
@@ -58,21 +59,41 @@ const initialState = {
   moodTimeline: [],
 }
 
-export const useLearnerStore = create<LearnerState>((set) => ({
-  ...initialState,
+export const useLearnerStore = create<LearnerState>()(
+  persist(
+    (set) => ({
+      ...initialState,
 
-  setLearner: (data) => set((state) => ({ ...state, ...data })),
+      setLearner: (data) => set((state) => ({ ...state, ...data })),
 
-  updateProficiency: (topic, score) =>
-    set((state) => ({
-      topicProficiency: { ...state.topicProficiency, [topic]: Math.max(0, Math.min(1000, score)) },
-    })),
+      updateProficiency: (topic, score) =>
+        set((state) => ({
+          topicProficiency: { ...state.topicProficiency, [topic]: Math.max(0, Math.min(1000, score)) },
+        })),
 
-  addQuizSession: (session) =>
-    set((state) => ({ quizHistory: [session, ...state.quizHistory].slice(0, 50) })),
+      addQuizSession: (session) =>
+        set((state) => ({ quizHistory: [session, ...state.quizHistory].slice(0, 50) })),
 
-  addDoubtSession: (session) =>
-    set((state) => ({ doubtSessions: [session, ...state.doubtSessions].slice(0, 20) })),
+      addDoubtSession: (session) =>
+        set((state) => ({ doubtSessions: [session, ...state.doubtSessions].slice(0, 20) })),
 
-  reset: () => set(initialState),
-}))
+      reset: () => {
+        if (typeof localStorage !== 'undefined') localStorage.removeItem('ai_tutor_token')
+        set(initialState)
+      },
+    }),
+    {
+      name: 'ai-tutor-learner',
+      partialize: (state) => ({
+        id: state.id,
+        name: state.name,
+        email: state.email,
+        goalVector: state.goalVector,
+        learningStyle: state.learningStyle,
+        topicProficiency: state.topicProficiency,
+        xp: state.xp,
+        streak: state.streak,
+      }),
+    }
+  )
+)
