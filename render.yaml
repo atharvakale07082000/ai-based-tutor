@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: ai-tutor-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    envVars:
+      - key: MONGO_URL
+        sync: false
+      - key: MONGO_DATABASE
+        value: ai_tutor
+      - key: SECRET_KEY
+        generateValue: true
+      - key: HF_TOKEN
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: LANGFUSE_PUBLIC_KEY
+        sync: false
+      - key: LANGFUSE_SECRET_KEY
+        sync: false
