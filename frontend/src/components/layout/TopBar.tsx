@@ -1,8 +1,6 @@
 import { Link, useNavigate } from 'react-router-dom'
 import { useLearnerStore } from '@/stores/learnerStore'
 import { authAPI } from '@/lib/api'
-import { Button } from '@/components/ui/Button'
-import toast from 'react-hot-toast'
 
 export function TopBar() {
   const { name, xp, streak, reset } = useLearnerStore()
