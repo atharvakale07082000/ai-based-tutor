@@ -7,7 +7,7 @@ import {
 } from 'recharts'
 import { PageWrapper } from '@/components/layout/PageWrapper'
 import { Card } from '@/components/ui/Card'
-import { Badge, HFBadge } from '@/components/ui/Badge'
+import { Badge } from '@/components/ui/Badge'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { progressAPI } from '@/lib/api'
 import { useLearnerStore } from '@/stores/learnerStore'
@@ -83,7 +83,7 @@ export default function ProgressPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="font-display text-3xl text-paper">Progress & Skill Map</h1>
-            <p className="text-paper/50 text-sm mt-1">Powered by Progress Tracker agent + DistilBERT sentiment</p>
+            <p className="text-paper/50 text-sm mt-1">Your learning analytics, powered by the Progress Tracker agent</p>
           </div>
           <button
             onClick={handleDownloadReport}
@@ -242,9 +242,8 @@ export default function ProgressPage() {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="text-sm font-medium text-paper/70 uppercase tracking-wider">Mood Timeline</h2>
-              <p className="text-xs text-paper/30 mt-0.5">Sentiment analysis by 🤗 DistilBERT-SST-2</p>
+              <p className="text-xs text-paper/30 mt-0.5">Sentiment analysis from your quiz reflections</p>
             </div>
-            <HFBadge />
           </div>
           {moodTimeline.length === 0 ? (
             <p className="text-sm text-paper/40 py-4 text-center">Complete quiz sessions to see your mood timeline</p>

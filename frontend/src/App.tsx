@@ -1,4 +1,4 @@
-import { Suspense, lazy } from 'react'
+import { Suspense, lazy, useState, useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AnimatePresence } from 'framer-motion'
@@ -15,6 +15,10 @@ const DoubtChatPage = lazy(() => import('@/pages/DoubtChatPage'))
 const QuizPage = lazy(() => import('@/pages/QuizPage'))
 const ProgressPage = lazy(() => import('@/pages/ProgressPage'))
 const AdminPage = lazy(() => import('@/pages/AdminPage'))
+const CoursePlannerPage = lazy(() => import('@/pages/CoursePlannerPage'))
+const CourseDetailPage = lazy(() => import('@/pages/CourseDetailPage'))
+const ModuleInterviewPage = lazy(() => import('@/pages/ModuleInterviewPage'))
+const AssistantPage = lazy(() => import('@/pages/AssistantPage'))
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -48,6 +52,16 @@ function PageLoader() {
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const learnerId = useLearnerStore((s) => s.id)
+  const [hydrated, setHydrated] = useState(useLearnerStore.persist.hasHydrated())
+
+  useEffect(() => {
+    if (hydrated) return
+    const unsub = useLearnerStore.persist.onFinishHydration(() => setHydrated(true))
+    setHydrated(useLearnerStore.persist.hasHydrated())
+    return unsub
+  }, [hydrated])
+
+  if (!hydrated) return <PageLoader />
   if (!learnerId) return <Navigate to="/" replace />
   return <>{children}</>
 }
@@ -80,6 +94,11 @@ export default function App() {
               <Route path="/quiz/:quizId" element={<PrivateRoute><QuizPage /></PrivateRoute>} />
               <Route path="/progress" element={<PrivateRoute><ProgressPage /></PrivateRoute>} />
               <Route path="/admin/*" element={<PrivateRoute><AdminPage /></PrivateRoute>} />
+              <Route path="/courses" element={<PrivateRoute><CoursePlannerPage /></PrivateRoute>} />
+              <Route path="/courses/:planId" element={<PrivateRoute><CourseDetailPage /></PrivateRoute>} />
+              <Route path="/courses/:planId/modules/:moduleId/interview" element={<PrivateRoute><ModuleInterviewPage /></PrivateRoute>} />
+              <Route path="/assistant" element={<PrivateRoute><AssistantPage /></PrivateRoute>} />
+              <Route path="/login" element={<Navigate to="/" replace />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </AnimatePresence>

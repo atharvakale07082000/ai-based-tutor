@@ -7,7 +7,7 @@ import { contentAPI, quizAPI } from '@/lib/api'
 import { runImageCaption } from '@/lib/hf'
 import { PageWrapper } from '@/components/layout/PageWrapper'
 import { Button } from '@/components/ui/Button'
-import { Badge, HFBadge } from '@/components/ui/Badge'
+import { Badge } from '@/components/ui/Badge'
 import { Skeleton } from '@/components/ui/Skeleton'
 import toast from 'react-hot-toast'
 
@@ -34,7 +34,7 @@ export default function ModulePlayerPage() {
     try {
       const caption = await runImageCaption(file)
       setDoubtInput((prev) => `[Image: ${caption}]\n${prev}`)
-      toast.success('Image captioned by 🤗 BLIP')
+      toast.success('Image captioned')
     } catch {
       toast.error('Could not caption image')
     } finally {
@@ -123,13 +123,12 @@ export default function ModulePlayerPage() {
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
                     </svg>
-                    <span className="text-sm">Captioning with 🤗 BLIP…</span>
+                    <span className="text-sm">Captioning image…</span>
                   </div>
                 ) : (
                   <>
                     <div className="text-3xl mb-2">🖼️</div>
                     <p className="text-sm text-paper/50">Drop an image here to caption it and add to your doubt</p>
-                    <HFBadge className="mt-2" />
                   </>
                 )}
               </div>
@@ -199,7 +198,7 @@ export default function ModulePlayerPage() {
                 <span className="text-sm font-medium text-paper">Got a doubt?</span>
               </div>
               <p className="text-xs text-paper/50 mb-3">
-                Ask the Doubt-Solver AI agent — powered by Mistral-7B
+                Ask the Doubt-Solver AI agent
               </p>
               <Button
                 size="sm"

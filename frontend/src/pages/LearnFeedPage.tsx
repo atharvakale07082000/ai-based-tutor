@@ -6,7 +6,7 @@ import { contentAPI } from '@/lib/api'
 import { runEmbeddings } from '@/lib/hf'
 import { PageWrapper } from '@/components/layout/PageWrapper'
 import { Card } from '@/components/ui/Card'
-import { Badge, HFBadge } from '@/components/ui/Badge'
+import { Badge } from '@/components/ui/Badge'
 import { CardSkeleton } from '@/components/ui/Skeleton'
 
 const CONTENT_TYPES = ['video', 'article', 'exercise', 'interactive'] as const
@@ -75,7 +75,6 @@ export default function LearnFeedPage() {
             <h1 className="font-display text-3xl text-paper">Learning Feed</h1>
             <p className="text-paper/50 text-sm mt-1">Content curated by your Curriculum Planner agent</p>
           </div>
-          <HFBadge />
         </div>
 
         {/* Sticky filter bar */}
@@ -88,7 +87,7 @@ export default function LearnFeedPage() {
             <input
               value={search}
               onChange={(e) => handleSearchChange(e.target.value)}
-              placeholder="Search with semantic AI (🤗 all-MiniLM-L6-v2)…"
+              placeholder="Search courses, topics, exercises…"
               className="w-full bg-surface-2 border border-surface-3 rounded-xl pl-10 pr-4 py-2.5 text-sm text-paper placeholder-paper/30 focus:outline-none focus:ring-2 focus:ring-violet/50"
             />
             {isSearching && (

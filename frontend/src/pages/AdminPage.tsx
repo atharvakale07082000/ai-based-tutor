@@ -5,7 +5,7 @@ import { motion } from 'framer-motion'
 import { Treemap, ResponsiveContainer, Tooltip } from 'recharts'
 import { PageWrapper } from '@/components/layout/PageWrapper'
 import { Card } from '@/components/ui/Card'
-import { Badge, HFBadge } from '@/components/ui/Badge'
+import { Badge } from '@/components/ui/Badge'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { Button } from '@/components/ui/Button'
 import { adminAPI, hfAPI } from '@/lib/api'
@@ -53,7 +53,7 @@ function AdminOverview() {
         <h1 className="font-display text-3xl text-paper">Admin Dashboard</h1>
         <div className="flex gap-3">
           <Link to="/admin/models">
-            <Button variant="secondary" size="sm">🤗 HF Model Status</Button>
+            <Button variant="secondary" size="sm">AI Model Status</Button>
           </Link>
         </div>
       </div>
@@ -202,10 +202,9 @@ function HFModelsPanel() {
     <div className="px-6 py-8 max-w-[1400px] mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="font-display text-3xl text-paper">HF Model Status</h1>
-          <p className="text-paper/50 text-sm mt-1">Live status of all 8 Hugging Face models</p>
+          <h1 className="font-display text-3xl text-paper">AI Model Status</h1>
+          <p className="text-paper/50 text-sm mt-1">Live status of all inference models</p>
         </div>
-        <HFBadge />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -228,7 +227,7 @@ function HFModelsPanel() {
                   <div>
                     <p className="text-xs text-paper/40 uppercase tracking-wider mb-1">{key.replace(/_/g, ' ')}</p>
                     <a
-                      href={`https://huggingface.co/${modelId}`}
+                      href={`#`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-sm text-violet-light hover:underline font-mono"

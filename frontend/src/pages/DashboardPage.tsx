@@ -1,14 +1,15 @@
-import { Suspense } from 'react'
-import { Link } from 'react-router-dom'
+import { Suspense, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useQuery } from '@tanstack/react-query'
 import { RadarChart, PolarGrid, PolarAngleAxis, Radar, ResponsiveContainer, Tooltip } from 'recharts'
+import toast from 'react-hot-toast'
 import { PageWrapper } from '@/components/layout/PageWrapper'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { CardSkeleton, Skeleton } from '@/components/ui/Skeleton'
 import { useLearnerStore } from '@/stores/learnerStore'
-import { contentAPI, doubtsAPI } from '@/lib/api'
+import { contentAPI, doubtsAPI, quizAPI } from '@/lib/api'
 
 const MOOD_EMOJI: Record<string, string> = {
   POSITIVE: '😊',
@@ -95,7 +96,22 @@ function RadarSkillMap({ proficiency }: { proficiency: Record<string, number> })
 }
 
 export default function DashboardPage() {
-  const { name, xp, streak, topicProficiency, doubtSessions } = useLearnerStore()
+  const { name, xp, streak, topicProficiency, doubtSessions, goalVector } = useLearnerStore()
+  const navigate = useNavigate()
+  const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false)
+
+  const handleStartQuiz = async () => {
+    setIsGeneratingQuiz(true)
+    try {
+      const topic = goalVector[0] ?? 'Python Programming'
+      const { data } = await quizAPI.generate(topic)
+      navigate(`/quiz/${data.quiz_id}`)
+    } catch {
+      toast.error('Could not generate quiz. Please try again.')
+    } finally {
+      setIsGeneratingQuiz(false)
+    }
+  }
 
   const { data: contentData, isLoading: contentLoading } = useQuery({
     queryKey: ['content', 'feed', {}],
@@ -200,11 +216,15 @@ export default function DashboardPage() {
                 <div>
                   <p className="text-sm font-medium text-paper">Quiz due today</p>
                   <p className="text-xs text-paper/50 mt-0.5">Python Functions — 5 questions</p>
-                  <Link to="/quiz/new" className="mt-2 block">
+                  <button
+                    onClick={handleStartQuiz}
+                    disabled={isGeneratingQuiz}
+                    className="mt-2 block w-fit"
+                  >
                     <Badge variant="violet" className="cursor-pointer hover:bg-violet/30 transition-colors">
-                      Start Quiz →
+                      {isGeneratingQuiz ? 'Generating…' : 'Start Quiz →'}
                     </Badge>
-                  </Link>
+                  </button>
                 </div>
               </div>
             </Card>

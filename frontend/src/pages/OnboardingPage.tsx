@@ -52,6 +52,10 @@ export default function OnboardingPage() {
     setGoals((prev) => (prev.includes(g) ? prev.filter((x) => x !== g) : [...prev, g]))
 
   const next = async () => {
+    if (step === 0 && !name.trim()) {
+      toast.error('Please enter your name to continue.')
+      return
+    }
     if (step === 3) {
       // Step 4 → classify goals using BART-MNLI
       setIsLoading(true)
@@ -247,8 +251,7 @@ export default function OnboardingPage() {
               <div className="space-y-6">
                 <h2 className="font-display text-3xl text-paper">Your personalized<br/>path is ready</h2>
                 <p className="text-paper/60">
-                  Based on your goals, the Curriculum Planner agent (powered by{' '}
-                  <span className="text-orange-400">🤗 BART-MNLI</span>) suggests starting with:
+                  Based on your goals, the Curriculum Planner agent suggests starting with:
                 </p>
                 <div className="space-y-2">
                   {isLoading ? (

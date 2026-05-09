@@ -1,0 +1,114 @@
+"""Course Planning & AI Interview router."""
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+
+from app.auth.jwt import get_current_user_id
+from app.agents.course_planner import (
+    create_course_plan,
+    get_plan,
+    list_plans,
+    start_interview,
+    evaluate_answer,
+    complete_interview,
+    get_interview,
+)
+
+router = APIRouter()
+
+
+# ─── Schemas ──────────────────────────────────────────────────────────────────
+
+class PlanRequest(BaseModel):
+    goal: str
+
+
+class AnswerRequest(BaseModel):
+    question_id: int
+    answer_text: str
+
+
+# ─── Course plan endpoints ────────────────────────────────────────────────────
+
+@router.post("/plan")
+async def plan_course(body: PlanRequest, user_id: str = Depends(get_current_user_id)):
+    if not body.goal.strip():
+        raise HTTPException(400, "Goal cannot be empty")
+    try:
+        plan = await create_course_plan(body.goal.strip(), user_id)
+        return plan
+    except Exception as e:
+        raise HTTPException(500, f"Failed to generate plan: {e}")
+
+
+@router.get("/")
+async def get_my_plans(user_id: str = Depends(get_current_user_id)):
+    return await list_plans(user_id)
+
+
+@router.get("/{plan_id}")
+async def get_course_plan(plan_id: str, user_id: str = Depends(get_current_user_id)):
+    plan = await get_plan(plan_id)
+    if not plan or plan["user_id"] != user_id:
+        raise HTTPException(404, "Plan not found")
+    return plan
+
+
+# ─── Interview endpoints ──────────────────────────────────────────────────────
+
+@router.post("/{plan_id}/modules/{module_id}/interview/start")
+async def start_module_interview(
+    plan_id: str,
+    module_id: str,
+    user_id: str = Depends(get_current_user_id),
+):
+    plan = await get_plan(plan_id)
+    if not plan or plan["user_id"] != user_id:
+        raise HTTPException(404, "Plan not found")
+
+    module = next((m for m in plan["modules"] if m["id"] == module_id), None)
+    if not module:
+        raise HTTPException(404, "Module not found")
+
+    interview = await start_interview(
+        plan_id=plan_id,
+        module_id=module_id,
+        user_id=user_id,
+        module_title=module["title"],
+        topics=module["topics"],
+    )
+    return interview
+
+
+@router.post("/{plan_id}/modules/{module_id}/interview/{interview_id}/answer")
+async def submit_answer(
+    plan_id: str,
+    module_id: str,
+    interview_id: str,
+    body: AnswerRequest,
+    user_id: str = Depends(get_current_user_id),
+):
+    interview = await get_interview(interview_id)
+    if not interview or interview["user_id"] != user_id:
+        raise HTTPException(404, "Interview not found")
+    try:
+        evaluation = await evaluate_answer(interview_id, body.question_id, body.answer_text)
+        return evaluation
+    except Exception as e:
+        raise HTTPException(500, f"Evaluation failed: {e}")
+
+
+@router.post("/{plan_id}/modules/{module_id}/interview/{interview_id}/complete")
+async def finish_interview(
+    plan_id: str,
+    module_id: str,
+    interview_id: str,
+    user_id: str = Depends(get_current_user_id),
+):
+    interview = await get_interview(interview_id)
+    if not interview or interview["user_id"] != user_id:
+        raise HTTPException(404, "Interview not found")
+    try:
+        result = await complete_interview(interview_id, plan_id, module_id)
+        return result
+    except Exception as e:
+        raise HTTPException(500, f"Could not complete interview: {e}")

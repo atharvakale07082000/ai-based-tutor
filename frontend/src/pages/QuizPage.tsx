@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { quizAPI } from '@/lib/api'
 import { runTextGeneration, runSentiment } from '@/lib/hf'
 import { Button } from '@/components/ui/Button'
-import { Badge, HFBadge } from '@/components/ui/Badge'
+import { Badge } from '@/components/ui/Badge'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { useLearnerStore } from '@/stores/learnerStore'
 import toast from 'react-hot-toast'
@@ -137,8 +137,15 @@ export default function QuizPage() {
 
   if (!quiz) {
     return (
-      <div className="min-h-screen bg-ink flex items-center justify-center text-paper/50">
-        Quiz not found
+      <div className="min-h-screen bg-ink flex flex-col items-center justify-center gap-4 text-paper/50">
+        <span className="text-4xl">📝</span>
+        <p className="text-lg">Quiz not found</p>
+        <button
+          onClick={() => navigate('/dashboard')}
+          className="px-4 py-2 rounded-xl bg-violet/20 text-violet-light text-sm hover:bg-violet/30 transition-colors"
+        >
+          ← Back to Dashboard
+        </button>
       </div>
     )
   }
@@ -209,8 +216,6 @@ export default function QuizPage() {
               Save mood
             </Button>
           </div>
-
-          <HFBadge className="mb-4" />
 
           <div className="flex gap-3 justify-center">
             <Button onClick={() => navigate('/doubts', { state: { topic: quiz.topic } })}>
@@ -323,17 +328,16 @@ export default function QuizPage() {
                         variant="ghost"
                         onClick={handleGetExplanation}
                         isLoading={explanationLoading}
-                        leftIcon={<span>🤗</span>}
+                        leftIcon={<span>✨</span>}
                       >
-                        Generate deeper explanation (Flan-T5)
+                        Generate deeper explanation
                       </Button>
                     )}
 
                     {explanation && (
                       <div className="bg-violet/10 border border-violet/20 rounded-xl p-4 text-sm text-paper/80">
                         <div className="flex items-center gap-2 mb-2">
-                          <HFBadge />
-                          <span className="text-xs text-paper/40">Flan-T5 explanation</span>
+                            <span className="text-xs text-paper/40">AI explanation</span>
                         </div>
                         {explanation}
                       </div>
