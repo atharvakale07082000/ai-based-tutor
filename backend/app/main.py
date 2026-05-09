@@ -1,3 +1,4 @@
+import asyncio
 import structlog
 import socketio
 from contextlib import asynccontextmanager
@@ -5,18 +6,30 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.db.mongo import ensure_indexes
+from app.db.mongo import ensure_indexes, get_client
 from app.routers import auth, learner, curriculum, content, quiz, doubts, progress, hf, admin, session, evals, courses, assistant
 from app.websocket import sio
 
 log = structlog.get_logger()
 
 
+async def _mongo_keepalive():
+    while True:
+        await asyncio.sleep(30)
+        try:
+            get_client().admin.command("ping")
+            log.debug("mongo_keepalive_ok")
+        except Exception as exc:
+            log.warning("mongo_keepalive_failed", error=str(exc))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     ensure_indexes()
     log.info("mongo_indexes_ensured")
+    task = asyncio.create_task(_mongo_keepalive())
     yield
+    task.cancel()
 
 
 app = FastAPI(
@@ -28,8 +41,8 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
