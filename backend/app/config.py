@@ -1,5 +1,4 @@
 import json
-from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -28,19 +27,15 @@ class Settings(BaseSettings):
 
     # App
     APP_ENV: str = "development"
-    CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:3000"]
+    # Stored as plain string; parsed into list via cors_origins property
+    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
 
-    @field_validator("CORS_ORIGINS", mode="before")
-    @classmethod
-    def parse_cors_origins(cls, v: object) -> list[str]:
-        if isinstance(v, list):
-            return v
-        if isinstance(v, str):
-            v = v.strip()
-            if v.startswith("["):
-                return json.loads(v)
-            return [o.strip() for o in v.split(",") if o.strip()]
-        return v  # type: ignore[return-value]
+    @property
+    def cors_origins(self) -> list[str]:
+        v = self.CORS_ORIGINS.strip()
+        if v.startswith("["):
+            return json.loads(v)
+        return [o.strip() for o in v.split(",") if o.strip()]
 
     # Langfuse — leave empty to disable tracing
     LANGFUSE_PUBLIC_KEY: str = ""
