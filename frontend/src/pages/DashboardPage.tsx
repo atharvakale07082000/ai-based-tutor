@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import toast from 'react-hot-toast'
-import { contentAPI, doubtsAPI, quizAPI } from '@/lib/api'
+import { contentAPI, doubtsAPI, quizAPI, progressAPI, leaderboardAPI } from '@/lib/api'
 import { useLearnerStore } from '@/stores/learnerStore'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
@@ -60,10 +60,23 @@ export default function DashboardPage() {
     queryFn: () => doubtsAPI.getSessions().then((r) => r.data),
   })
 
+  const { data: dueTopicsData } = useQuery({
+    queryKey: ['progress', 'due-topics'],
+    queryFn: () => progressAPI.dueTopics().then((r) => r.data),
+    staleTime: 1000 * 60 * 5,
+  })
+
+  const { data: leaderboardData } = useQuery({
+    queryKey: ['leaderboard'],
+    queryFn: () => leaderboardAPI.get().then((r) => r.data),
+    staleTime: 1000 * 60 * 2,
+  })
+
   const handleStartQuiz = async () => {
     setIsGeneratingQuiz(true)
     try {
-      const topic = Object.keys(topicProficiency)[0] ?? 'Python'
+      const dueTopic = dueTopics[0]?.topic
+      const topic = dueTopic ?? Object.keys(topicProficiency)[0] ?? 'Python'
       const { data } = await quizAPI.generate(topic)
       navigate(`/quiz/${data.quiz_id}`)
     } catch {
@@ -75,6 +88,9 @@ export default function DashboardPage() {
 
   const items = contentData?.items ?? []
   const sessions = sessionsData ?? []
+  const dueTopics = (dueTopicsData?.due_topics ?? []).filter((t) => t.is_due).slice(0, 5)
+  const board = leaderboardData?.board ?? []
+  const yourRank = leaderboardData?.your_rank
 
   return (
     <div style={{ padding: '24px 28px', maxWidth: 1240, margin: '0 auto' }}>
@@ -229,28 +245,61 @@ export default function DashboardPage() {
             </div>
           </Card>
 
-          {/* Quiz queue */}
+          {/* Due for review */}
           <Card padding="none">
             <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--line-1)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span className="caps" style={{ color: 'var(--ink-2)' }}>Quiz queue</span>
-              <Badge size="xs" tone="warn">3 due</Badge>
+              <span className="caps" style={{ color: 'var(--ink-2)' }}>Due for review</span>
+              <Badge size="xs" tone="warn">{dueTopics.length} due</Badge>
             </div>
-            {[
-              { t: 'Python · Functions', q: 5, due: 'Today' },
-              { t: 'ML · Regularization', q: 8, due: 'Tomorrow' },
-              { t: 'Stats · Sampling', q: 6, due: 'Friday' },
-            ].map((q, i) => (
-              <div key={i} style={{ padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 10, borderTop: i ? '1px solid var(--line-1)' : 'none' }}>
-                <div className="t-sm fg-0" style={{ fontWeight: 500, flex: 1 }}>{q.t}</div>
-                <span className="t-xs fg-3 mono">{q.q} q</span>
-                <Badge size="xs" tone={q.due === 'Today' ? 'warn' : 'outline'}>{q.due}</Badge>
+            {dueTopics.length > 0 ? dueTopics.map((t, i) => (
+              <div key={t.topic} style={{ padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 10, borderTop: i ? '1px solid var(--line-1)' : 'none' }}>
+                <div className="t-sm fg-0" style={{ fontWeight: 500, flex: 1 }}>{t.topic}</div>
+                <span className="t-xs fg-3 mono">Elo {Math.round(t.elo)}</span>
+                <Badge size="xs" tone={t.urgency >= 0.8 ? 'neg' : t.urgency >= 0.5 ? 'warn' : 'outline'}>
+                  {t.days_since_last_quiz === null ? 'New' : t.urgency >= 0.8 ? 'Urgent' : 'Due'}
+                </Badge>
               </div>
-            ))}
+            )) : (
+              <div className="t-xs fg-3" style={{ padding: '16px 14px', textAlign: 'center' }}>
+                {dueTopicsData ? 'All caught up! No reviews due.' : 'Loading due topics…'}
+              </div>
+            )}
             <div style={{ padding: 10, borderTop: '1px solid var(--line-1)' }}>
               <Button size="sm" variant="primary" full iconRight="arrow" onClick={handleStartQuiz} loading={isGeneratingQuiz}>
-                Start next quiz
+                {dueTopics[0] ? `Review ${dueTopics[0].topic}` : 'Start a quiz'}
               </Button>
             </div>
+          </Card>
+
+          {/* Leaderboard */}
+          <Card padding="none">
+            <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--line-1)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span className="caps" style={{ color: 'var(--ink-2)' }}>Leaderboard</span>
+              {yourRank && <span className="t-xs fg-3">You're #{yourRank}</span>}
+            </div>
+            {board.slice(0, 5).map((entry, i) => (
+              <div
+                key={entry.rank}
+                style={{
+                  padding: '7px 14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  borderTop: i ? '1px solid var(--line-1)' : 'none',
+                  background: entry.is_you ? 'var(--paper-2)' : 'transparent',
+                }}
+              >
+                <span className="t-xs mono fg-3" style={{ width: 18 }}>#{entry.rank}</span>
+                <span className="t-sm fg-0" style={{ flex: 1, fontWeight: entry.is_you ? 600 : 400 }}>
+                  {entry.name}{entry.is_you ? ' (you)' : ''}
+                </span>
+                <span className="t-xs fg-3 mono">{entry.xp.toLocaleString()} xp</span>
+                {entry.streak > 0 && <span className="t-xs fg-2">{entry.streak}🔥</span>}
+              </div>
+            ))}
+            {board.length === 0 && (
+              <div className="t-xs fg-3" style={{ padding: '16px 14px', textAlign: 'center' }}>Loading leaderboard…</div>
+            )}
           </Card>
         </div>
       </div>

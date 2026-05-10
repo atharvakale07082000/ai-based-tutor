@@ -1,7 +1,8 @@
 import uuid
 import structlog
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 
 from app.db.mongo import col_learners, col_quizzes, col_progress
 from app.schemas.quiz import QuizGenerateRequest, QuizSessionSchema, QuizQuestion, QuizSubmitRequest, QuizSubmitResult, EloUpdate
@@ -119,13 +120,18 @@ async def submit_quiz(
     proficiency[quiz["topic"]] = new_elo
 
     now = datetime.now(timezone.utc).isoformat()
+    # XP: 50 base + up to 50 for score + 200 bonus if topic newly mastered
+    xp_delta = 50 + int(score * 50)
+    previously_mastered = old_elo >= 700
+    if new_elo >= 700 and not previously_mastered:
+        xp_delta += 200  # mastery bonus
+
     col_learners().update_one(
         {"user_id": user_id},
         {"$set": {
             "topic_proficiency_map": proficiency,
-            "xp": learner.get("xp", 0) + int(score * 100),
             "updated_at": now,
-        }},
+        }, "$inc": {"xp": xp_delta}},
     )
 
     col_progress().insert_one({
@@ -146,10 +152,23 @@ async def submit_quiz(
         }},
     )
 
-    log.info("quiz_submitted", quiz_id=quiz_id, score=score)
+    log.info("quiz_submitted", quiz_id=quiz_id, score=score, xp_delta=xp_delta)
     return QuizSubmitResult(
         score=score,
         correct_count=correct_count,
         weak_topics=list(set(weak_topics))[:5],
         elo_update=EloUpdate(topic=quiz["topic"], old_elo=old_elo, new_elo=new_elo),
     )
+
+
+@router.post("/flashcards")
+async def generate_flashcards(
+    topic: str = Query(..., min_length=2),
+    count: int = Query(10, ge=5, le=20),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Generate AI-powered recall flashcards for a topic."""
+    from app.hf.flashcard_generator import generate_flashcards as _gen
+    log.info("flashcards_generate", topic=topic, count=count)
+    cards = await _gen(topic, count)
+    return {"topic": topic, "cards": cards, "count": len(cards)}

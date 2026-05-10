@@ -166,12 +166,23 @@ export interface QuizSubmitResult {
   elo_update: { topic: string; old_elo: number; new_elo: number }
 }
 
+export interface Flashcard {
+  id: string
+  front: string
+  back: string
+  hint: string
+  difficulty: number
+  topic: string
+}
+
 export const quizAPI = {
   generate: (topic: string, bloom_level?: string) =>
     api.post<QuizSession>('/quiz/generate', { topic, bloom_level }),
   get: (quizId: string) => api.get<QuizSession>(`/quiz/${quizId}`),
   submit: (quizId: string, answers: number[], reflection?: string) =>
     api.post<QuizSubmitResult>(`/quiz/${quizId}/submit`, { answers, reflection }),
+  flashcards: (topic: string, count = 10) =>
+    api.get<{ topic: string; cards: Flashcard[]; count: number }>('/quiz/flashcards', { params: { topic, count } }),
 }
 
 // ─── Doubts ───────────────────────────────────────────────────────────────────
@@ -218,9 +229,48 @@ export interface ProgressData {
   mood_timeline: Array<{ session_id: string; mood: string; date: string }>
 }
 
+export interface DueTopic {
+  topic: string
+  elo: number
+  days_since_last_quiz: number | null
+  is_due: boolean
+  urgency: number
+}
+
 export const progressAPI = {
   get: () => api.get<ProgressData>('/progress'),
   downloadReport: () => api.get('/progress/report', { responseType: 'blob' }),
+  dueTopics: () => api.get<{ due_topics: DueTopic[] }>('/progress/due-topics'),
+  recordStudySession: (body: { minutes: number; topic?: string; activity?: string }) =>
+    api.post<{ ok: boolean; xp_earned: number }>('/progress/study-session', body),
+}
+
+// ─── Leaderboard ──────────────────────────────────────────────────────────────
+
+export interface LeaderboardEntry {
+  rank: number
+  name: string
+  xp: number
+  streak: number
+  is_you: boolean
+}
+
+export interface LeaderboardResponse {
+  board: LeaderboardEntry[]
+  total_learners: number
+  your_rank: number | null
+  you: LeaderboardEntry | null
+}
+
+export const leaderboardAPI = {
+  get: () => api.get<LeaderboardResponse>('/leaderboard'),
+}
+
+// ─── Curriculum graph ─────────────────────────────────────────────────────────
+
+export const curriculumGraphAPI = {
+  get: () =>
+    api.get<{ nodes: Array<{ id: string; domain: string; elo: number | null; mastered: boolean; started: boolean }>; edges: Array<{ from: string; to: string }> }>('/curriculum/graph'),
 }
 
 // ─── HF ──────────────────────────────────────────────────────────────────────

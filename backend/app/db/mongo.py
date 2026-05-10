@@ -42,6 +42,8 @@ def col_chat_evals() -> Collection:          return get_db()["chat_evals"]
 def col_trending_topics() -> Collection:     return get_db()["trending_topics"]
 def col_feed_items() -> Collection:          return get_db()["feed_items"]
 def col_feed_interactions() -> Collection:   return get_db()["feed_interactions"]
+def col_study_sessions() -> Collection:      return get_db()["study_sessions"]
+def col_xp_events() -> Collection:           return get_db()["xp_events"]
 
 
 # ─── Startup ──────────────────────────────────────────────────────────────────
@@ -62,3 +64,5 @@ def ensure_indexes() -> None:
     col_feed_items().create_index([("discovered_at", DESCENDING)])
     col_feed_items().create_index([("expires_at", ASCENDING)])
     col_feed_interactions().create_index([("user_id", ASCENDING), ("item_id", ASCENDING)])
+    col_study_sessions().create_index([("learner_id", ASCENDING), ("recorded_at", DESCENDING)])
+    col_xp_events().create_index([("user_id", ASCENDING), ("created_at", DESCENDING)])

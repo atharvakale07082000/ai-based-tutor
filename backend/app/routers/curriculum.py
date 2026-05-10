@@ -76,3 +76,38 @@ async def generate_curriculum(user_id: str = Depends(get_current_user_id)):
     )
 
     return {"items": curriculum_path, "version": new_version}
+
+
+@router.get("/graph")
+async def get_curriculum_graph(user_id: str = Depends(get_current_user_id)):
+    """
+    Return the topic dependency graph as nodes + directed edges.
+    Used for the Progress page dependency visualization.
+    """
+    from app.prompts.loader import get_curriculum_config
+    cfg = get_curriculum_config()
+    topic_graph: dict[str, list[str]] = cfg.get("topic_graph", {})
+    prerequisites: dict[str, list[str]] = cfg.get("prerequisites", {})
+
+    learner = col_learners().find_one({"user_id": user_id}, PROJ)
+    proficiency = (learner or {}).get("topic_proficiency_map", {})
+
+    nodes = []
+    for domain, subtopics in topic_graph.items():
+        for st in subtopics:
+            elo = proficiency.get(st)
+            nodes.append({
+                "id": st,
+                "domain": domain,
+                "elo": elo,
+                "mastered": elo is not None and elo >= 700,
+                "started": elo is not None,
+            })
+
+    edges = [
+        {"from": prereq, "to": topic}
+        for topic, prereqs in prerequisites.items()
+        for prereq in prereqs
+    ]
+
+    return {"nodes": nodes, "edges": edges}

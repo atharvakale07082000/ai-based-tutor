@@ -144,3 +144,229 @@ topic_graph:
     - Database Indexing & Optimization
     - Caching Strategies (Redis)
     - Distributed Systems Concepts
+
+prerequisites:
+  # Python Programming
+  Control Flow & Loops:
+    - Variables & Data Types
+  Functions & Closures:
+    - Control Flow & Loops
+  Object-Oriented Programming:
+    - Functions & Closures
+  File I/O & Context Managers:
+    - Functions & Closures
+  Async Programming:
+    - Functions & Closures
+  Testing & Debugging:
+    - Object-Oriented Programming
+  Packaging & Modules:
+    - Functions & Closures
+
+  # Machine Learning
+  Decision Trees & Random Forests:
+    - Linear & Logistic Regression
+  Support Vector Machines:
+    - Linear & Logistic Regression
+  Neural Networks Basics:
+    - Linear & Logistic Regression
+  Model Evaluation & Metrics:
+    - Linear & Logistic Regression
+  Feature Engineering:
+    - Exploratory Data Analysis
+    - Linear & Logistic Regression
+  Cross-Validation & Overfitting:
+    - Model Evaluation & Metrics
+  Ensemble Methods:
+    - Decision Trees & Random Forests
+
+  # Data Science
+  Pandas DataFrames:
+    - NumPy & Array Operations
+  Exploratory Data Analysis:
+    - Pandas DataFrames
+  Data Cleaning & Preprocessing:
+    - Pandas DataFrames
+  Data Visualization (Matplotlib/Seaborn):
+    - Exploratory Data Analysis
+  SQL & Database Queries:
+    - Exploratory Data Analysis
+  Big Data Concepts:
+    - SQL & Database Queries
+    - Data Warehouse Design
+
+  # Web Development
+  CSS & Flexbox/Grid:
+    - HTML & Semantic Markup
+  JavaScript Fundamentals:
+    - HTML & Semantic Markup
+  React & Component Model:
+    - JavaScript Fundamentals
+  REST API Design:
+    - JavaScript Fundamentals
+  Authentication & Authorization:
+    - REST API Design
+  Databases & ORM:
+    - REST API Design
+  Deployment & CI/CD:
+    - Docker & Containerization
+
+  # Mathematics
+  Calculus & Differentiation:
+    - Linear Algebra
+  Probability Theory:
+    - Calculus & Differentiation
+  Statistics & Distributions:
+    - Probability Theory
+  Optimization:
+    - Calculus & Differentiation
+    - Linear Algebra
+
+  # Deep Learning
+  Backpropagation & Gradients:
+    - Neural Networks Basics
+    - Calculus & Differentiation
+  CNNs for Vision:
+    - Backpropagation & Gradients
+  RNNs & LSTMs:
+    - Backpropagation & Gradients
+  Transformers & Attention:
+    - RNNs & LSTMs
+  Transfer Learning:
+    - CNNs for Vision
+    - Transformers & Attention
+  Model Fine-tuning:
+    - Transfer Learning
+
+  # Natural Language Processing
+  Word Embeddings:
+    - Tokenization & Text Preprocessing
+  Sequence Models:
+    - Word Embeddings
+    - RNNs & LSTMs
+  Named Entity Recognition:
+    - Sequence Models
+  Text Classification:
+    - Word Embeddings
+  Large Language Models:
+    - Transformers & Attention
+    - Text Classification
+
+  # Statistics
+  Inferential Statistics:
+    - Descriptive Statistics
+  Hypothesis Testing:
+    - Inferential Statistics
+    - Probability Theory
+  Regression Analysis:
+    - Inferential Statistics
+    - Linear & Logistic Regression
+  Bayesian Statistics:
+    - Probability Theory
+    - Hypothesis Testing
+  A/B Testing:
+    - Hypothesis Testing
+
+  # Data Engineering
+  Apache Kafka Streams:
+    - Data Pipeline Architecture
+  Apache Spark & PySpark:
+    - Data Pipeline Architecture
+  dbt (Data Build Tool):
+    - SQL & Database Queries
+  Apache Iceberg & Delta Lake:
+    - Apache Spark & PySpark
+  Medallion Architecture:
+    - Apache Iceberg & Delta Lake
+  Airflow & Workflow Orchestration:
+    - Data Pipeline Architecture
+  Data Quality & Great Expectations:
+    - Data Pipeline Architecture
+  Streaming vs Batch Processing:
+    - Apache Kafka Streams
+    - Apache Spark & PySpark
+  Data Warehouse Design:
+    - SQL & Database Queries
+
+  # DevOps
+  Docker & Containerization:
+    - Linux & Shell Scripting
+  Kubernetes Fundamentals:
+    - Docker & Containerization
+  Helm Chart Development:
+    - Kubernetes Fundamentals
+  GitOps with ArgoCD:
+    - Kubernetes Fundamentals
+  CI/CD Pipeline Design:
+    - Docker & Containerization
+  Infrastructure as Code (Terraform):
+    - Cloud Security & IAM
+  Platform Engineering:
+    - Kubernetes Fundamentals
+  OpenTelemetry Observability:
+    - Docker & Containerization
+  SRE Practices & SLOs:
+    - OpenTelemetry Observability
+
+  # Cloud Computing
+  Serverless Containers (Fargate, Cloud Run):
+    - AWS Core Services
+    - Docker & Containerization
+  FinOps & Cloud Cost Optimization:
+    - AWS Core Services
+  Multi-Cloud Networking:
+    - AWS Core Services
+  Cloud Security & IAM:
+    - AWS Core Services
+  Cloud-Native Architecture:
+    - Kubernetes Fundamentals
+    - AWS Core Services
+
+  # AI Engineering
+  RAG with Vector Databases:
+    - Large Language Models
+    - Word Embeddings
+  LLM Evaluation & Benchmarks:
+    - Large Language Models
+  AI Agent Orchestration (LangGraph):
+    - Large Language Models
+  Model Quantization & Edge Deployment:
+    - Model Fine-tuning
+  LLMOps & Model Serving:
+    - LLM Evaluation & Benchmarks
+  Fine-tuning Open-Source LLMs:
+    - Model Fine-tuning
+    - Large Language Models
+  AI Safety & Alignment Basics:
+    - Large Language Models
+
+  # Cybersecurity
+  Zero Trust Architecture:
+    - Network Security Fundamentals
+  Threat Modeling (STRIDE):
+    - Network Security Fundamentals
+  Penetration Testing Basics:
+    - Network Security Fundamentals
+  Cryptography & PKI:
+    - Network Security Fundamentals
+  Prompt Injection Defense:
+    - Large Language Models
+    - OWASP Top 10
+  Incident Response:
+    - Threat Modeling (STRIDE)
+
+  # Software Engineering
+  Microservices Architecture:
+    - System Design Fundamentals
+  Event-Driven Architecture:
+    - Microservices Architecture
+  Domain-Driven Design:
+    - Microservices Architecture
+  API Design Best Practices:
+    - REST API Design
+  Database Indexing & Optimization:
+    - SQL & Database Queries
+  Caching Strategies (Redis):
+    - Database Indexing & Optimization
+  Distributed Systems Concepts:
+    - Microservices Architecture
+    - Event-Driven Architecture

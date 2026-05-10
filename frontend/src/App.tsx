@@ -9,6 +9,7 @@ import { TopBar } from '@/components/layout/TopBar'
 import { AgentStatusBar } from '@/components/agents/AgentStatusBar'
 import { CommandPalette } from '@/components/layout/CommandPalette'
 import { PageWrapper } from '@/components/layout/PageWrapper'
+import { PomodoroTimer } from '@/components/ui/PomodoroTimer'
 import { useAgentSocket } from '@/hooks/useAgentSocket'
 
 const LandingPage        = lazy(() => import('@/pages/LandingPage'))
@@ -24,6 +25,7 @@ const CoursePlannerPage  = lazy(() => import('@/pages/CoursePlannerPage'))
 const CourseDetailPage   = lazy(() => import('@/pages/CourseDetailPage'))
 const ModuleInterviewPage = lazy(() => import('@/pages/ModuleInterviewPage'))
 const AssistantPage      = lazy(() => import('@/pages/AssistantPage'))
+const FlashcardsPage     = lazy(() => import('@/pages/FlashcardsPage'))
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 1000 * 60 * 2, retry: 2 } },
@@ -114,6 +116,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
         </main>
       </div>
       <CommandPalette />
+      <PomodoroTimer />
     </div>
   )
 }
@@ -149,6 +152,7 @@ export default function App() {
               <Route path="/courses/:planId" element={<PrivateRoute><PageWrapper><CourseDetailPage /></PageWrapper></PrivateRoute>} />
               <Route path="/courses/:planId/modules/:moduleId/interview" element={<PrivateRoute><PageWrapper><ModuleInterviewPage /></PageWrapper></PrivateRoute>} />
               <Route path="/assistant" element={<PrivateRoute><PageWrapper><AssistantPage /></PageWrapper></PrivateRoute>} />
+              <Route path="/flashcards" element={<PrivateRoute><PageWrapper><FlashcardsPage /></PageWrapper></PrivateRoute>} />
               <Route path="/login" element={<Navigate to="/" replace />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
