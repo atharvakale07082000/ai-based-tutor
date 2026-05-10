@@ -6,9 +6,9 @@ from pydantic import BaseModel
 
 from app.db.mongo import col_learners, col_quizzes, col_progress
 from app.schemas.quiz import QuizGenerateRequest, QuizSessionSchema, QuizQuestion, QuizSubmitRequest, QuizSubmitResult, EloUpdate
-from app.agents.orchestrator import orchestrator
 from app.agents.progress_agent import calculate_elo_update
 from app.auth.jwt import get_current_user_id
+from app.hf.quiz_questions import get_or_generate_quiz_questions, bloom_for_elo
 
 router = APIRouter()
 log = structlog.get_logger()
@@ -31,24 +31,11 @@ async def generate_quiz(
     learner = _get_learner_or_404(user_id)
     log.info("quiz_generate_start", topic=body.topic, learner_id=learner["id"])
 
-    state = {
-        "learner_id": learner["id"],
-        "task_type": "quiz",
-        "messages": [],
-        "learner_profile": {},
-        "topic_proficiency": learner.get("topic_proficiency_map") or {},
-        "current_topic": body.topic,
-        "quiz_questions": [],
-        "curriculum_path": [],
-        "doubt_response": "",
-        "progress_delta": {},
-        "bloom_level": body.bloom_level or "",
-        "error": None,
-    }
+    proficiency = learner.get("topic_proficiency_map") or {}
+    elo = proficiency.get(body.topic, 500.0)
+    bloom_level = body.bloom_level or bloom_for_elo(elo)
 
-    result = await orchestrator.ainvoke(state)
-    questions = result.get("quiz_questions", [])
-    bloom_level = result.get("bloom_level", "understand")
+    questions = await get_or_generate_quiz_questions(body.topic, bloom_level, count=5)
 
     quiz_id = str(uuid.uuid4())
     col_quizzes().insert_one({

@@ -186,6 +186,17 @@ def _build_plan(goal: str, user_id: str, raw: dict) -> dict:
 
 # ─── Public API ───────────────────────────────────────────────────────────────
 
+async def _pregenerate_quizzes_for_plan(plan: dict) -> None:
+    """Background task: pre-generate quiz questions for all module topics."""
+    from app.hf.quiz_questions import pregenerate_topic_questions
+    for module in plan.get("modules", []):
+        for topic in module.get("topics", []):
+            try:
+                await pregenerate_topic_questions(topic)
+            except Exception as e:
+                log.warning("quiz_pregenerate_error", topic=topic, error=str(e))
+
+
 async def create_course_plan(goal: str, user_id: str) -> dict:
     log.info("course_planner_start", goal=goal, user_id=user_id)
     search_results = await asyncio.to_thread(_search_web, goal)
@@ -193,6 +204,8 @@ async def create_course_plan(goal: str, user_id: str) -> dict:
     plan = _build_plan(goal, user_id, raw)
     await _save_plan(plan)
     log.info("course_planner_plan_saved", plan_id=plan["plan_id"])
+    # Fire-and-forget: pre-populate quiz bank for all module topics
+    asyncio.create_task(_pregenerate_quizzes_for_plan(plan))
     return plan
 
 

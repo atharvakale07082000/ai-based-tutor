@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.db.mongo import col_content, col_learners
 from app.auth.jwt import get_current_user_id
 from app.hf.recommendation_agent import rank_content_for_learner
+from app.hf.content_generator import generate_content_body
 
 router = APIRouter()
 log = structlog.get_logger()
@@ -13,14 +14,14 @@ log = structlog.get_logger()
 PROJ = {"_id": 0}
 
 SEED_CONTENT = [
-    {"title": "Python Variables and Data Types Deep Dive", "content_type": "article", "topic": "Python Programming", "subtopic": "Variables & Data Types", "difficulty": 0.2, "estimated_minutes": 12, "body": "Python supports multiple data types including integers, floats, strings, booleans, lists, tuples, sets, and dictionaries. Understanding these is foundational to all Python development.", "video_url": None, "is_ai_recommended": True},
-    {"title": "Machine Learning Fundamentals with scikit-learn", "content_type": "video", "topic": "Machine Learning", "subtopic": "Linear & Logistic Regression", "difficulty": 0.4, "estimated_minutes": 25, "body": "Learn the core concepts of supervised learning using scikit-learn. We cover train/test splits, model fitting, and evaluation metrics.", "video_url": None, "is_ai_recommended": True},
-    {"title": "Building Your First Neural Network", "content_type": "exercise", "topic": "Deep Learning", "subtopic": "Neural Networks Basics", "difficulty": 0.65, "estimated_minutes": 45, "body": "Hands-on exercise: build a 3-layer neural network from scratch using NumPy, then replicate it in PyTorch.", "video_url": None, "is_ai_recommended": False},
-    {"title": "Pandas DataFrame Operations Masterclass", "content_type": "interactive", "topic": "Data Science", "subtopic": "Pandas DataFrames", "difficulty": 0.35, "estimated_minutes": 30, "body": "Interactive notebook covering groupby, merge, pivot tables, and advanced indexing operations in pandas.", "video_url": None, "is_ai_recommended": True},
-    {"title": "Understanding Transformers and Attention Mechanisms", "content_type": "article", "topic": "Natural Language Processing", "subtopic": "Transformers & Attention", "difficulty": 0.75, "estimated_minutes": 20, "body": "A deep dive into the Transformer architecture: self-attention, multi-head attention, positional encoding, and how BERT and GPT build on this foundation.", "video_url": None, "is_ai_recommended": False},
-    {"title": "React Hooks: useState, useEffect, and Custom Hooks", "content_type": "video", "topic": "Web Development", "subtopic": "React & Component Model", "difficulty": 0.45, "estimated_minutes": 35, "body": "Master React's functional component model with hooks. Learn when and how to use built-in hooks and compose them into custom hooks for shared logic.", "video_url": None, "is_ai_recommended": True},
-    {"title": "Statistics: Hypothesis Testing in Practice", "content_type": "exercise", "topic": "Statistics", "subtopic": "Hypothesis Testing", "difficulty": 0.55, "estimated_minutes": 40, "body": "Work through t-tests, chi-squared tests, and ANOVA with real datasets. Learn p-values, confidence intervals, and how to avoid common pitfalls.", "video_url": None, "is_ai_recommended": False},
-    {"title": "Linear Algebra for Machine Learning", "content_type": "article", "topic": "Mathematics", "subtopic": "Linear Algebra", "difficulty": 0.5, "estimated_minutes": 18, "body": "Vectors, matrices, dot products, eigenvalues, and SVD — all the linear algebra you need for understanding ML algorithms.", "video_url": None, "is_ai_recommended": True},
+    {"title": "Python Variables and Data Types Deep Dive", "content_type": "article", "topic": "Python Programming", "subtopic": "Variables & Data Types", "difficulty": 0.2, "estimated_minutes": 12, "body": "An introduction to Python's core data types.", "video_url": None, "is_ai_recommended": True},
+    {"title": "Machine Learning Fundamentals with scikit-learn", "content_type": "video", "topic": "Machine Learning", "subtopic": "Linear & Logistic Regression", "difficulty": 0.4, "estimated_minutes": 25, "body": "Core concepts of supervised learning using scikit-learn.", "video_url": None, "is_ai_recommended": True},
+    {"title": "Building Your First Neural Network", "content_type": "exercise", "topic": "Deep Learning", "subtopic": "Neural Networks Basics", "difficulty": 0.65, "estimated_minutes": 45, "body": "Build a 3-layer neural network from scratch using NumPy and PyTorch.", "video_url": None, "is_ai_recommended": False},
+    {"title": "Pandas DataFrame Operations Masterclass", "content_type": "interactive", "topic": "Data Science", "subtopic": "Pandas DataFrames", "difficulty": 0.35, "estimated_minutes": 30, "body": "Interactive exploration of groupby, merge, pivot tables, and indexing in pandas.", "video_url": None, "is_ai_recommended": True},
+    {"title": "Understanding Transformers and Attention Mechanisms", "content_type": "article", "topic": "Natural Language Processing", "subtopic": "Transformers & Attention", "difficulty": 0.75, "estimated_minutes": 20, "body": "A deep dive into the Transformer architecture and attention mechanisms.", "video_url": None, "is_ai_recommended": False},
+    {"title": "React Hooks: useState, useEffect, and Custom Hooks", "content_type": "video", "topic": "Web Development", "subtopic": "React & Component Model", "difficulty": 0.45, "estimated_minutes": 35, "body": "Master React's functional component model with built-in and custom hooks.", "video_url": None, "is_ai_recommended": True},
+    {"title": "Statistics: Hypothesis Testing in Practice", "content_type": "exercise", "topic": "Statistics", "subtopic": "Hypothesis Testing", "difficulty": 0.55, "estimated_minutes": 40, "body": "Hands-on practice with t-tests, chi-squared tests, and ANOVA on real datasets.", "video_url": None, "is_ai_recommended": False},
+    {"title": "Linear Algebra for Machine Learning", "content_type": "article", "topic": "Mathematics", "subtopic": "Linear Algebra", "difficulty": 0.5, "estimated_minutes": 18, "body": "Vectors, matrices, eigenvalues, and SVD for ML practitioners.", "video_url": None, "is_ai_recommended": True},
 ]
 
 
@@ -87,4 +88,36 @@ async def get_content(item_id: str, user_id: str = Depends(get_current_user_id))
     item = col_content().find_one({"id": item_id}, PROJ)
     if not item:
         raise HTTPException(status_code=404, detail="Content not found")
+
+    if len(item.get("body", "")) < 400:
+        log.info("content_body_short_generating", item_id=item_id)
+        generated_body = await generate_content_body(
+            topic=item.get("topic", ""),
+            subtopic=item.get("subtopic", ""),
+            content_type=item.get("content_type", "article"),
+            difficulty=item.get("difficulty", 0.5),
+        )
+        col_content().update_one({"id": item_id}, {"$set": {"body": generated_body}})
+        item["body"] = generated_body
+
+    return item
+
+
+@router.post("/{item_id}/regenerate")
+async def regenerate_content(item_id: str, user_id: str = Depends(get_current_user_id)):
+    """Force-regenerate the AI-written body for a content item regardless of current length."""
+    _ensure_seed()
+    item = col_content().find_one({"id": item_id}, PROJ)
+    if not item:
+        raise HTTPException(status_code=404, detail="Content not found")
+
+    log.info("content_body_force_regenerating", item_id=item_id)
+    generated_body = await generate_content_body(
+        topic=item.get("topic", ""),
+        subtopic=item.get("subtopic", ""),
+        content_type=item.get("content_type", "article"),
+        difficulty=item.get("difficulty", 0.5),
+    )
+    col_content().update_one({"id": item_id}, {"$set": {"body": generated_body}})
+    item["body"] = generated_body
     return item

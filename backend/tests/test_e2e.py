@@ -52,6 +52,10 @@ async def _mock_stream(*args, **kwargs):
     return _gen()
 
 
+async def _mock_get_or_generate(topic: str, bloom_level: str = "apply", count: int = 5) -> list:
+    return [_make_question(bloom_level, topic) for _ in range(count)]
+
+
 @contextmanager
 def mock_all_agents():
     """Patch call_tool in every agent module + HF streaming responses."""
@@ -61,7 +65,9 @@ def mock_all_agents():
          patch("app.agents.doubt_agent.call_tool",       side_effect=_mock_tool), \
          patch("app.agents.planner_agent.call_tool",     side_effect=_mock_tool), \
          patch("app.agents.doubt_agent.stream_doubt_response", side_effect=_mock_stream), \
-         patch("app.routers.doubts.stream_doubt_response",     side_effect=_mock_stream):
+         patch("app.routers.doubts.stream_doubt_response",     side_effect=_mock_stream), \
+         patch("app.routers.quiz.get_or_generate_quiz_questions", side_effect=_mock_get_or_generate), \
+         patch("app.hf.quiz_questions.get_or_generate_quiz_questions", side_effect=_mock_get_or_generate):
         yield
 
 

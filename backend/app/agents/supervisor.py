@@ -103,8 +103,15 @@ async def supervisor_node(state: AgentState) -> dict:
                 "session_complete": True,
             }
 
-        # LLM call for dynamic routing
-        decision, reason = await _llm_decide(state)
+        # Rule-based routing first — deterministic and fast.
+        # LLM is called only for the genuinely ambiguous adaptive case.
+        decision, reason = _rule_based_fallback(state)
+        if decision == "FINISH" and not _is_ambiguous(state):
+            # Rule-based says FINISH and nothing is ambiguous — trust it
+            pass
+        elif decision == "FINISH":
+            # Ambiguous: ask LLM
+            decision, reason = await _llm_decide(state)
 
         log.info("supervisor_decision", decision=decision, reason=reason, iteration=iteration)
         span.update(output={"decision": decision, "reason": reason})
@@ -191,6 +198,20 @@ def _parse_decision(raw: str) -> tuple[str, str]:
             return agent, "extracted from plain text"
 
     return "FINISH", "could not parse LLM response"
+
+
+def _is_ambiguous(state: AgentState) -> bool:
+    """Return True only when no deterministic rule clearly applies."""
+    curriculum = state.get("curriculum_path") or []
+    progress_delta = state.get("progress_delta") or {}
+    task = state.get("task_type", "")
+    if not curriculum:
+        return False  # clear: need curriculum
+    if task in {"quiz", "doubt"}:
+        return False  # clear: task is set
+    if progress_delta.get("score") is not None and not progress_delta.get("elo_processed"):
+        return False  # clear: need progress update
+    return True  # curriculum exists, no pending task → genuinely ambiguous
 
 
 def _rule_based_fallback(state: AgentState) -> tuple[str, str]:

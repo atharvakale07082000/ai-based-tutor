@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation } from '@tanstack/react-query'
 import ReactMarkdown from 'react-markdown'
 import { contentAPI, quizAPI } from '@/lib/api'
 import { runImageCaption } from '@/lib/hf'
@@ -10,6 +10,14 @@ import { Icon } from '@/components/ui/Icon'
 import { Card } from '@/components/ui/Card'
 import toast from 'react-hot-toast'
 
+const SECTIONS = [
+  { label: 'Introduction',  id: 'introduction'  },
+  { label: 'Core Concepts', id: 'core-concepts'  },
+  { label: 'Examples',      id: 'examples'       },
+  { label: 'Practice',      id: 'practice'       },
+  { label: 'Summary',       id: 'summary'        },
+]
+
 export default function ModulePlayerPage() {
   const { moduleId } = useParams<{ moduleId: string }>()
   const navigate = useNavigate()
@@ -18,11 +26,20 @@ export default function ModulePlayerPage() {
   const [doubtInput, setDoubtInput] = useState('')
   const [captionLoading, setCaptionLoading] = useState(false)
   const dropRef = useRef<HTMLDivElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
 
   const { data: module, isLoading } = useQuery({
     queryKey: ['content', 'module', moduleId],
     queryFn: () => contentAPI.get(moduleId!).then((r) => r.data),
     enabled: !!moduleId,
+    staleTime: 0,
+    refetchOnMount: true,
+  })
+
+  const regenerateMutation = useMutation({
+    mutationFn: () => contentAPI.regenerate(moduleId!),
+    onSuccess: () => toast.success('Content regeneration started'),
+    onError: () => toast.error('Could not regenerate content'),
   })
 
   const handleImageDrop = async (e: React.DragEvent<HTMLDivElement>) => {
@@ -51,10 +68,12 @@ export default function ModulePlayerPage() {
     }
   }
 
+  const bodyIsShort = !module?.body || module.body.length < 400
+
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', height: '100%', overflow: 'hidden' }}>
       {/* Main content */}
-      <div style={{ overflowY: 'auto', padding: '24px 32px' }}>
+      <div ref={contentRef} style={{ overflowY: 'auto', padding: '24px 32px' }}>
         {isLoading ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div className="skel" style={{ height: 32, width: '60%', borderRadius: 6 }} />
@@ -68,7 +87,19 @@ export default function ModulePlayerPage() {
               <Badge tone="neutral" size="xs">{module.estimated_minutes}m</Badge>
               <Badge tone="outline" size="xs">{module.topic}</Badge>
             </div>
-            <h1 className="serif" style={{ fontSize: 32, fontWeight: 400, margin: '0 0 20px', letterSpacing: '-0.02em', lineHeight: 1.2 }}>{module.title}</h1>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 20 }}>
+              <h1 className="serif" style={{ fontSize: 32, fontWeight: 400, margin: 0, letterSpacing: '-0.02em', lineHeight: 1.2, flex: 1 }}>{module.title}</h1>
+              <Button
+                size="sm"
+                variant="ghost"
+                icon="refresh"
+                onClick={() => regenerateMutation.mutate()}
+                disabled={regenerateMutation.isPending}
+                style={{ flexShrink: 0, marginTop: 6 }}
+              >
+                {regenerateMutation.isPending ? 'Regenerating…' : 'Regenerate'}
+              </Button>
+            </div>
 
             {/* Video player */}
             {module.content_type === 'video' && module.video_url && (
@@ -87,9 +118,40 @@ export default function ModulePlayerPage() {
             )}
 
             {/* Body */}
-            <div className="t-md fg-1" style={{ lineHeight: 1.7, maxWidth: 680 }}>
-              <ReactMarkdown>{module.body}</ReactMarkdown>
-            </div>
+            {bodyIsShort ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 680 }}>
+                <div className="skel" style={{ height: 24, width: '45%', borderRadius: 4 }} />
+                {[1, 2, 3].map((i) => <div key={i} className="skel" style={{ height: 14, borderRadius: 4 }} />)}
+                <div className="skel" style={{ height: 24, width: '38%', borderRadius: 4, marginTop: 12 }} />
+                {[1, 2, 3, 4].map((i) => <div key={i} className="skel" style={{ height: 14, borderRadius: 4 }} />)}
+                <div className="t-sm fg-3" style={{ marginTop: 8 }}>Generating content…</div>
+              </div>
+            ) : (
+              <div className="t-md fg-1" style={{ maxWidth: 680 }}>
+                <ReactMarkdown
+                  components={{
+                    h2: ({ children }) => {
+                      const id = String(children).toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+                      return <h2 id={id} style={{ fontSize: 20, fontWeight: 600, marginTop: 32, marginBottom: 12, color: 'var(--ink-0)' }}>{children}</h2>
+                    },
+                    h3: ({ children }) => <h3 style={{ fontSize: 16, fontWeight: 600, marginTop: 20, marginBottom: 8 }}>{children}</h3>,
+                    p: ({ children }) => <p style={{ marginBottom: 14, lineHeight: 1.75 }}>{children}</p>,
+                    code: ({ children, className }) => {
+                      const isBlock = className?.includes('language-')
+                      return isBlock
+                        ? <pre style={{ background: 'var(--paper-2)', border: '1px solid var(--line-1)', borderRadius: 8, padding: '14px 16px', overflowX: 'auto', marginBottom: 16 }}><code style={{ fontSize: 13, fontFamily: 'var(--font-mono)' }}>{children}</code></pre>
+                        : <code style={{ background: 'var(--paper-2)', padding: '2px 6px', borderRadius: 4, fontSize: 13, fontFamily: 'var(--font-mono)' }}>{children}</code>
+                    },
+                    ul: ({ children }) => <ul style={{ paddingLeft: 20, marginBottom: 14, lineHeight: 1.75 }}>{children}</ul>,
+                    ol: ({ children }) => <ol style={{ paddingLeft: 20, marginBottom: 14, lineHeight: 1.75 }}>{children}</ol>,
+                    li: ({ children }) => <li style={{ marginBottom: 4 }}>{children}</li>,
+                    strong: ({ children }) => <strong style={{ fontWeight: 600, color: 'var(--ink-0)' }}>{children}</strong>,
+                  }}
+                >
+                  {module.body}
+                </ReactMarkdown>
+              </div>
+            )}
 
             {/* Image drop zone */}
             <div
@@ -154,14 +216,18 @@ export default function ModulePlayerPage() {
         {/* Table of contents */}
         <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--line-1)' }}>
           <div className="caps fg-2" style={{ marginBottom: 8 }}>Contents</div>
-          {['Introduction', 'Core Concepts', 'Examples', 'Practice', 'Summary'].map((s) => (
+          {SECTIONS.map((s) => (
             <button
-              key={s}
+              key={s.id}
               className="t-sm fg-1"
               style={{ display: 'block', width: '100%', textAlign: 'left', padding: '5px 8px', borderRadius: 'var(--r-1)', background: 'transparent', border: 0, cursor: 'pointer', fontFamily: 'inherit' }}
               onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--paper-2)')}
               onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-            >{s}</button>
+              onClick={() => {
+                const el = document.getElementById(s.id)
+                el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+              }}
+            >{s.label}</button>
           ))}
         </div>
 

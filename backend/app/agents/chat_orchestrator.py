@@ -239,7 +239,7 @@ def _create_quiz_sync(learner_id: str, topic: str, bloom: str, questions: list) 
 
 
 async def _exec_quiz(topic, user_ctx, user_id):
-    from app.agents.orchestrator import orchestrator
+    from app.hf.quiz_questions import get_or_generate_quiz_questions, bloom_for_elo
 
     resolved_topic = topic or (user_ctx.get("goal_vector") or ["Python Programming"])[0]
     yield {"type": "token", "content": f"Generating a quiz on **{resolved_topic}**…\n\n"}
@@ -250,30 +250,17 @@ async def _exec_quiz(topic, user_ctx, user_id):
             yield {"type": "error", "message": "Learner profile not found"}
             return
 
-        state = {
-            "learner_id": learner["id"],
-            "task_type": "quiz",
-            "messages": [],
-            "learner_profile": {},
-            "topic_proficiency": learner.get("topic_proficiency_map") or {},
-            "current_topic": resolved_topic,
-            "quiz_questions": [],
-            "curriculum_path": [],
-            "doubt_response": "",
-            "progress_delta": {},
-            "bloom_level": "",
-            "error": None,
-        }
+        proficiency = learner.get("topic_proficiency_map") or {}
+        elo = proficiency.get(resolved_topic, 500.0)
+        bloom = bloom_for_elo(elo)
 
-        result = await orchestrator.ainvoke(state)
-        questions = result.get("quiz_questions", [])
-        bloom = result.get("bloom_level", "understand")
+        questions = await get_or_generate_quiz_questions(resolved_topic, bloom, count=5)
 
         quiz_id = await asyncio.to_thread(
             _create_quiz_sync, learner["id"], resolved_topic, bloom, questions
         )
 
-        yield {"type": "token", "content": f"Ready! {len(questions)} questions at **{bloom}** level.\n"}
+        yield {"type": "token", "content": f"Ready! **{len(questions)} questions** at **{bloom}** level.\n"}
         yield {
             "type": "action", "kind": "quiz_created",
             "payload": {

@@ -138,6 +138,7 @@ export const contentAPI = {
   list: (params: ContentListParams = {}) =>
     api.get<{ items: ContentItem[]; total: number; has_more: boolean }>('/content', { params }),
   get: (id: string) => api.get<ContentItem>(`/content/${id}`),
+  regenerate: (id: string) => api.post(`/content/${id}/regenerate`),
 }
 
 // ─── Quiz ─────────────────────────────────────────────────────────────────────
