@@ -20,17 +20,4 @@ celery_app.conf.update(
     worker_prefetch_multiplier=1,
 )
 
-celery_app.conf.beat_schedule = {
-    "weekly-curriculum-regeneration": {
-        "task": "app.tasks.task_definitions.regenerate_curriculum",
-        "schedule": crontab(day_of_week=1, hour=0, minute=0),  # Monday midnight UTC
-    },
-    "weekly-progress-digest": {
-        "task": "app.tasks.task_definitions.send_progress_digest",
-        "schedule": crontab(day_of_week=5, hour=8, minute=0),  # Friday 8am UTC
-    },
-    "daily-trend-discovery": {
-        "task": "app.tasks.task_definitions.discover_trending_topics",
-        "schedule": crontab(hour=3, minute=0),  # Every day at 03:00 UTC
-    },
-}
+celery_app.conf.beat_schedule = {}
