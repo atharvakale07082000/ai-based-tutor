@@ -321,6 +321,56 @@ export const coursesAPI = {
     api.post(`/courses/${planId}/modules/${moduleId}/interview/${interviewId}/complete`),
 }
 
+// ─── Feed ─────────────────────────────────────────────────────────────────────
+
+export interface FeedItem {
+  id: string
+  title: string
+  summary: string
+  url: string
+  source: string
+  domain: string
+  subtopic: string
+  content_type: 'article' | 'video' | 'course' | 'news'
+  is_trending: boolean
+  is_ai_recommended: boolean
+  estimated_minutes: number
+  difficulty: number
+  discovered_at: string
+  expires_at: string
+  _snoozed?: boolean
+  _snoozed_until?: string | null
+  _scheduled_for?: string | null
+}
+
+export interface TrendTopic {
+  id: string
+  domain: string
+  subtopic: string
+  description: string
+  is_trending: boolean
+  discovered_at: string
+  _elo?: number | null
+  _started?: boolean
+}
+
+export const feedAPI = {
+  list: (params: { domain?: string; content_type?: string; page?: number; limit?: number } = {}) =>
+    api.get<{ items: FeedItem[]; total: number; has_more: boolean; page: number }>('/feed', { params }),
+  trending: (limit = 24) =>
+    api.get<{ topics: TrendTopic[]; discovered_at: string; fresh: boolean }>('/feed/trending', { params: { limit } }),
+  scheduled: () =>
+    api.get<{ items: FeedItem[]; total: number }>('/feed/scheduled'),
+  runDiscovery: () =>
+    api.post('/feed/run-discovery'),
+  snooze: (itemId: string, hours = 24) =>
+    api.post(`/feed/${itemId}/snooze`, { hours }),
+  schedule: (itemId: string, scheduledFor: string) =>
+    api.post(`/feed/${itemId}/schedule`, { scheduled_for: scheduledFor }),
+  clearInteraction: (itemId: string) =>
+    api.delete(`/feed/${itemId}/interaction`),
+}
+
 // ─── Assistant ────────────────────────────────────────────────────────────────
 
 export const assistantAPI = {

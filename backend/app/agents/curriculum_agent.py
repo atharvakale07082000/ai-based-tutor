@@ -16,6 +16,42 @@ def _load_settings() -> dict:
     return get_curriculum_config()["settings"]
 
 
+def _enrich_with_trending(topic_graph: dict[str, list[str]]) -> dict[str, list[str]]:
+    """
+    Inject the latest trending subtopics from the discovery agent into the
+    topic_graph so curriculum paths include up-to-date industry skills.
+    Only adds subtopics not already present; doesn't remove existing ones.
+    """
+    try:
+        from app.db.mongo import col_trending_topics
+        # Get the most recent batch of trending topics
+        latest = col_trending_topics().find_one({}, {"_id": 0, "discovered_at": 1}, sort=[("discovered_at", -1)])
+        if not latest:
+            return topic_graph
+
+        batch_time = latest["discovered_at"]
+        trends = list(col_trending_topics().find(
+            {"discovered_at": batch_time}, {"_id": 0, "domain": 1, "subtopic": 1}
+        ))
+
+        enriched = {k: list(v) for k, v in topic_graph.items()}
+        for t in trends:
+            domain = t.get("domain", "")
+            subtopic = t.get("subtopic", "")
+            if not domain or not subtopic:
+                continue
+            if domain not in enriched:
+                enriched[domain] = []
+            if subtopic not in enriched[domain]:
+                enriched[domain].append(subtopic)
+
+        log.info("curriculum_trending_enriched", added=len(trends))
+        return enriched
+    except Exception as e:
+        log.warning("curriculum_trending_enrich_error", error=str(e))
+        return topic_graph
+
+
 async def curriculum_agent_node(state: AgentState) -> dict:
     """
     Build a personalized curriculum path for the learner.
@@ -50,7 +86,7 @@ async def _build_curriculum(state: AgentState) -> dict:
     proficiency = state.get("topic_proficiency", {})
     goals = profile.get("goal_vector", [])
 
-    topic_graph = _load_topic_graph()
+    topic_graph = _enrich_with_trending(_load_topic_graph())
     settings = _load_settings()
 
     curriculum_path: list[dict] = []

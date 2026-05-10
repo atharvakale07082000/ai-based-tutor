@@ -28,17 +28,20 @@ def get_db() -> Database:
 
 # ─── Collection shorthands ────────────────────────────────────────────────────
 
-def col_users() -> Collection:        return get_db()["users"]
-def col_learners() -> Collection:     return get_db()["learner_profiles"]
-def col_quizzes() -> Collection:      return get_db()["quiz_sessions"]
-def col_progress() -> Collection:     return get_db()["progress_records"]
-def col_curricula() -> Collection:    return get_db()["curriculum_paths"]
-def col_doubts() -> Collection:       return get_db()["doubt_sessions"]
-def col_content() -> Collection:      return get_db()["content_items"]
-def col_course_plans() -> Collection: return get_db()["course_plans"]
-def col_interviews() -> Collection:   return get_db()["module_interviews"]
-def col_evals() -> Collection:        return get_db()["agent_evals"]
-def col_chat_evals() -> Collection:   return get_db()["chat_evals"]
+def col_users() -> Collection:               return get_db()["users"]
+def col_learners() -> Collection:            return get_db()["learner_profiles"]
+def col_quizzes() -> Collection:             return get_db()["quiz_sessions"]
+def col_progress() -> Collection:            return get_db()["progress_records"]
+def col_curricula() -> Collection:           return get_db()["curriculum_paths"]
+def col_doubts() -> Collection:              return get_db()["doubt_sessions"]
+def col_content() -> Collection:             return get_db()["content_items"]
+def col_course_plans() -> Collection:        return get_db()["course_plans"]
+def col_interviews() -> Collection:          return get_db()["module_interviews"]
+def col_evals() -> Collection:               return get_db()["agent_evals"]
+def col_chat_evals() -> Collection:          return get_db()["chat_evals"]
+def col_trending_topics() -> Collection:     return get_db()["trending_topics"]
+def col_feed_items() -> Collection:          return get_db()["feed_items"]
+def col_feed_interactions() -> Collection:   return get_db()["feed_interactions"]
 
 
 # ─── Startup ──────────────────────────────────────────────────────────────────
@@ -54,3 +57,8 @@ def ensure_indexes() -> None:
     col_content().create_index("topic")
     col_course_plans().create_index([("user_id", ASCENDING), ("created_at", DESCENDING)])
     col_interviews().create_index([("plan_id", ASCENDING), ("module_id", ASCENDING)])
+    col_trending_topics().create_index([("discovered_at", DESCENDING)])
+    col_trending_topics().create_index([("domain", ASCENDING)])
+    col_feed_items().create_index([("discovered_at", DESCENDING)])
+    col_feed_items().create_index([("expires_at", ASCENDING)])
+    col_feed_interactions().create_index([("user_id", ASCENDING), ("item_id", ASCENDING)])

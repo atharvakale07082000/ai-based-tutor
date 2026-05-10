@@ -80,3 +80,67 @@ topic_graph:
     - Regression Analysis
     - Bayesian Statistics
     - A/B Testing
+
+  Data Engineering:
+    - Data Pipeline Architecture
+    - Apache Kafka Streams
+    - Apache Spark & PySpark
+    - dbt (Data Build Tool)
+    - Apache Iceberg & Delta Lake
+    - Medallion Architecture
+    - Airflow & Workflow Orchestration
+    - Data Quality & Great Expectations
+    - Streaming vs Batch Processing
+    - Data Warehouse Design
+
+  DevOps:
+    - Linux & Shell Scripting
+    - Docker & Containerization
+    - Kubernetes Fundamentals
+    - Helm Chart Development
+    - GitOps with ArgoCD
+    - CI/CD Pipeline Design
+    - Infrastructure as Code (Terraform)
+    - Platform Engineering
+    - OpenTelemetry Observability
+    - SRE Practices & SLOs
+
+  Cloud Computing:
+    - AWS Core Services
+    - Google Cloud Platform Essentials
+    - Azure Fundamentals
+    - Serverless Containers (Fargate, Cloud Run)
+    - FinOps & Cloud Cost Optimization
+    - Multi-Cloud Networking
+    - Cloud Security & IAM
+    - Cloud-Native Architecture
+
+  AI Engineering:
+    - RAG with Vector Databases
+    - LLM Evaluation & Benchmarks
+    - AI Agent Orchestration (LangGraph)
+    - Model Quantization & Edge Deployment
+    - Prompt Engineering
+    - LLMOps & Model Serving
+    - Fine-tuning Open-Source LLMs
+    - AI Safety & Alignment Basics
+
+  Cybersecurity:
+    - Network Security Fundamentals
+    - Zero Trust Architecture
+    - Threat Modeling (STRIDE)
+    - Penetration Testing Basics
+    - Cryptography & PKI
+    - Prompt Injection Defense
+    - OWASP Top 10
+    - Incident Response
+
+  Software Engineering:
+    - System Design Fundamentals
+    - Microservices Architecture
+    - Event-Driven Architecture
+    - Domain-Driven Design
+    - API Design Best Practices
+    - Database Indexing & Optimization
+    - Caching Strategies (Redis)
+    - Distributed Systems Concepts
