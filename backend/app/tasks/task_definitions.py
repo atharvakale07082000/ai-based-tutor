@@ -40,12 +40,16 @@ def send_progress_digest(self, learner_id: str | None = None):
     """
     log.info("task_send_progress_digest_start", learner_id=learner_id)
 
-    # ── Hardcoded SMTP configuration ──────────────────────────────────────────
-    SMTP_HOST     = "smtp.gmail.com"
-    SMTP_PORT     = 587
-    SMTP_USER     = "akale6201@gmail.com"
-    SMTP_PASSWORD = "hvwj xhnz ykpl vbrm"   # Gmail app-password (16-char)
-    FROM_ADDRESS  = f"Atelier AI Tutor <{SMTP_USER}>"
+    import os
+    SMTP_HOST     = os.environ.get("SMTP_HOST", "smtp.gmail.com")
+    SMTP_PORT     = int(os.environ.get("SMTP_PORT", "587"))
+    SMTP_USER     = os.environ.get("SMTP_USER", "")
+    SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
+    FROM_ADDRESS  = os.environ.get("SMTP_FROM", f"Atelier AI Tutor <{SMTP_USER}>")
+
+    if not SMTP_USER or not SMTP_PASSWORD:
+        log.warning("smtp_not_configured_skipping_digest")
+        return
 
     try:
         import smtplib
