@@ -1,14 +1,13 @@
 import { useState, useRef } from 'react'
-import { useParams, Link, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { motion, AnimatePresence } from 'framer-motion'
 import ReactMarkdown from 'react-markdown'
 import { contentAPI, quizAPI } from '@/lib/api'
 import { runImageCaption } from '@/lib/hf'
-import { PageWrapper } from '@/components/layout/PageWrapper'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
-import { Skeleton } from '@/components/ui/Skeleton'
+import { Icon } from '@/components/ui/Icon'
+import { Card } from '@/components/ui/Card'
 import toast from 'react-hot-toast'
 
 export default function ModulePlayerPage() {
@@ -42,11 +41,6 @@ export default function ModulePlayerPage() {
     }
   }
 
-  const handleMarkComplete = async () => {
-    setProgress(100)
-    setShowQuizPrompt(true)
-  }
-
   const handleStartQuiz = async () => {
     if (!module) return
     try {
@@ -58,185 +52,152 @@ export default function ModulePlayerPage() {
   }
 
   return (
-    <PageWrapper>
-      {/* Breadcrumb */}
-      <div className="px-6 py-3 border-b border-surface-2/50 flex items-center gap-2 text-sm text-paper/40">
-        <Link to="/dashboard" className="hover:text-paper transition-colors">Home</Link>
-        <span>›</span>
-        <Link to="/learn" className="hover:text-paper transition-colors">Learn</Link>
-        <span>›</span>
-        <span className="text-paper/70">{module?.topic ?? '…'}</span>
-        <span>›</span>
-        <span className="text-paper/70 truncate max-w-[200px]">{module?.title ?? '…'}</span>
-      </div>
-
-      <div className="flex flex-col lg:flex-row h-[calc(100vh-8rem)] overflow-hidden">
-        {/* LEFT 70%: Content area */}
-        <div className="flex-1 lg:w-[70%] overflow-y-auto px-6 py-8">
-          {isLoading ? (
-            <div className="space-y-4">
-              <Skeleton className="h-8 w-2/3" />
-              <Skeleton lines={8} />
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', height: '100%', overflow: 'hidden' }}>
+      {/* Main content */}
+      <div style={{ overflowY: 'auto', padding: '24px 32px' }}>
+        {isLoading ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div className="skel" style={{ height: 32, width: '60%', borderRadius: 6 }} />
+            <div className="skel" style={{ height: 16, width: '40%', borderRadius: 4 }} />
+            {[1, 2, 3, 4].map((i) => <div key={i} className="skel" style={{ height: 14, borderRadius: 4 }} />)}
+          </div>
+        ) : module ? (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 14 }}>
+              <Badge tone="outline" size="xs" icon={module.content_type === 'video' ? 'play' : 'book'}>{module.content_type}</Badge>
+              <Badge tone="neutral" size="xs">{module.estimated_minutes}m</Badge>
+              <Badge tone="outline" size="xs">{module.topic}</Badge>
             </div>
-          ) : module ? (
-            <>
-              <div className="flex items-center gap-3 mb-4">
-                <Badge variant={module.content_type === 'video' ? 'violet' : 'indigo'}>
-                  {module.content_type}
-                </Badge>
-                <Badge variant="surface">⏱ {module.estimated_minutes}m</Badge>
-                <Badge variant="surface">{module.topic}</Badge>
-              </div>
-              <h1 className="font-display text-3xl text-paper mb-6">{module.title}</h1>
+            <h1 className="serif" style={{ fontSize: 32, fontWeight: 400, margin: '0 0 20px', letterSpacing: '-0.02em', lineHeight: 1.2 }}>{module.title}</h1>
 
-              {/* Video player */}
-              {module.content_type === 'video' && module.video_url && (
-                <div className="aspect-video bg-surface-1 rounded-2xl overflow-hidden mb-8 border border-surface-2">
-                  <video
-                    src={module.video_url}
-                    controls
-                    className="w-full h-full"
-                    onTimeUpdate={(e) => {
-                      const el = e.currentTarget
-                      setProgress((el.currentTime / el.duration) * 100)
-                      if (el.currentTime >= el.duration * 0.9) setShowQuizPrompt(true)
-                    }}
-                  />
-                </div>
-              )}
-
-              {/* Markdown renderer */}
-              <div className="prose-ai max-w-none text-paper/80 leading-relaxed">
-                <ReactMarkdown>{module.body}</ReactMarkdown>
-              </div>
-
-              {/* Image drop zone */}
-              <div
-                ref={dropRef}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={handleImageDrop}
-                className="mt-10 border-2 border-dashed border-surface-3 hover:border-violet/50 rounded-2xl p-8 text-center transition-colors cursor-pointer"
-              >
-                {captionLoading ? (
-                  <div className="flex flex-col items-center gap-2 text-violet-light">
-                    <svg className="w-8 h-8 animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
-                    </svg>
-                    <span className="text-sm">Captioning image…</span>
-                  </div>
-                ) : (
-                  <>
-                    <div className="text-3xl mb-2">🖼️</div>
-                    <p className="text-sm text-paper/50">Drop an image here to caption it and add to your doubt</p>
-                  </>
-                )}
-              </div>
-
-              {/* Doubt input */}
-              {doubtInput && (
-                <div className="mt-4">
-                  <label className="text-xs text-paper/50 mb-1.5 block">Your doubt (pre-filled from image caption)</label>
-                  <textarea
-                    value={doubtInput}
-                    onChange={(e) => setDoubtInput(e.target.value)}
-                    className="w-full bg-surface-2 border border-surface-3 rounded-xl px-4 py-3 text-sm text-paper focus:outline-none focus:ring-2 focus:ring-violet/50 resize-none h-24"
-                  />
-                  <Button
-                    size="sm"
-                    className="mt-2"
-                    onClick={() => navigate('/doubts', { state: { prefill: doubtInput, topic: module.topic } })}
-                  >
-                    Ask Doubt-Solver →
-                  </Button>
-                </div>
-              )}
-
-              <div className="mt-8">
-                <Button onClick={handleMarkComplete} variant="secondary">
-                  Mark as Complete ✓
-                </Button>
-              </div>
-            </>
-          ) : null}
-        </div>
-
-        {/* RIGHT 30%: Sticky panel */}
-        <div className="hidden lg:flex lg:w-[30%] border-l border-surface-2/50 flex-col">
-          <div className="p-6 overflow-y-auto flex-1">
-            {/* Progress */}
-            <div className="mb-6">
-              <div className="flex justify-between text-xs text-paper/50 mb-2">
-                <span>Module progress</span>
-                <span>{Math.round(progress)}%</span>
-              </div>
-              <div className="h-2 bg-surface-2 rounded-full overflow-hidden">
-                <motion.div
-                  className="h-full bg-gradient-to-r from-violet to-indigo-light rounded-full"
-                  animate={{ width: `${progress}%` }}
-                  transition={{ duration: 0.5 }}
+            {/* Video player */}
+            {module.content_type === 'video' && module.video_url && (
+              <div style={{ aspectRatio: '16/9', background: 'var(--paper-2)', borderRadius: 'var(--r-3)', overflow: 'hidden', marginBottom: 24, border: '1px solid var(--line-1)' }}>
+                <video
+                  src={module.video_url}
+                  controls
+                  style={{ width: '100%', height: '100%' }}
+                  onTimeUpdate={(e) => {
+                    const el = e.currentTarget
+                    setProgress((el.currentTime / el.duration) * 100)
+                    if (el.currentTime >= el.duration * 0.9) setShowQuizPrompt(true)
+                  }}
                 />
               </div>
+            )}
+
+            {/* Body */}
+            <div className="t-md fg-1" style={{ lineHeight: 1.7, maxWidth: 680 }}>
+              <ReactMarkdown>{module.body}</ReactMarkdown>
             </div>
 
-            {/* Table of contents */}
-            <div className="mb-6">
-              <h3 className="text-xs font-medium text-paper/50 uppercase tracking-wider mb-3">Contents</h3>
-              <div className="space-y-1">
-                {['Introduction', 'Core Concepts', 'Examples', 'Practice', 'Summary'].map((section) => (
-                  <button key={section} className="w-full text-left text-sm text-paper/60 hover:text-paper px-3 py-2 rounded-lg hover:bg-surface-2 transition-colors">
-                    {section}
-                  </button>
-                ))}
-              </div>
+            {/* Image drop zone */}
+            <div
+              ref={dropRef}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={handleImageDrop}
+              style={{
+                marginTop: 32, border: '2px dashed var(--line-2)', borderRadius: 'var(--r-3)',
+                padding: '28px 0', textAlign: 'center', cursor: 'pointer', transition: 'border-color var(--dur-fast)',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--ink-2)')}
+              onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--line-2)')}
+            >
+              {captionLoading ? (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, color: 'var(--accent)' }}>
+                  <Icon name="refresh" size={20} style={{ animation: 'spin 1s linear infinite' }} />
+                  <span className="t-sm">Captioning image…</span>
+                </div>
+              ) : (
+                <>
+                  <Icon name="upload" size={18} style={{ color: 'var(--ink-3)', marginBottom: 6 }} />
+                  <div className="t-sm fg-3">Drop an image to caption it and add to your doubt</div>
+                </>
+              )}
             </div>
 
-            {/* Ask doubt bubble */}
-            <div className="bg-violet/10 border border-violet/20 rounded-2xl p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-xl">💡</span>
-                <span className="text-sm font-medium text-paper">Got a doubt?</span>
+            {/* Doubt prefill */}
+            {doubtInput && (
+              <div style={{ marginTop: 14 }}>
+                <div className="t-xs fg-3" style={{ marginBottom: 4 }}>Pre-filled from image caption</div>
+                <textarea
+                  value={doubtInput}
+                  onChange={(e) => setDoubtInput(e.target.value)}
+                  style={{ width: '100%', background: 'var(--paper-2)', border: '1px solid var(--line-2)', borderRadius: 'var(--r-2)', padding: '10px 12px', fontSize: 13, color: 'var(--ink-0)', fontFamily: 'inherit', outline: 'none', resize: 'none', height: 80 }}
+                />
+                <Button size="sm" style={{ marginTop: 6 }} onClick={() => navigate('/doubts', { state: { prefill: doubtInput, topic: module.topic } })}>
+                  Ask Doubt-Solver
+                </Button>
               </div>
-              <p className="text-xs text-paper/50 mb-3">
-                Ask the Doubt-Solver AI agent
-              </p>
-              <Button
-                size="sm"
-                variant="outline"
-                className="w-full"
-                onClick={() => navigate('/doubts', { state: { topic: module?.topic } })}
-              >
-                Open Doubt Chat
-              </Button>
+            )}
+
+            <div style={{ marginTop: 24, paddingTop: 20, borderTop: '1px solid var(--line-1)' }}>
+              <Button variant="secondary" icon="check" onClick={() => { setProgress(100); setShowQuizPrompt(true) }}>Mark as Complete</Button>
             </div>
+          </>
+        ) : null}
+      </div>
+
+      {/* Right panel */}
+      <div style={{ borderLeft: '1px solid var(--line-1)', background: 'var(--paper-1)', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 0 }}>
+        {/* Progress */}
+        <div style={{ padding: '16px 16px 14px', borderBottom: '1px solid var(--line-1)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+            <span className="caps fg-2">Progress</span>
+            <span className="t-xs fg-3 mono">{Math.round(progress)}%</span>
           </div>
+          <div style={{ height: 4, background: 'var(--paper-3)', borderRadius: 'var(--r-pill)', overflow: 'hidden' }}>
+            <div style={{ width: `${progress}%`, height: '100%', background: 'var(--ink-0)', borderRadius: 'var(--r-pill)', transition: 'width 0.5s ease' }} />
+          </div>
+        </div>
+
+        {/* Table of contents */}
+        <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--line-1)' }}>
+          <div className="caps fg-2" style={{ marginBottom: 8 }}>Contents</div>
+          {['Introduction', 'Core Concepts', 'Examples', 'Practice', 'Summary'].map((s) => (
+            <button
+              key={s}
+              className="t-sm fg-1"
+              style={{ display: 'block', width: '100%', textAlign: 'left', padding: '5px 8px', borderRadius: 'var(--r-1)', background: 'transparent', border: 0, cursor: 'pointer', fontFamily: 'inherit' }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--paper-2)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+            >{s}</button>
+          ))}
+        </div>
+
+        {/* Doubt CTA */}
+        <div style={{ padding: 16 }}>
+          <Card padding="md" accent>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+              <Icon name="sparkle" size={12} style={{ color: 'var(--accent)' }} />
+              <span className="t-sm fg-0" style={{ fontWeight: 500 }}>Got a doubt?</span>
+            </div>
+            <p className="t-xs fg-2" style={{ marginBottom: 10, lineHeight: 1.5 }}>Ask the Doubt-Solver AI agent for instant, context-aware answers.</p>
+            <Button size="sm" variant="secondary" full onClick={() => navigate('/doubts', { state: { topic: module?.topic } })}>
+              Open Doubt Chat
+            </Button>
+          </Card>
         </div>
       </div>
 
-      {/* Quiz prompt slides up */}
-      <AnimatePresence>
-        {showQuizPrompt && (
-          <motion.div
-            initial={{ y: 100, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: 100, opacity: 0 }}
-            transition={{ type: 'spring', stiffness: 80, damping: 20 }}
-            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 glass-strong rounded-2xl p-6 shadow-2xl border border-violet/30 max-w-md w-full mx-4"
-          >
-            <div className="flex items-start gap-4">
-              <span className="text-3xl">🎉</span>
-              <div className="flex-1">
-                <h3 className="font-medium text-paper mb-1">Module complete!</h3>
-                <p className="text-sm text-paper/60 mb-4">Ready to test your knowledge with a quiz?</p>
-                <div className="flex gap-3">
-                  <Button size="sm" onClick={handleStartQuiz}>Take Quiz</Button>
-                  <Button size="sm" variant="ghost" onClick={() => setShowQuizPrompt(false)}>Later</Button>
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </PageWrapper>
+      {/* Quiz prompt banner */}
+      {showQuizPrompt && (
+        <div style={{
+          position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
+          zIndex: 50, background: 'var(--paper-0)', border: '1px solid var(--line-2)',
+          borderRadius: 'var(--r-3)', padding: '16px 20px', boxShadow: 'var(--shadow-2)',
+          display: 'flex', alignItems: 'center', gap: 16, maxWidth: 420, width: 'calc(100% - 48px)',
+        }}>
+          <div style={{ flex: 1 }}>
+            <div className="t-md fg-0" style={{ fontWeight: 500, marginBottom: 2 }}>Module complete!</div>
+            <div className="t-sm fg-2">Ready to test your knowledge with a quiz?</div>
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+            <Button size="sm" variant="primary" onClick={handleStartQuiz}>Take Quiz</Button>
+            <Button size="sm" variant="ghost" onClick={() => setShowQuizPrompt(false)}>Later</Button>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }

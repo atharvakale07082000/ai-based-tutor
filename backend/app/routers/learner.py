@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.db.mongo import col_learners
-from app.schemas.learner import LearnerProfileSchema, LearnerProfileUpdate
+from app.schemas.learner import LearnerProfileSchema, LearnerProfileUpdate, OnboardRequest, OnboardResponse
 from app.auth.jwt import get_current_user_id
 
 router = APIRouter()
@@ -67,3 +67,27 @@ async def update_profile(
         streak=learner.get("streak", 0),
         curriculum_version=learner.get("curriculum_version", 1),
     )
+
+
+@router.post("/onboard", response_model=OnboardResponse)
+async def onboard(
+    body: OnboardRequest,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Save onboarding preferences: name, goals, hours/week, difficulty pacing."""
+    difficulty_to_cadence = {
+        "gentle":     {"sessions_per_week": max(1, body.hoursPerWeek // 2), "pace": "gentle"},
+        "balanced":   {"sessions_per_week": max(2, body.hoursPerWeek // 2), "pace": "balanced"},
+        "aggressive": {"sessions_per_week": max(3, body.hoursPerWeek),      "pace": "aggressive"},
+    }
+    updates = {
+        "name": body.name.strip(),
+        "goal_vector": body.goals,
+        "session_cadence": difficulty_to_cadence.get(body.difficulty, {"pace": "balanced"}),
+        "hours_per_week": body.hoursPerWeek,
+        "onboarded_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    col_learners().update_one({"user_id": user_id}, {"$set": updates}, upsert=True)
+    log.info("learner_onboarded", user_id=user_id, name=body.name)
+    return OnboardResponse(name=body.name.strip())

@@ -91,6 +91,8 @@ export interface LearnerProfileAPI {
 export const learnerAPI = {
   getProfile: () => api.get<LearnerProfileAPI>('/learner/profile'),
   updateProfile: (data: Partial<LearnerProfileAPI>) => api.put<LearnerProfileAPI>('/learner/profile', data),
+  onboard: (data: { name: string; goals: string[]; hoursPerWeek: number; difficulty: string }) =>
+    api.post<{ name: string }>('/learner/onboard', data),
 }
 
 // ─── Curriculum ──────────────────────────────────────────────────────────────
@@ -128,6 +130,7 @@ export interface ContentListParams {
   max_difficulty?: number
   search?: string
   page?: number
+  offset?: number
   limit?: number
 }
 
@@ -316,4 +319,36 @@ export const coursesAPI = {
     }),
   completeInterview: (planId: string, moduleId: string, interviewId: string) =>
     api.post(`/courses/${planId}/modules/${moduleId}/interview/${interviewId}/complete`),
+}
+
+// ─── Assistant ────────────────────────────────────────────────────────────────
+
+export const assistantAPI = {
+  streamChat: async (message: string, onChunk: (chunk: string) => void): Promise<void> => {
+    const response = await fetch(`${BASE_URL}/assistant/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: accessToken ? `Bearer ${accessToken}` : '',
+      },
+      body: JSON.stringify({ message }),
+    })
+    if (!response.ok || !response.body) throw new Error('Stream failed')
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      const chunk = decoder.decode(value, { stream: true })
+      const lines = chunk.split('\n').filter((l) => l.startsWith('data: '))
+      for (const line of lines) {
+        const json = line.slice(6).trim()
+        try {
+          const event = JSON.parse(json)
+          if (event.type === 'token' && event.content) onChunk(event.content)
+          if (event.type === 'done') return
+        } catch { /* skip */ }
+      }
+    }
+  },
 }

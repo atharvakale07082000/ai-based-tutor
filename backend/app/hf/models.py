@@ -49,4 +49,17 @@ HF_MODELS: dict[str, dict] = {
         "provider": "hf-inference",
         "description": "Caption uploaded diagrams/images",
     },
+    # ── Recommendation & Scheduling ───────────────────────────────────────────
+    "RECOMMENDATION_AGENT": {
+        "model_id": "sentence-transformers/all-MiniLM-L6-v2",
+        "task": "feature-extraction",
+        "provider": "hf-inference",
+        "description": "Semantic content recommendation via learner profile embeddings",
+    },
+    "SPACED_REPETITION": {
+        "model_id": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+        "task": "text-classification",
+        "provider": "hf-inference",
+        "description": "SM-2 spaced repetition scheduler with HF difficulty calibration",
+    },
 }

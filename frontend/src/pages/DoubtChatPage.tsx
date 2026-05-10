@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useLocation } from 'react-router-dom'
-import { motion, AnimatePresence } from 'framer-motion'
 import { useQuery } from '@tanstack/react-query'
 import { doubtsAPI } from '@/lib/api'
 import { runSpeechToText, runSentiment } from '@/lib/hf'
-import { PageWrapper } from '@/components/layout/PageWrapper'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
+import { Icon } from '@/components/ui/Icon'
+import { Avatar } from '@/components/ui/Avatar'
 import { ChatBubbleSkeleton } from '@/components/ui/Skeleton'
 import { useLearnerStore } from '@/stores/learnerStore'
 import toast from 'react-hot-toast'
@@ -21,9 +21,14 @@ interface Message {
 let mediaRecorder: MediaRecorder | null = null
 let recordedChunks: BlobPart[] = []
 
+function StreamCursor() {
+  return <span style={{ display: 'inline-block', width: 6, height: 12, background: 'var(--ink-0)', verticalAlign: 'middle', marginLeft: 2, animation: 'blink 1s steps(1) infinite' }} />
+}
+
 export default function DoubtChatPage() {
   const location = useLocation()
   const state = location.state as { prefill?: string; topic?: string } | null
+  const { name } = useLearnerStore()
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState(state?.prefill ?? '')
   const [topicContext, setTopicContext] = useState(state?.topic ?? '')
@@ -40,7 +45,6 @@ export default function DoubtChatPage() {
     queryFn: () => doubtsAPI.getSessions().then((r) => r.data),
   })
 
-  // Session timer
   useEffect(() => {
     const interval = setInterval(() => setSessionTimer((t) => t + 1), 1000)
     return () => clearInterval(interval)
@@ -59,23 +63,11 @@ export default function DoubtChatPage() {
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim() || isStreaming) return
     setInput('')
-
-    const userMsg: Message = {
-      id: crypto.randomUUID(),
-      role: 'user',
-      content: text,
-      timestamp: new Date(),
-    }
+    const userMsg: Message = { id: crypto.randomUUID(), role: 'user', content: text, timestamp: new Date() }
     setMessages((prev) => [...prev, userMsg])
 
     const assistantId = crypto.randomUUID()
-    const assistantMsg: Message = {
-      id: assistantId,
-      role: 'assistant',
-      content: '',
-      timestamp: new Date(),
-    }
-    setMessages((prev) => [...prev, assistantMsg])
+    setMessages((prev) => [...prev, { id: assistantId, role: 'assistant', content: '', timestamp: new Date() }])
     setIsStreaming(true)
 
     try {
@@ -83,7 +75,7 @@ export default function DoubtChatPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('access_token') ?? ''}`,
+          Authorization: `Bearer ${localStorage.getItem('ai_tutor_token') ?? ''}`,
         },
         body: JSON.stringify({
           question: text,
@@ -110,29 +102,20 @@ export default function DoubtChatPage() {
           try {
             const { token } = JSON.parse(json)
             full += token
-            setMessages((prev) =>
-              prev.map((m) => (m.id === assistantId ? { ...m, content: full } : m))
-            )
+            setMessages((prev) => prev.map((m) => m.id === assistantId ? { ...m, content: full } : m))
           } catch { /* skip */ }
         }
       }
 
-      // Run sentiment at session end
       if (messages.length >= 3) {
         const allText = messages.map((m) => m.content).join(' ')
         try {
           const sentiment = await runSentiment(allText)
           const mood = sentiment[0]?.label ?? 'NEUTRAL'
-          addDoubtSession({
-            id: sessionId,
-            topic_context: topicContext,
-            sentiment_mood: mood,
-            started_at: new Date().toISOString(),
-            message_count: messages.length,
-          })
+          addDoubtSession({ id: sessionId, topic_context: topicContext, sentiment_mood: mood, started_at: new Date().toISOString(), message_count: messages.length })
         } catch { /* non-critical */ }
       }
-    } catch (err) {
+    } catch {
       toast.error('Doubt-Solver is unavailable. Please try again.')
       setMessages((prev) => prev.filter((m) => m.id !== assistantId))
     } finally {
@@ -141,19 +124,11 @@ export default function DoubtChatPage() {
   }, [isStreaming, messages, topicContext, sessionId, addDoubtSession])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      sendMessage(input)
-    }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(input) }
   }
 
   const handleVoice = async () => {
-    if (isRecording) {
-      mediaRecorder?.stop()
-      setIsRecording(false)
-      return
-    }
-
+    if (isRecording) { mediaRecorder?.stop(); setIsRecording(false); return }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       recordedChunks = []
@@ -167,20 +142,15 @@ export default function DoubtChatPage() {
           setInput(transcript)
           toast.success('Transcription complete')
         } catch {
-          // fallback to backend transcription
           try {
             const { data } = await doubtsAPI.transcribe(blob)
             setInput(data.transcript)
-          } catch {
-            toast.error('Transcription failed')
-          }
+          } catch { toast.error('Transcription failed') }
         }
       }
       mediaRecorder.start()
       setIsRecording(true)
-    } catch {
-      toast.error('Microphone permission denied')
-    }
+    } catch { toast.error('Microphone permission denied') }
   }
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -190,171 +160,142 @@ export default function DoubtChatPage() {
       const { data } = await doubtsAPI.caption(file)
       setInput((prev) => `[Image: ${data.caption}]\n${prev}`)
       toast.success('Image captioned')
-    } catch {
-      toast.error('Could not caption image')
-    }
+    } catch { toast.error('Could not caption image') }
   }
 
   const MOOD_EMOJI: Record<string, string> = { POSITIVE: '😊', NEGATIVE: '😟', NEUTRAL: '😐' }
 
   return (
-    <PageWrapper showAgentBar={false} fullscreen>
-      <div className="flex h-full">
-        {/* History drawer */}
-        <AnimatePresence>
-          {showHistory && (
-            <motion.div
-              initial={{ x: -320, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: -320, opacity: 0 }}
-              transition={{ type: 'spring', stiffness: 100, damping: 20 }}
-              className="w-72 border-r border-surface-2/50 glass flex flex-col overflow-hidden shrink-0"
-            >
-              <div className="p-4 border-b border-surface-2/50">
-                <h3 className="text-sm font-medium text-paper">Session History</h3>
+    <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
+      {/* History drawer */}
+      {showHistory && (
+        <div style={{ width: 260, borderRight: '1px solid var(--line-1)', background: 'var(--paper-1)', display: 'flex', flexDirection: 'column', flexShrink: 0, overflow: 'hidden' }}>
+          <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--line-1)' }}>
+            <span className="caps fg-2">Session history</span>
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto', padding: 8 }}>
+            {(sessions ?? []).map((s) => (
+              <div key={s.id} style={{ padding: '8px 10px', borderRadius: 'var(--r-2)', cursor: 'pointer', marginBottom: 4 }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--paper-2)')}
+                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span className="t-xs fg-2" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{s.topic_context ?? 'General'}</span>
+                  <span style={{ marginLeft: 6 }}>{MOOD_EMOJI[s.sentiment_mood?.toUpperCase() ?? ''] ?? '💬'}</span>
+                </div>
+                <div className="t-xs fg-3" style={{ marginTop: 2 }}>{new Date(s.started_at).toLocaleDateString()}</div>
               </div>
-              <div className="flex-1 overflow-y-auto p-3 space-y-2">
-                {(sessions ?? []).map((s) => (
-                  <div key={s.id} className="p-3 rounded-xl bg-surface-2 hover:bg-surface-3 cursor-pointer transition-colors">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-paper/60 truncate">{s.topic_context ?? 'General'}</span>
-                      <span>{MOOD_EMOJI[s.sentiment_mood?.toUpperCase() ?? ''] ?? '💬'}</span>
-                    </div>
-                    <p className="text-[10px] text-paper/30 mt-1">
-                      {new Date(s.started_at).toLocaleDateString()}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+            ))}
+          </div>
+        </div>
+      )}
 
-        {/* Main chat area */}
-        <div className="flex-1 flex flex-col min-w-0">
-          {/* Top bar */}
-          <div className="glass border-b border-surface-2/50 px-4 py-3 flex items-center gap-3">
-            <button
-              onClick={() => setShowHistory((v) => !v)}
-              className="p-2 rounded-lg hover:bg-surface-2 transition-colors"
-              aria-label="Toggle session history"
-            >
-              <svg className="w-4 h-4 text-paper/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-            </button>
-
-            {topicContext && (
-              <Badge variant="violet" className="text-xs">📚 {topicContext}</Badge>
-            )}
+      {/* Main chat */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
+        {/* Top bar */}
+        <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--line-1)', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <button
+            onClick={() => setShowHistory((v) => !v)}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: 'var(--r-1)', background: 'none', border: 0, cursor: 'pointer' }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--paper-2)')}
+            onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}
+          >
+            <Icon name="home" size={14} style={{ color: 'var(--ink-3)' }} />
+          </button>
+          {topicContext ? (
+            <Badge tone="outline" size="xs">{topicContext}</Badge>
+          ) : (
             <input
               value={topicContext}
               onChange={(e) => setTopicContext(e.target.value)}
               placeholder="Topic context (optional)"
-              className="flex-1 bg-transparent text-sm text-paper/60 placeholder-paper/30 focus:outline-none"
+              style={{ background: 'transparent', border: 0, outline: 'none', fontSize: 13, color: 'var(--ink-2)', fontFamily: 'inherit', flex: 1 }}
             />
-            <Badge variant="surface" className="text-[10px] shrink-0">AI Tutor</Badge>
-            <span className="text-xs text-paper/30 font-mono shrink-0">{formatTime(sessionTimer)}</span>
-          </div>
+          )}
+          <span style={{ flex: 1 }} />
+          <Badge tone="neutral" size="xs">Doubt-Solver</Badge>
+          <span className="t-xs fg-3 mono">{formatTime(sessionTimer)}</span>
+        </div>
 
-          {/* Messages */}
-          <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4" aria-live="polite" aria-label="Chat messages">
-            {messages.length === 0 && (
-              <div className="flex flex-col items-center justify-center h-full text-center py-12">
-                <div className="w-16 h-16 rounded-2xl bg-violet/20 flex items-center justify-center text-3xl mb-4">💡</div>
-                <h3 className="font-display text-xl text-paper mb-2">Ask your Doubt-Solver</h3>
-                <p className="text-sm text-paper/50 max-w-sm">
-                  Ask any question about your current topic — get instant, context-aware answers.
-                </p>
+        {/* Messages */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
+          {messages.length === 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', textAlign: 'center', paddingTop: 60 }}>
+              <div style={{ width: 44, height: 44, borderRadius: 'var(--r-2)', background: 'var(--paper-2)', display: 'grid', placeItems: 'center', marginBottom: 16 }}>
+                <Icon name="sparkle" size={20} style={{ color: 'var(--accent)' }} />
               </div>
-            )}
+              <div className="serif" style={{ fontSize: 22, marginBottom: 8 }}>Ask your Doubt-Solver</div>
+              <div className="t-md fg-3">Ask any question about your current topic — get instant, context-aware answers.</div>
+            </div>
+          )}
 
+          <div style={{ maxWidth: 720, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
             {messages.map((msg) => (
-              <motion.div
-                key={msg.id}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
+              <div key={msg.id} style={{ display: 'flex', gap: 10, justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
                 {msg.role === 'assistant' && (
-                  <div className="w-7 h-7 rounded-full bg-gradient-to-br from-violet to-indigo shrink-0 flex items-center justify-center text-xs mr-2 mt-1">
-                    AI
-                  </div>
+                  <div style={{ width: 26, height: 26, borderRadius: 'var(--r-pill)', background: 'var(--ink-0)', color: 'var(--paper-0)', display: 'grid', placeItems: 'center', fontFamily: 'var(--font-serif)', fontSize: 13, fontStyle: 'italic', flexShrink: 0 }}>æ</div>
                 )}
                 <div
-                  className={`max-w-[75%] rounded-2xl px-4 py-3 text-sm ${
-                    msg.role === 'user'
-                      ? 'bg-indigo text-white rounded-tr-sm'
-                      : 'bg-surface-2 text-paper border-l-2 border-violet rounded-tl-sm'
-                  }`}
+                  style={{
+                    maxWidth: '75%',
+                    background: msg.role === 'user' ? 'var(--ink-0)' : 'var(--paper-2)',
+                    color: msg.role === 'user' ? 'var(--paper-0)' : 'var(--ink-0)',
+                    borderRadius: msg.role === 'user' ? 'var(--r-2) var(--r-2) 2px var(--r-2)' : 'var(--r-2) var(--r-2) var(--r-2) 2px',
+                    padding: '10px 14px',
+                    fontSize: 14,
+                    lineHeight: 1.6,
+                    whiteSpace: 'pre-wrap',
+                  }}
                 >
-                  {msg.content || (
-                    isStreaming && msg.role === 'assistant' ? (
-                      <span className="typewriter-cursor text-paper/50">Thinking</span>
-                    ) : null
-                  )}
-                  {isStreaming && msg.role === 'assistant' && msg.content && (
-                    <span className="typewriter-cursor" />
-                  )}
+                  {msg.content}
+                  {isStreaming && msg.role === 'assistant' && !msg.content && <span className="t-sm fg-3">Thinking…</span>}
+                  {isStreaming && msg.role === 'assistant' && msg.content && <StreamCursor />}
                 </div>
-              </motion.div>
+                {msg.role === 'user' && <Avatar name={name || 'You'} size={26} />}
+              </div>
             ))}
-
-            {isStreaming && messages[messages.length - 1]?.content === '' && (
-              <ChatBubbleSkeleton />
-            )}
+            {isStreaming && messages[messages.length - 1]?.content === '' && <ChatBubbleSkeleton />}
             <div ref={bottomRef} />
           </div>
+        </div>
 
-          {/* Chat input */}
-          <div className="glass border-t border-surface-2/50 p-4">
-            <div className="flex items-end gap-2 bg-surface-2 border border-surface-3 rounded-2xl px-4 py-3 focus-within:ring-2 focus-within:ring-violet/50 focus-within:border-violet transition">
-              {/* Voice button */}
-              <button
-                onClick={handleVoice}
-                aria-label={isRecording ? 'Stop recording' : 'Start voice input'}
-                className={`shrink-0 p-1.5 rounded-lg transition-colors ${isRecording ? 'text-rose bg-rose/10 animate-pulse' : 'text-paper/40 hover:text-paper hover:bg-surface-3'}`}
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                </svg>
-              </button>
-
-              {/* Image upload */}
-              <label aria-label="Upload image for caption" className="shrink-0 p-1.5 rounded-lg text-paper/40 hover:text-paper hover:bg-surface-3 cursor-pointer transition-colors">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-                <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
-              </label>
-
+        {/* Input */}
+        <div style={{ padding: '12px 16px', borderTop: '1px solid var(--line-1)', background: 'var(--paper-0)', flexShrink: 0 }}>
+          <div style={{ maxWidth: 720, margin: '0 auto' }}>
+            <div style={{ background: 'var(--paper-1)', border: '1px solid var(--line-2)', borderRadius: 'var(--r-3)', padding: '8px 10px' }}>
               <textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder="Ask anything about your topic… (Enter to send, Shift+Enter for new line)"
-                rows={1}
-                className="flex-1 bg-transparent text-sm text-paper placeholder-paper/30 focus:outline-none resize-none max-h-32 overflow-y-auto"
-                style={{ minHeight: '24px' }}
+                rows={2}
+                style={{ width: '100%', background: 'transparent', border: 0, outline: 'none', resize: 'none', fontSize: 14, color: 'var(--ink-0)', fontFamily: 'inherit', lineHeight: 1.5 }}
               />
-
-              <Button
-                size="sm"
-                onClick={() => sendMessage(input)}
-                disabled={!input.trim() || isStreaming}
-                isLoading={isStreaming}
-                aria-label="Send message"
-                className="shrink-0"
-              >
-                →
-              </Button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
+                <button
+                  onClick={handleVoice}
+                  style={{
+                    padding: '4px 6px', borderRadius: 'var(--r-1)', border: 0,
+                    background: isRecording ? 'color-mix(in srgb, var(--neg) 15%, var(--paper-1))' : 'transparent',
+                    color: isRecording ? 'var(--neg)' : 'var(--ink-3)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Icon name="mic" size={13} />
+                </button>
+                <label style={{ padding: '4px 6px', borderRadius: 'var(--r-1)', cursor: 'pointer', color: 'var(--ink-3)' }}>
+                  <Icon name="upload" size={13} />
+                  <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleImageUpload} />
+                </label>
+                <span style={{ flex: 1 }} />
+                <span className="t-xs fg-3"><kbd>↵</kbd> send</span>
+                <Button size="sm" variant="primary" icon="send" onClick={() => sendMessage(input)} loading={isStreaming}>Send</Button>
+              </div>
             </div>
-            <p className="text-[10px] text-paper/20 text-center mt-2">
-              AI-powered answers · Voice input · Image understanding
-            </p>
+            <div className="t-xs fg-3" style={{ textAlign: 'center', marginTop: 4 }}>AI-powered answers · Voice input · Image understanding</div>
           </div>
         </div>
       </div>
-    </PageWrapper>
+    </div>
   )
 }

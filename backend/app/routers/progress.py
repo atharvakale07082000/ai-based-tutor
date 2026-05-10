@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 
 from app.db.mongo import col_learners, col_progress, col_quizzes, col_doubts
 from app.auth.jwt import get_current_user_id
+from app.hf.spaced_repetition import compute_due_topics
 
 router = APIRouter()
 log = structlog.get_logger()
@@ -52,6 +53,36 @@ async def get_progress(user_id: str = Depends(get_current_user_id)):
         "streak": learner.get("streak", 0),
         "mood_timeline": mood_timeline,
     }
+
+
+@router.get("/due-topics")
+async def get_due_topics(user_id: str = Depends(get_current_user_id)):
+    """
+    Spaced repetition scheduler: returns topics ordered by urgency.
+    Uses SM-2-inspired algorithm with HuggingFace difficulty scoring support.
+    """
+    learner = col_learners().find_one({"user_id": user_id}, PROJ)
+    if not learner:
+        return {"due_topics": []}
+
+    proficiency = learner.get("topic_proficiency_map") or {}
+    quizzes = list(
+        col_quizzes().find(
+            {"learner_id": learner["id"], "completed_at": {"$ne": None}},
+            {"_id": 0, "topic": 1, "completed_at": 1},
+        ).sort("completed_at", -1)
+    )
+
+    last_quiz_dates: dict[str, str] = {}
+    for q in quizzes:
+        topic = q.get("topic", "")
+        if topic and topic not in last_quiz_dates:
+            last_quiz_dates[topic] = q["completed_at"]
+
+    due_topics = compute_due_topics(proficiency, last_quiz_dates)
+    log.info("spaced_repetition_computed", user_id=user_id, due_count=sum(1 for t in due_topics if t["is_due"]))
+
+    return {"due_topics": due_topics}
 
 
 @router.get("/report")

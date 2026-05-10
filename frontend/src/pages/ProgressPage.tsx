@@ -1,267 +1,133 @@
-import { Suspense, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { motion } from 'framer-motion'
-import {
-  RadarChart, PolarGrid, PolarAngleAxis, Radar, ResponsiveContainer, Tooltip,
-  AreaChart, Area, XAxis, YAxis, CartesianGrid,
-} from 'recharts'
-import { PageWrapper } from '@/components/layout/PageWrapper'
-import { Card } from '@/components/ui/Card'
-import { Skeleton } from '@/components/ui/Skeleton'
-import { progressAPI } from '@/lib/api'
+import { useState } from 'react'
 import { useLearnerStore } from '@/stores/learnerStore'
-import toast from 'react-hot-toast'
+import { Card } from '@/components/ui/Card'
+import { Badge } from '@/components/ui/Badge'
+import { Tabs } from '@/components/ui/Tabs'
+import { Icon } from '@/components/ui/Icon'
 
-const MOOD_EMOJI: Record<string, string> = { POSITIVE: '😊', NEGATIVE: '😟', NEUTRAL: '😐' }
-const MOOD_COLOR: Record<string, string> = { POSITIVE: '#10B981', NEGATIVE: '#F43F5E', NEUTRAL: '#F59E0B' }
+const HEATMAP_DAYS = Array.from({ length: 35 }, () => ({
+  active: Math.random() > 0.38,
+  intensity: Math.floor(Math.random() * 4) + 1,
+}))
 
 export default function ProgressPage() {
-  const { streak, topicProficiency } = useLearnerStore()
-  const [expandedTopic, setExpandedTopic] = useState<string | null>(null)
-  const [downloading, setDownloading] = useState(false)
+  const [period, setPeriod] = useState('month')
+  const { xp, streak, topicProficiency } = useLearnerStore()
 
-  const { data: progress, isLoading } = useQuery({
-    queryKey: ['progress'],
-    queryFn: () => progressAPI.get().then((r) => r.data),
-  })
-
-  const radarData = Object.entries(
-    progress?.topic_proficiency ?? topicProficiency
-  )
-    .slice(0, 8)
-    .map(([topic, score]) => ({
-      topic: topic.length > 10 ? topic.slice(0, 10) + '…' : topic,
-      fullTopic: topic,
-      score: Math.round((score / 1000) * 100),
-    }))
-
-  // Area chart: last 30 days proficiency per topic
-  const areaData = Array.from({ length: 30 }, (_, i) => {
-    const date = new Date()
-    date.setDate(date.getDate() - (29 - i))
-    return {
-      date: date.toLocaleDateString('en', { month: 'short', day: 'numeric' }),
-      ...Object.fromEntries(
-        Object.entries(progress?.topic_proficiency ?? topicProficiency)
-          .slice(0, 4)
-          .map(([topic, score]) => [
-            topic,
-            Math.max(0, score + (Math.random() - 0.5) * 50 - (29 - i) * 2),
-          ])
-      ),
-    }
-  })
-
-  const topicColors = ['#7C3AED', '#4338CA', '#10B981', '#F59E0B']
-  const topicKeys = Object.keys(progress?.topic_proficiency ?? topicProficiency).slice(0, 4)
-
-  const handleDownloadReport = async () => {
-    setDownloading(true)
-    try {
-      const { data } = await progressAPI.downloadReport()
-      const url = URL.createObjectURL(data)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = 'progress-report.pdf'
-      a.click()
-      URL.revokeObjectURL(url)
-      toast.success('Report downloaded!')
-    } catch {
-      toast.error('Could not generate report')
-    } finally {
-      setDownloading(false)
-    }
-  }
-
-  const moodTimeline = progress?.mood_timeline ?? []
+  const skills = Object.entries(topicProficiency).length > 0
+    ? Object.entries(topicProficiency).map(([k, v]) => ({ k, v: v / 1000 }))
+    : [
+        { k: 'Python',        v: 0.78 },
+        { k: 'SQL',           v: 0.71 },
+        { k: 'Statistics',    v: 0.62 },
+        { k: 'Probability',   v: 0.58 },
+        { k: 'Linear Algebra',v: 0.55 },
+        { k: 'ML Theory',     v: 0.48 },
+        { k: 'Calculus',      v: 0.41 },
+        { k: 'Deep Learning', v: 0.34 },
+      ]
 
   return (
-    <PageWrapper>
-      <div className="px-6 py-8 max-w-[1400px] mx-auto space-y-8">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="font-display text-3xl text-paper">Progress & Skill Map</h1>
-            <p className="text-paper/50 text-sm mt-1">Your learning analytics, powered by the Progress Tracker agent</p>
-          </div>
-          <button
-            onClick={handleDownloadReport}
-            disabled={downloading}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-surface-2 border border-surface-3 text-sm text-paper/70 hover:border-violet/50 transition-colors disabled:opacity-50"
-          >
-            {downloading ? (
-              <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
-              </svg>
-            ) : '⬇'}
-            Export PDF Report
-          </button>
+    <div style={{ padding: '24px 28px', maxWidth: 1240, margin: '0 auto' }}>
+      <div style={{ marginBottom: 18, display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+        <div>
+          <div className="caps fg-3">Last 30 days</div>
+          <h1 className="serif" style={{ fontSize: 36, fontWeight: 400, margin: 0, letterSpacing: '-0.02em' }}>Progress</h1>
         </div>
-
-        {/* Metric cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {[
-            { label: 'Study Time', value: isLoading ? '—' : `${Math.round((progress?.total_study_minutes ?? 0) / 60)}h`, icon: '⏱️' },
-            { label: 'Quiz Accuracy', value: isLoading ? '—' : `${Math.round((progress?.quiz_accuracy ?? 0) * 100)}%`, icon: '🎯' },
-            { label: 'Doubts Resolved', value: isLoading ? '—' : String(progress?.doubts_resolved ?? 0), icon: '💡' },
-            { label: 'Current Streak', value: isLoading ? '—' : `${streak} days`, icon: '🔥' },
-          ].map(({ label, value, icon }) => (
-            <motion.div
-              key={label}
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 }}
-            >
-              <Card>
-                <div className="text-2xl mb-2">{icon}</div>
-                <div className="text-2xl font-bold text-paper">{value}</div>
-                <div className="text-xs text-paper/50 mt-1">{label}</div>
-              </Card>
-            </motion.div>
-          ))}
-        </div>
-
-        {/* Radar chart hero */}
-        <Card>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-medium text-paper/70 uppercase tracking-wider">Skill Proficiency Map</h2>
-            <span className="text-xs text-paper/30">Click an axis to drill down</span>
-          </div>
-          {isLoading ? (
-            <Skeleton className="h-80 w-full" />
-          ) : (
-            <Suspense fallback={<Skeleton className="h-80 w-full" />}>
-              <ResponsiveContainer width="100%" height={320}>
-                <RadarChart data={radarData} margin={{ top: 20, right: 40, bottom: 20, left: 40 }}>
-                  <PolarGrid stroke="#374151" />
-                  <PolarAngleAxis
-                    dataKey="topic"
-                    tick={{ fill: '#9CA3AF', fontSize: 12 }}
-                    onClick={({ value }) => {
-                      const found = radarData.find((d) => d.topic === value)
-                      if (found) setExpandedTopic((prev) => prev === found.fullTopic ? null : found.fullTopic)
-                    }}
-                  />
-                  <Radar
-                    name="Proficiency"
-                    dataKey="score"
-                    stroke="#7C3AED"
-                    fill="#7C3AED"
-                    fillOpacity={0.35}
-                    strokeWidth={2}
-                  />
-                  <Tooltip
-                    contentStyle={{ background: '#1F2937', border: '1px solid #374151', borderRadius: 8 }}
-                    labelStyle={{ color: '#F9FAFB' }}
-                    formatter={(v) => [`${v}%`, 'Proficiency']}
-                  />
-                </RadarChart>
-              </ResponsiveContainer>
-            </Suspense>
-          )}
-
-          {/* Topic deep-dive panel */}
-          {expandedTopic && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              className="mt-4 border-t border-surface-2 pt-4"
-            >
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-medium text-paper">{expandedTopic} — Sub-topics</h3>
-                <button onClick={() => setExpandedTopic(null)} className="text-xs text-paper/40 hover:text-paper">✕</button>
-              </div>
-              <div className="space-y-2">
-                {['Fundamentals', 'Intermediate', 'Advanced', 'Practice Projects'].map((sub) => (
-                  <div key={sub} className="flex items-center gap-3">
-                    <span className="text-xs text-paper/60 w-32">{sub}</span>
-                    <div className="flex-1 h-2 bg-surface-2 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-gradient-to-r from-violet to-indigo-light rounded-full"
-                        style={{ width: `${30 + Math.random() * 60}%` }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </motion.div>
-          )}
-        </Card>
-
-        {/* Learning velocity chart */}
-        <Card>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-medium text-paper/70 uppercase tracking-wider">Learning Velocity (30 days)</h2>
-            <div className="flex gap-3">
-              {topicKeys.slice(0, 4).map((topic, i) => (
-                <div key={topic} className="flex items-center gap-1">
-                  <div className="w-2 h-2 rounded-full" style={{ background: topicColors[i] }} />
-                  <span className="text-xs text-paper/40 max-w-[60px] truncate">{topic}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-          <Suspense fallback={<Skeleton className="h-48 w-full" />}>
-            <ResponsiveContainer width="100%" height={200}>
-              <AreaChart data={areaData} margin={{ top: 5, right: 10, bottom: 5, left: 0 }}>
-                <defs>
-                  {topicKeys.map((_, i) => (
-                    <linearGradient key={i} id={`grad${i}`} x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={topicColors[i]} stopOpacity={0.4} />
-                      <stop offset="100%" stopColor={topicColors[i]} stopOpacity={0} />
-                    </linearGradient>
-                  ))}
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                <XAxis dataKey="date" tick={{ fill: '#6B7280', fontSize: 10 }} tickLine={false} interval={6} />
-                <YAxis tick={{ fill: '#6B7280', fontSize: 10 }} tickLine={false} domain={[0, 1000]} />
-                <Tooltip
-                  contentStyle={{ background: '#1F2937', border: '1px solid #374151', borderRadius: 8 }}
-                  labelStyle={{ color: '#F9FAFB' }}
-                />
-                {topicKeys.map((topic, i) => (
-                  <Area
-                    key={topic}
-                    type="monotone"
-                    dataKey={topic}
-                    stroke={topicColors[i]}
-                    fill={`url(#grad${i})`}
-                    strokeWidth={2}
-                  />
-                ))}
-              </AreaChart>
-            </ResponsiveContainer>
-          </Suspense>
-        </Card>
-
-        {/* Mood timeline */}
-        <Card>
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="text-sm font-medium text-paper/70 uppercase tracking-wider">Mood Timeline</h2>
-              <p className="text-xs text-paper/30 mt-0.5">Sentiment analysis from your quiz reflections</p>
-            </div>
-          </div>
-          {moodTimeline.length === 0 ? (
-            <p className="text-sm text-paper/40 py-4 text-center">Complete quiz sessions to see your mood timeline</p>
-          ) : (
-            <div className="flex items-center gap-3 overflow-x-auto pb-2">
-              {moodTimeline.map((entry) => (
-                <div key={entry.session_id} className="flex flex-col items-center gap-1 shrink-0">
-                  <span className="text-xl">{MOOD_EMOJI[entry.mood] ?? '💬'}</span>
-                  <div
-                    className="w-2 h-8 rounded-full"
-                    style={{ background: MOOD_COLOR[entry.mood] ?? '#6B7280' }}
-                  />
-                  <span className="text-[9px] text-paper/30">{new Date(entry.date).toLocaleDateString('en', { month: 'short', day: 'numeric' })}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
+        <Tabs variant="segmented" value={period} onChange={setPeriod} tabs={[
+          { value: 'week', label: 'Week' }, { value: 'month', label: 'Month' }, { value: 'all', label: 'All time' },
+        ]} />
       </div>
-    </PageWrapper>
+
+      {/* Stat strip */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', border: '1px solid var(--line-1)', borderRadius: 'var(--r-3)', overflow: 'hidden', background: 'var(--paper-1)', marginBottom: 16 }}>
+        {[
+          { l: 'XP earned',  v: xp.toLocaleString(), s: '+18%',        t: 'pos' },
+          { l: 'Modules',    v: '32',                 s: '+6',           t: 'pos' },
+          { l: 'Quizzes',    v: '14',                 s: '88% avg',      t: 'neutral' },
+          { l: 'Doubts',     v: '38',                 s: 'all resolved', t: 'pos' },
+          { l: 'Time',       v: '42h',                s: '6h/wk',        t: 'neutral' },
+          { l: 'Mastery',    v: '48%',                s: '+4 pts',       t: 'pos' },
+        ].map((s, i) => (
+          <div key={i} style={{ padding: 14, borderRight: i < 5 ? '1px solid var(--line-1)' : 'none' }}>
+            <div className="caps fg-2">{s.l}</div>
+            <div className="serif" style={{ fontSize: 26, color: 'var(--ink-0)', marginTop: 2 }}>{s.v}</div>
+            <div className="t-xs" style={{ color: s.t === 'pos' ? 'var(--pos)' : 'var(--ink-3)' }}>{s.s}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 14 }}>
+        {/* Skill mastery */}
+        <Card padding="md">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <span className="caps fg-2">Skill mastery · {skills.length} sub-skills</span>
+            <Tabs variant="segmented" value="proficiency" onChange={() => {}} tabs={[
+              { value: 'proficiency', label: 'Proficiency' },
+              { value: 'velocity',    label: 'Velocity' },
+            ]} />
+          </div>
+          {skills.map((s, i) => (
+            <div key={i} style={{ padding: '8px 0', borderTop: i ? '1px solid var(--line-1)' : 'none', display: 'grid', gridTemplateColumns: '120px 1fr 50px 60px', gap: 12, alignItems: 'center' }}>
+              <span className="t-sm fg-0" style={{ fontWeight: 500 }}>{s.k}</span>
+              <div style={{ height: 6, background: 'var(--paper-3)', borderRadius: 'var(--r-pill)', overflow: 'hidden' }}>
+                <div style={{ width: `${s.v * 100}%`, height: '100%', background: 'var(--ink-0)', borderRadius: 'var(--r-pill)' }} />
+              </div>
+              <span className="t-sm fg-0 mono" style={{ textAlign: 'right' }}>{Math.round(s.v * 100)}</span>
+              <Badge size="xs" tone={s.v > 0.6 ? 'pos' : s.v > 0.4 ? 'neutral' : 'warn'}>
+                {s.v > 0.6 ? 'strong' : s.v > 0.4 ? 'mid' : 'needs work'}
+              </Badge>
+            </div>
+          ))}
+        </Card>
+
+        {/* Right column */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {/* Streak calendar */}
+          <Card padding="md">
+            <div className="caps fg-2" style={{ marginBottom: 8 }}>Streak calendar</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
+              {HEATMAP_DAYS.map((d, i) => (
+                <div key={i} style={{
+                  aspectRatio: '1',
+                  borderRadius: 4,
+                  background: d.active ? `color-mix(in srgb, var(--accent) ${d.intensity * 20}%, var(--paper-3))` : 'var(--paper-2)',
+                  border: '1px solid var(--line-1)',
+                }} />
+              ))}
+            </div>
+            <div className="t-xs fg-3" style={{ marginTop: 8 }}>{streak}-day streak</div>
+          </Card>
+
+          {/* Insights */}
+          <Card padding="md">
+            <div className="caps fg-2" style={{ marginBottom: 6 }}>Insights · this week</div>
+            {[
+              { i: 'arrowUR', t: 'Deep Learning velocity is up 12 pts', tone: 'pos' },
+              { i: 'arrowDR', t: 'Calculus retention dipped 3 pts',     tone: 'neg' },
+              { i: 'sparkle', t: 'Quiz agent suggests revisiting derivatives', tone: 'accent' },
+            ].map((s, i) => (
+              <div key={i} style={{ padding: '6px 0', borderTop: i ? '1px solid var(--line-1)' : 'none', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                <Icon name={s.i} size={12} style={{ marginTop: 2, color: s.tone === 'pos' ? 'var(--pos)' : s.tone === 'neg' ? 'var(--neg)' : 'var(--accent)' }} />
+                <span className="t-sm fg-1" style={{ flex: 1 }}>{s.t}</span>
+              </div>
+            ))}
+          </Card>
+
+          {/* Time chart (mini bars) */}
+          <Card padding="md">
+            <div className="caps fg-2" style={{ marginBottom: 8 }}>Time invested · this week</div>
+            <div style={{ display: 'flex', gap: 6, height: 80, alignItems: 'flex-end' }}>
+              {[0.4, 0.7, 0.5, 0.9, 0.3, 0.6, 0.85].map((h, i) => (
+                <div key={i} style={{ flex: 1, height: `${h * 100}%`, background: 'var(--ink-0)', borderRadius: '2px 2px 0 0', opacity: 0.5 + h * 0.4 }} />
+              ))}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, fontSize: 10, color: 'var(--ink-3)' }}>
+              {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => <span key={i}>{d}</span>)}
+            </div>
+          </Card>
+        </div>
+      </div>
+    </div>
   )
 }

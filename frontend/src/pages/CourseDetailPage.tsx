@@ -1,145 +1,102 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { motion } from 'framer-motion'
-import { PageWrapper } from '@/components/layout/PageWrapper'
+import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
-import { Skeleton } from '@/components/ui/Skeleton'
+import { Icon } from '@/components/ui/Icon'
+import { CardSkeleton } from '@/components/ui/Skeleton'
 import { coursesAPI, type CourseModule } from '@/lib/api'
 
-const TYPE_ICON: Record<string, string> = {
-  video: '▶️',
-  article: '📄',
-  course: '🎓',
-  book: '📚',
-  tool: '🛠️',
-}
+const TYPE_ICON: Record<string, string> = { video: 'play', article: 'book', course: 'sparkle', book: 'book', tool: 'code' }
 
 const STATUS_CONFIG = {
-  pending: { variant: 'surface' as const, label: 'Not started', icon: '○' },
-  in_progress: { variant: 'amber' as const, label: 'In progress', icon: '◑' },
-  passed: { variant: 'emerald' as const, label: 'Passed', icon: '✓' },
-  failed: { variant: 'rose' as const, label: 'Failed — retry', icon: '✕' },
+  pending:     { tone: 'neutral' as const, label: 'Not started' },
+  in_progress: { tone: 'warn'    as const, label: 'In progress'  },
+  passed:      { tone: 'pos'     as const, label: 'Passed'        },
+  failed:      { tone: 'neg'     as const, label: 'Retry'         },
 }
 
-function ModuleCard({
-  module,
-  index,
-  planId,
-  isUnlocked,
-}: {
-  module: CourseModule
-  index: number
-  planId: string
-  isUnlocked: boolean
-}) {
+function ModuleRow({ module, index, planId, isUnlocked }: { module: CourseModule; index: number; planId: string; isUnlocked: boolean }) {
   const navigate = useNavigate()
   const cfg = STATUS_CONFIG[module.interview_status]
-  // stored as 0-1, display as X.X/10
-  const scoreOutOf10 = module.interview_score != null ? (module.interview_score * 10).toFixed(1) : null
+  const score = module.interview_score != null ? (module.interview_score * 10).toFixed(1) : null
+  const passed = module.interview_status === 'passed'
+  const failed = module.interview_status === 'failed'
 
   return (
-    <motion.div
-      initial={{ opacity: 0, x: -20 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ delay: index * 0.06 }}
-      className="relative flex gap-4"
-    >
-      {/* Timeline spine */}
-      <div className="flex flex-col items-center">
-        <div
-          className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0 border-2 transition-all ${
-            module.interview_status === 'passed'
-              ? 'bg-emerald/20 border-emerald text-emerald'
-              : module.interview_status === 'failed'
-              ? 'bg-rose/20 border-rose text-rose'
-              : isUnlocked
-              ? 'bg-violet/20 border-violet text-violet-light'
-              : 'bg-surface-2 border-surface-3 text-paper/30'
-          }`}
-        >
-          {module.interview_status === 'passed' ? '✓' : module.interview_status === 'failed' ? '✕' : index + 1}
+    <div style={{ display: 'flex', gap: 16, paddingBottom: 16, opacity: isUnlocked ? 1 : 0.45 }}>
+      {/* Timeline */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
+        <div style={{
+          width: 28, height: 28, borderRadius: '50%', display: 'grid', placeItems: 'center',
+          fontSize: 11, fontWeight: 600, flexShrink: 0,
+          background: passed ? 'var(--pos)' : failed ? 'var(--neg)' : isUnlocked ? 'var(--ink-0)' : 'var(--paper-3)',
+          color: passed || failed || isUnlocked ? 'var(--paper-0)' : 'var(--ink-3)',
+        }}>
+          {passed ? <Icon name="check" size={12} /> : failed ? '✕' : index + 1}
         </div>
-        {/* Connector line */}
-        <div className="w-px flex-1 bg-surface-3 mt-2 min-h-[16px]" />
+        <div style={{ width: 1, flex: 1, background: 'var(--line-1)', marginTop: 4, minHeight: 12 }} />
       </div>
 
       {/* Content */}
-      <div className="flex-1 pb-6">
-        <div
-          className={`glass-strong rounded-2xl p-5 transition-all ${
-            !isUnlocked ? 'opacity-50' : 'hover:border-violet/30'
-          } border border-surface-2/50`}
-        >
-          <div className="flex items-start justify-between mb-3">
-            <div>
-              <p className="text-xs text-paper/40 mb-1">Module {index + 1} · {module.duration_days} days</p>
-              <h3 className="font-display text-lg text-paper leading-tight">{module.title}</h3>
-            </div>
-            <div className="flex flex-col items-end gap-2 shrink-0 ml-4">
-              <Badge variant={cfg.variant}>{cfg.label}</Badge>
-              {scoreOutOf10 != null && (
-                <div className="flex items-baseline gap-0.5">
-                  <span className="text-lg font-bold text-paper">{scoreOutOf10}</span>
-                  <span className="text-xs text-paper/40">/ 10</span>
-                </div>
-              )}
-            </div>
+      <Card padding="md" style={{ flex: 1, marginBottom: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
+          <div>
+            <div className="t-xs fg-3" style={{ marginBottom: 2 }}>Module {index + 1} · {module.duration_days}d</div>
+            <div className="t-lg fg-0" style={{ fontWeight: 500 }}>{module.title}</div>
           </div>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+            <Badge tone={cfg.tone} size="xs">{cfg.label}</Badge>
+            {score && <span className="t-sm fg-0 mono" style={{ fontWeight: 600 }}>{score}<span className="fg-3">/10</span></span>}
+          </div>
+        </div>
 
-          <p className="text-sm text-paper/60 mb-4">{module.description}</p>
+        <div className="t-sm fg-2" style={{ marginBottom: 10, lineHeight: 1.5 }}>{module.description}</div>
 
-          {/* Topics */}
-          <div className="flex flex-wrap gap-1.5 mb-4">
-            {module.topics.map((t) => (
-              <span key={t} className="text-xs px-2 py-0.5 rounded-full bg-surface-2 border border-surface-3 text-paper/50">
-                {t}
-              </span>
+        {/* Topics */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 10 }}>
+          {module.topics.map((t) => (
+            <Badge key={t} tone="outline" size="xs">{t}</Badge>
+          ))}
+        </div>
+
+        {/* Resources */}
+        {module.resources.length > 0 && (
+          <div style={{ marginBottom: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {module.resources.map((r, i) => (
+              <a
+                key={i}
+                href={r.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ display: 'flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}
+              >
+                <Icon name={TYPE_ICON[r.type] as any ?? 'book'} size={11} style={{ color: 'var(--ink-3)' }} />
+                <span className="t-xs fg-2" style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.title}</span>
+                <span className="t-xs fg-3">{r.type}</span>
+              </a>
             ))}
           </div>
+        )}
 
-          {/* Resources */}
-          {module.resources.length > 0 && (
-            <div className="space-y-1.5 mb-4">
-              {module.resources.map((r, i) => (
-                <a
-                  key={i}
-                  href={r.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-2 text-xs text-paper/50 hover:text-paper/80 transition-colors group"
-                >
-                  <span>{TYPE_ICON[r.type] ?? '🔗'}</span>
-                  <span className="group-hover:underline truncate">{r.title}</span>
-                  <span className="ml-auto text-paper/30 shrink-0">{r.type}</span>
-                </a>
-              ))}
-            </div>
-          )}
-
-          {/* Interview button */}
-          {isUnlocked && (
-            <Button
-              size="sm"
-              variant={module.interview_status === 'passed' ? 'secondary' : 'primary'}
-              onClick={() => navigate(`/courses/${planId}/modules/${module.id}/interview`)}
-            >
-              {module.interview_status === 'passed'
-                ? 'Review interview'
-                : module.interview_status === 'failed'
-                ? 'Retry interview →'
-                : 'Start AI Interview →'}
-            </Button>
-          )}
-
-          {!isUnlocked && (
-            <p className="text-xs text-paper/30 flex items-center gap-1.5">
-              🔒 Attempt the previous module's interview to unlock
-            </p>
-          )}
-        </div>
-      </div>
-    </motion.div>
+        {isUnlocked && (
+          <Button
+            size="sm"
+            variant={passed ? 'secondary' : 'primary'}
+            iconRight="arrow"
+            onClick={() => navigate(`/courses/${planId}/modules/${module.id}/interview`)}
+          >
+            {passed ? 'Review interview' : failed ? 'Retry interview' : 'Start AI Interview'}
+          </Button>
+        )}
+        {!isUnlocked && (
+          <div className="t-xs fg-3" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <Icon name="lock" size={11} />
+            Pass the previous module's interview to unlock
+          </div>
+        )}
+      </Card>
+    </div>
   )
 }
 
@@ -156,100 +113,84 @@ export default function CourseDetailPage() {
 
   if (isLoading) {
     return (
-      <PageWrapper>
-        <div className="px-6 py-8 max-w-3xl mx-auto space-y-4">
-          <Skeleton className="h-8 w-64" />
-          <Skeleton className="h-4 w-48" />
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-48 w-full rounded-2xl" />
-          ))}
-        </div>
-      </PageWrapper>
+      <div style={{ padding: '24px 28px', maxWidth: 760, margin: '0 auto' }}>
+        <div className="skel" style={{ height: 32, width: 200, borderRadius: 6, marginBottom: 8 }} />
+        <div className="skel" style={{ height: 16, width: 320, borderRadius: 4, marginBottom: 24 }} />
+        {[0, 1, 2, 3].map((i) => <CardSkeleton key={i} />)}
+      </div>
     )
   }
 
   if (!plan) {
     return (
-      <PageWrapper>
-        <div className="flex flex-col items-center justify-center min-h-[50vh] gap-4 text-paper/50">
-          <span className="text-4xl">🗺️</span>
-          <p>Plan not found</p>
-          <Button variant="secondary" onClick={() => navigate('/courses')}>← Back to Plans</Button>
-        </div>
-      </PageWrapper>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '50vh', gap: 12 }}>
+        <Icon name="book" size={32} style={{ color: 'var(--ink-3)' }} />
+        <div className="t-md fg-2">Plan not found</div>
+        <Button variant="secondary" onClick={() => navigate('/courses')}>Back to Plans</Button>
+      </div>
     )
   }
 
   const passedCount = plan.modules.filter((m) => m.interview_status === 'passed').length
-  const totalWeeks = plan.total_duration_weeks
-  const progressPct = Math.round((passedCount / plan.modules.length) * 100)
+  const progressPct = plan.modules.length ? Math.round((passedCount / plan.modules.length) * 100) : 0
 
   return (
-    <PageWrapper>
-      <div className="px-6 py-8 max-w-3xl mx-auto">
-        {/* Back */}
-        <button
-          onClick={() => navigate('/courses')}
-          className="flex items-center gap-1.5 text-sm text-paper/40 hover:text-paper/70 mb-6 transition-colors"
-        >
-          ← All Plans
-        </button>
+    <div style={{ padding: '24px 28px', maxWidth: 760, margin: '0 auto' }}>
+      <button
+        onClick={() => navigate('/courses')}
+        style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 16, background: 'none', border: 0, cursor: 'pointer', padding: 0 }}
+      >
+        <Icon name="chevL" size={12} style={{ color: 'var(--ink-3)' }} />
+        <span className="t-sm fg-3">All plans</span>
+      </button>
 
-        {/* Header */}
-        <div className="mb-8">
-          <div className="flex items-center gap-3 mb-2">
-            <Badge variant="violet">{plan.modules.length} modules</Badge>
-            <Badge variant="surface">{totalWeeks} weeks</Badge>
-            {passedCount === plan.modules.length && (
-              <Badge variant="emerald">Completed 🎉</Badge>
-            )}
-          </div>
-          <h1 className="font-display text-3xl text-paper mb-2">{plan.title}</h1>
-          <p className="text-paper/50 text-sm">{plan.description}</p>
-
-          {/* Overall progress */}
-          <div className="mt-5">
-            <div className="flex justify-between text-xs text-paper/40 mb-1.5">
-              <span>{passedCount} of {plan.modules.length} modules passed</span>
-              <span>{progressPct}%</span>
-            </div>
-            <div className="h-2 bg-surface-2 rounded-full overflow-hidden">
-              <motion.div
-                className="h-full bg-gradient-to-r from-violet to-emerald rounded-full"
-                initial={{ width: 0 }}
-                animate={{ width: `${progressPct}%` }}
-                transition={{ duration: 1, ease: 'easeOut' }}
-              />
-            </div>
-          </div>
+      {/* Header */}
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+          <Badge tone="outline" size="xs">{plan.modules.length} modules</Badge>
+          <Badge tone="neutral" size="xs">{plan.total_duration_weeks}w</Badge>
+          {passedCount === plan.modules.length && plan.modules.length > 0 && (
+            <Badge tone="pos" size="xs">Completed</Badge>
+          )}
         </div>
+        <h1 className="serif" style={{ fontSize: 32, fontWeight: 400, margin: 0, letterSpacing: '-0.02em' }}>{plan.title}</h1>
+        <p className="t-md fg-2" style={{ marginTop: 6 }}>{plan.description}</p>
 
-        {/* Timeline */}
-        <div>
-          {plan.modules.map((module, i) => {
-            const prevAttempted =
-              i === 0 || plan.modules[i - 1].interview_status !== 'pending'
-            return (
-              <ModuleCard
-                key={module.id}
-                module={module}
-                index={i}
-                planId={plan.plan_id}
-                isUnlocked={prevAttempted}
-              />
-            )
-          })}
-          {/* End marker */}
-          <div className="flex gap-4 items-center pl-0">
-            <div className="w-9 flex justify-center">
-              <div className={`w-4 h-4 rounded-full border-2 ${passedCount === plan.modules.length ? 'bg-emerald border-emerald' : 'bg-surface-2 border-surface-3'}`} />
-            </div>
-            <p className={`text-sm ${passedCount === plan.modules.length ? 'text-emerald font-medium' : 'text-paper/30'}`}>
-              {passedCount === plan.modules.length ? '🎓 Course Complete!' : 'Finish all modules to complete the course'}
-            </p>
+        {/* Progress bar */}
+        <div style={{ marginTop: 14 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+            <span className="t-xs fg-3">{passedCount} of {plan.modules.length} modules passed</span>
+            <span className="t-xs fg-3 mono">{progressPct}%</span>
+          </div>
+          <div style={{ height: 6, background: 'var(--paper-3)', borderRadius: 'var(--r-pill)', overflow: 'hidden' }}>
+            <div style={{ width: `${progressPct}%`, height: '100%', background: 'var(--ink-0)', borderRadius: 'var(--r-pill)', transition: 'width 0.8s ease' }} />
           </div>
         </div>
       </div>
-    </PageWrapper>
+
+      {/* Timeline */}
+      <div>
+        {plan.modules.map((module, i) => {
+          const prevAttempted = i === 0 || plan.modules[i - 1].interview_status !== 'pending'
+          return (
+            <ModuleRow key={module.id} module={module} index={i} planId={plan.plan_id} isUnlocked={prevAttempted} />
+          )
+        })}
+        {/* End marker */}
+        <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+          <div style={{ width: 28, display: 'flex', justifyContent: 'center' }}>
+            <div style={{
+              width: 12, height: 12, borderRadius: '50%',
+              background: passedCount === plan.modules.length ? 'var(--pos)' : 'var(--paper-3)',
+              border: '2px solid',
+              borderColor: passedCount === plan.modules.length ? 'var(--pos)' : 'var(--line-2)',
+            }} />
+          </div>
+          <span className="t-sm" style={{ color: passedCount === plan.modules.length ? 'var(--pos)' : 'var(--ink-3)' }}>
+            {passedCount === plan.modules.length ? 'Course Complete!' : 'Finish all modules to complete the course'}
+          </span>
+        </div>
+      </div>
+    </div>
   )
 }

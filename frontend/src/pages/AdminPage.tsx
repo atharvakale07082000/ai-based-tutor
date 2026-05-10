@@ -1,30 +1,35 @@
 import { useState } from 'react'
 import { Routes, Route, Link, Navigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { motion } from 'framer-motion'
-import { Treemap, ResponsiveContainer, Tooltip } from 'recharts'
-import { PageWrapper } from '@/components/layout/PageWrapper'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
-import { Skeleton } from '@/components/ui/Skeleton'
 import { Button } from '@/components/ui/Button'
+import { Icon } from '@/components/ui/Icon'
 import { adminAPI, hfAPI } from '@/lib/api'
 import { useAgentStore } from '@/stores/agentStore'
 import { HF_MODELS } from '@/lib/hf'
 import toast from 'react-hot-toast'
 
+const MOOD_EMOJI: Record<string, string> = { POSITIVE: '😊', NEGATIVE: '😟', NEUTRAL: '😐' }
+
+const TOPIC_GAPS = [
+  { name: 'Python',          pct: 0.42 },
+  { name: 'Machine Learning',pct: 0.35 },
+  { name: 'Statistics',      pct: 0.28 },
+  { name: 'Deep Learning',   pct: 0.22 },
+  { name: 'NLP',             pct: 0.18 },
+  { name: 'Data Viz',        pct: 0.15 },
+  { name: 'SQL',             pct: 0.12 },
+  { name: 'Cloud',           pct: 0.09 },
+]
+
 function AdminOverview() {
   const [search, setSearch] = useState('')
-  const [page] = useState(1)
-  const [config, setConfig] = useState({
-    quiz_frequency: 3,
-    difficulty_ceiling: 80,
-    escalation_threshold: 3,
-  })
+  const [config, setConfig] = useState({ quiz_frequency: 3, difficulty_ceiling: 80, escalation_threshold: 3 })
 
   const { data: learners, isLoading } = useQuery({
-    queryKey: ['admin', 'learners', search, page],
-    queryFn: () => adminAPI.getLearners(search, page).then((r) => r.data),
+    queryKey: ['admin', 'learners', search],
+    queryFn: () => adminAPI.getLearners(search, 1).then((r) => r.data),
   })
 
   const configMutation = useMutation({
@@ -33,140 +38,123 @@ function AdminOverview() {
     onError: () => toast.error('Could not update config'),
   })
 
-  // Build treemap data from learners
-  const topicGapData = [
-    { name: 'Python', size: 42, fill: '#7C3AED' },
-    { name: 'Machine Learning', size: 35, fill: '#4338CA' },
-    { name: 'Statistics', size: 28, fill: '#6366F1' },
-    { name: 'Deep Learning', size: 22, fill: '#8B5CF6' },
-    { name: 'NLP', size: 18, fill: '#A78BFA' },
-    { name: 'Data Viz', size: 15, fill: '#7C3AED' },
-    { name: 'SQL', size: 12, fill: '#4338CA' },
-    { name: 'Cloud', size: 9, fill: '#6366F1' },
-  ]
-
-  const MOOD_EMOJI: Record<string, string> = { POSITIVE: '😊', NEGATIVE: '😟', NEUTRAL: '😐' }
-
   return (
-    <div className="px-6 py-8 max-w-[1400px] mx-auto space-y-8">
-      <div className="flex items-center justify-between">
-        <h1 className="font-display text-3xl text-paper">Admin Dashboard</h1>
-        <div className="flex gap-3">
-          <Link to="/admin/models">
-            <Button variant="secondary" size="sm">AI Model Status</Button>
-          </Link>
+    <div style={{ padding: '24px 28px', maxWidth: 1240, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+        <div>
+          <div className="caps fg-3">Admin</div>
+          <h1 className="serif" style={{ fontSize: 36, fontWeight: 400, margin: 0, letterSpacing: '-0.02em' }}>Dashboard</h1>
         </div>
+        <Link to="models" style={{ textDecoration: 'none' }}>
+          <Button variant="secondary" size="sm" icon="sparkle">AI Model Status</Button>
+        </Link>
       </div>
 
-      {/* Skill gap heatmap */}
-      <Card>
-        <h2 className="text-sm font-medium text-paper/70 uppercase tracking-wider mb-4">Org Skill Gap Heatmap</h2>
-        <p className="text-xs text-paper/30 mb-4">Topics by learner count with skill gaps</p>
-        <ResponsiveContainer width="100%" height={240}>
-          <Treemap
-            data={topicGapData}
-            dataKey="size"
-            aspectRatio={4 / 3}
-            stroke="#0A0F1E"
-            fill="#7C3AED"
-          >
-            <Tooltip
-              contentStyle={{ background: '#1F2937', border: '1px solid #374151', borderRadius: 8 }}
-              formatter={(v) => [v, 'Learners with gaps']}
-            />
-          </Treemap>
-        </ResponsiveContainer>
+      {/* Skill gap heatmap (simplified bar chart — no recharts dependency) */}
+      <Card padding="md">
+        <div className="caps fg-2" style={{ marginBottom: 12 }}>Org Skill Gap Heatmap · learner count with gaps</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {TOPIC_GAPS.map((t) => (
+            <div key={t.name} style={{ display: 'grid', gridTemplateColumns: '140px 1fr 48px', gap: 10, alignItems: 'center' }}>
+              <span className="t-sm fg-1" style={{ fontWeight: 500 }}>{t.name}</span>
+              <div style={{ height: 8, background: 'var(--paper-3)', borderRadius: 'var(--r-pill)', overflow: 'hidden' }}>
+                <div style={{ width: `${t.pct * 100}%`, height: '100%', background: 'var(--ink-0)', borderRadius: 'var(--r-pill)' }} />
+              </div>
+              <span className="t-xs fg-3 mono" style={{ textAlign: 'right' }}>{Math.round(t.pct * 100)}%</span>
+            </div>
+          ))}
+        </div>
       </Card>
 
       {/* Learner table */}
-      <Card>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-medium text-paper/70 uppercase tracking-wider">Learner Overview</h2>
+      <Card padding="md">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+          <span className="caps fg-2">Learner Overview</span>
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search learners…"
-            className="bg-surface-2 border border-surface-3 rounded-xl px-3 py-2 text-sm text-paper placeholder-paper/30 focus:outline-none focus:ring-2 focus:ring-violet/50 w-56"
+            style={{
+              background: 'var(--paper-2)', border: '1px solid var(--line-1)',
+              borderRadius: 'var(--r-2)', padding: '5px 10px', fontSize: 13,
+              color: 'var(--ink-0)', fontFamily: 'inherit', outline: 'none', width: 200,
+            }}
           />
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
-              <tr className="text-left text-xs text-paper/40 uppercase tracking-wider border-b border-surface-2">
-                <th className="pb-3 pr-4">Name</th>
-                <th className="pb-3 pr-4">Email</th>
-                <th className="pb-3 pr-4">Avg. Proficiency</th>
-                <th className="pb-3 pr-4">Last Active</th>
-                <th className="pb-3">Mood</th>
+              <tr>
+                {['Name', 'Email', 'Avg. Proficiency', 'Last Active', 'Mood'].map((h) => (
+                  <th key={h} style={{ textAlign: 'left', paddingBottom: 10, paddingRight: 16, borderBottom: '1px solid var(--line-1)', color: 'var(--ink-3)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 500 }}>{h}</th>
+                ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-surface-2/50">
+            <tbody>
               {isLoading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <tr key={i}>
                     {Array.from({ length: 5 }).map((_, j) => (
-                      <td key={j} className="py-3 pr-4"><Skeleton className="h-4 w-24" /></td>
+                      <td key={j} style={{ padding: '10px 16px 10px 0' }}>
+                        <div className="skel" style={{ height: 14, width: 80, borderRadius: 4 }} />
+                      </td>
                     ))}
                   </tr>
                 ))
               ) : (
                 (learners?.items ?? []).map((learner) => (
-                  <tr key={learner.id} className="hover:bg-surface-2/30 transition-colors">
-                    <td className="py-3 pr-4 font-medium text-paper">{learner.name}</td>
-                    <td className="py-3 pr-4 text-paper/60 text-xs">{learner.email}</td>
-                    <td className="py-3 pr-4">
-                      <div className="flex items-center gap-2">
-                        <div className="w-16 h-1.5 bg-surface-3 rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-violet rounded-full"
-                            style={{ width: `${(learner.avg_proficiency / 1000) * 100}%` }}
-                          />
+                  <tr key={learner.id} style={{ borderTop: '1px solid var(--line-1)' }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--paper-2)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    <td style={{ padding: '10px 16px 10px 0', fontWeight: 500, color: 'var(--ink-0)' }}>{learner.name}</td>
+                    <td style={{ padding: '10px 16px 10px 0', color: 'var(--ink-3)' }}>{learner.email}</td>
+                    <td style={{ padding: '10px 16px 10px 0' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div style={{ width: 64, height: 4, background: 'var(--paper-3)', borderRadius: 'var(--r-pill)', overflow: 'hidden' }}>
+                          <div style={{ width: `${(learner.avg_proficiency / 1000) * 100}%`, height: '100%', background: 'var(--ink-0)', borderRadius: 'var(--r-pill)' }} />
                         </div>
-                        <span className="text-xs text-paper/60">{Math.round((learner.avg_proficiency / 1000) * 100)}%</span>
+                        <span className="t-xs fg-3 mono">{Math.round((learner.avg_proficiency / 1000) * 100)}%</span>
                       </div>
                     </td>
-                    <td className="py-3 pr-4 text-xs text-paper/40">
-                      {new Date(learner.last_active).toLocaleDateString()}
-                    </td>
-                    <td className="py-3">
-                      <span>{MOOD_EMOJI[learner.mood?.toUpperCase() ?? ''] ?? '—'}</span>
-                    </td>
+                    <td style={{ padding: '10px 16px 10px 0', color: 'var(--ink-3)' }}>{new Date(learner.last_active).toLocaleDateString()}</td>
+                    <td style={{ padding: '10px 0' }}>{MOOD_EMOJI[learner.mood?.toUpperCase() ?? ''] ?? '—'}</td>
                   </tr>
                 ))
               )}
             </tbody>
           </table>
+          {!isLoading && (learners?.items ?? []).length === 0 && (
+            <div className="t-sm fg-3" style={{ textAlign: 'center', padding: '24px 0' }}>No learners found.</div>
+          )}
         </div>
       </Card>
 
       {/* Agent config */}
-      <Card variant="bordered">
-        <h2 className="text-sm font-medium text-paper/70 uppercase tracking-wider mb-6">Agent Configuration</h2>
-        <div className="space-y-6">
-          {[
-            { key: 'quiz_frequency' as const, label: 'Quiz Frequency', unit: 'per week', min: 1, max: 14 },
-            { key: 'difficulty_ceiling' as const, label: 'Difficulty Ceiling', unit: '%', min: 20, max: 100 },
-            { key: 'escalation_threshold' as const, label: 'Escalation Threshold', unit: 'failed attempts', min: 1, max: 10 },
-          ].map(({ key, label, unit, min, max }) => (
+      <Card padding="md">
+        <div className="caps fg-2" style={{ marginBottom: 16 }}>Agent Configuration</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+          {([
+            { key: 'quiz_frequency' as const,       label: 'Quiz Frequency',        unit: 'per week',      min: 1, max: 14  },
+            { key: 'difficulty_ceiling' as const,    label: 'Difficulty Ceiling',    unit: '%',             min: 20, max: 100 },
+            { key: 'escalation_threshold' as const,  label: 'Escalation Threshold',  unit: 'failed attempts', min: 1, max: 10  },
+          ]).map(({ key, label, unit, min, max }) => (
             <div key={key}>
-              <div className="flex justify-between text-sm mb-2">
-                <span className="text-paper/70">{label}</span>
-                <span className="text-violet-light font-medium">{config[key]} {unit}</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                <span className="t-sm fg-1">{label}</span>
+                <span className="t-sm fg-0 mono" style={{ fontWeight: 600 }}>{config[key]} {unit}</span>
               </div>
               <input
                 type="range" min={min} max={max}
                 value={config[key]}
                 onChange={(e) => setConfig((c) => ({ ...c, [key]: Number(e.target.value) }))}
-                className="w-full accent-violet h-2 rounded-full"
+                style={{ width: '100%', accentColor: 'var(--ink-0)', height: 4 }}
               />
             </div>
           ))}
-          <Button
-            onClick={() => configMutation.mutate(config)}
-            isLoading={configMutation.isPending}
-          >
-            Save Agent Config
-          </Button>
+          <div style={{ paddingTop: 4 }}>
+            <Button variant="primary" onClick={() => configMutation.mutate(config)} loading={configMutation.isPending}>Save Agent Config</Button>
+          </div>
         </div>
       </Card>
     </div>
@@ -194,83 +182,63 @@ function HFModelsPanel() {
       toast.error(`${modelKey} test failed`)
       setTestResults((prev) => ({ ...prev, [modelKey]: { error: String(err) } }))
     } finally {
-      setTesting(null)
-    }
+      setTesting(null) }
   }
 
   return (
-    <div className="px-6 py-8 max-w-[1400px] mx-auto space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="font-display text-3xl text-paper">AI Model Status</h1>
-          <p className="text-paper/50 text-sm mt-1">Live status of all inference models</p>
-        </div>
+    <div style={{ padding: '24px 28px', maxWidth: 1240, margin: '0 auto' }}>
+      <div style={{ marginBottom: 20 }}>
+        <Link to=".." relative="path" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, textDecoration: 'none', marginBottom: 12 }}>
+          <Icon name="chevL" size={12} style={{ color: 'var(--ink-3)' }} />
+          <span className="t-sm fg-3">Back to Admin</span>
+        </Link>
+        <div className="caps fg-3">HuggingFace Inference</div>
+        <h1 className="serif" style={{ fontSize: 36, fontWeight: 400, margin: 0, letterSpacing: '-0.02em' }}>AI Model Status</h1>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
         {Object.entries(HF_MODELS).map(([key, modelId]) => {
           const status = liveStatus?.[key] ?? hfModels[key]
           const tokens = tokenUsage[key] ?? 0
-          const statusBadgeVariant =
-            status?.status === 'ok' ? 'emerald' :
-            status?.status === 'loading' ? 'amber' : 'rose'
+          const tone = status?.status === 'ok' ? 'pos' : status?.status === 'loading' ? 'warn' : 'neg'
 
           return (
-            <motion.div
-              key={key}
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: Object.keys(HF_MODELS).indexOf(key) * 0.05 }}
-            >
-              <Card>
-                <div className="flex items-start justify-between mb-3">
-                  <div>
-                    <p className="text-xs text-paper/40 uppercase tracking-wider mb-1">{key.replace(/_/g, ' ')}</p>
-                    <a
-                      href={`#`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-sm text-violet-light hover:underline font-mono"
-                    >
-                      {modelId}
-                    </a>
+            <Card key={key} padding="md">
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 }}>
+                <div>
+                  <div className="caps fg-3" style={{ marginBottom: 2 }}>{key.replace(/_/g, ' ')}</div>
+                  <div className="t-sm fg-1 mono">{modelId}</div>
+                </div>
+                <Badge tone={tone} size="xs" dot>{status?.status ?? 'unknown'}</Badge>
+              </div>
+
+              <div style={{ display: 'flex', gap: 16, marginBottom: 12 }}>
+                <div>
+                  <div className="t-xs fg-3">Last used</div>
+                  <div className="t-xs fg-1 mono">
+                    {(status as any)?.last_used ? new Date((status as any).last_used).toLocaleTimeString() : '—'}
                   </div>
-                  <Badge variant={statusBadgeVariant} dot glow={status?.status === 'ok'}>
-                    {status?.status ?? 'unknown'}
-                  </Badge>
                 </div>
-
-                <div className="flex items-center gap-4 text-xs text-paper/40 mb-4">
-                  <span>
-                    Last used:{' '}
-                    {(status as any)?.lastUsed || (status as any)?.last_used
-                      ? new Date((status as any).lastUsed ?? (status as any).last_used).toLocaleTimeString()
-                      : '—'}
-                  </span>
-                  <span>
-                    Latency: {((status as any)?.latencyMs ?? (status as any)?.latency_ms) != null
-                      ? `${(status as any).latencyMs ?? (status as any).latency_ms}ms`
-                      : '—'}
-                  </span>
-                  <span>Tokens: {tokens.toLocaleString()}</span>
+                <div>
+                  <div className="t-xs fg-3">Latency</div>
+                  <div className="t-xs fg-1 mono">
+                    {(status as any)?.latency_ms != null ? `${(status as any).latency_ms}ms` : '—'}
+                  </div>
                 </div>
+                <div>
+                  <div className="t-xs fg-3">Tokens</div>
+                  <div className="t-xs fg-1 mono">{tokens.toLocaleString()}</div>
+                </div>
+              </div>
 
-                <Button
-                  size="sm"
-                  variant="outline"
-                  isLoading={testing === key}
-                  onClick={() => handleTest(key)}
-                >
-                  Test Model
-                </Button>
+              <Button size="sm" variant="outline" onClick={() => handleTest(key)} loading={testing === key}>Test Model</Button>
 
-                {!!testResults[key] && (
-                  <pre className="mt-3 text-[10px] bg-surface-1 border border-surface-2 rounded-xl p-3 overflow-x-auto text-emerald max-h-32">
-                    {JSON.stringify(testResults[key], null, 2)}
-                  </pre>
-                )}
-              </Card>
-            </motion.div>
+              {!!testResults[key] && (
+                <pre style={{ marginTop: 10, fontSize: 10, background: 'var(--paper-2)', border: '1px solid var(--line-1)', borderRadius: 'var(--r-2)', padding: 10, overflowX: 'auto', color: 'var(--pos)', maxHeight: 120 }}>
+                  {JSON.stringify(testResults[key], null, 2)}
+                </pre>
+              )}
+            </Card>
           )
         })}
       </div>
@@ -280,12 +248,10 @@ function HFModelsPanel() {
 
 export default function AdminPage() {
   return (
-    <PageWrapper>
-      <Routes>
-        <Route index element={<AdminOverview />} />
-        <Route path="models" element={<HFModelsPanel />} />
-        <Route path="*" element={<Navigate to="/admin" replace />} />
-      </Routes>
-    </PageWrapper>
+    <Routes>
+      <Route index element={<AdminOverview />} />
+      <Route path="models" element={<HFModelsPanel />} />
+      <Route path="*" element={<Navigate to="/admin" replace />} />
+    </Routes>
   )
 }

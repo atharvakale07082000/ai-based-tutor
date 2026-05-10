@@ -1,200 +1,118 @@
-import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { motion } from 'framer-motion'
-import toast from 'react-hot-toast'
-import { authAPI, setAccessToken } from '@/lib/api'
-import { useLearnerStore } from '@/stores/learnerStore'
 import { Button } from '@/components/ui/Button'
-
-const prefersReducedMotion =
-  typeof window !== 'undefined' &&
-  window.matchMedia('(prefers-reduced-motion: reduce)').matches
+import { AgentPill } from '@/components/ui/AgentPill'
+import { Icon } from '@/components/ui/Icon'
 
 export default function LandingPage() {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [isLoading, setIsLoading] = useState(false)
   const navigate = useNavigate()
-  const setLearner = useLearnerStore((s) => s.setLearner)
-
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setIsLoading(true)
-    try {
-      const { data } = await authAPI.login(email, password)
-      setAccessToken(data.access_token)
-      setLearner({ id: data.user.id, name: data.user.name, email: data.user.email })
-      toast.success(`Welcome back, ${data.user.name}!`)
-      navigate('/dashboard')
-    } catch {
-      toast.error('Invalid email or password')
-    } finally {
-      setIsLoading(false)
-    }
-  }
 
   return (
-    <div className="min-h-screen bg-ink overflow-hidden relative flex">
-      {/* Background mesh gradient */}
-      <div
-        className="absolute inset-0 opacity-40"
-        style={{
-          background: 'radial-gradient(at 40% 20%, #7C3AED33 0px, transparent 50%), radial-gradient(at 80% 0%, #4338CA33 0px, transparent 50%), radial-gradient(at 0% 50%, #4C1D9533 0px, transparent 50%)',
-          backgroundSize: '200% 200%',
-          animation: prefersReducedMotion ? 'none' : 'meshRotate 20s linear infinite',
-        }}
-      />
-
-      {/* Floating orbs */}
-      <div className="absolute w-96 h-96 rounded-full bg-violet/20 blur-[100px] top-[-10%] left-[10%] orb-1 pointer-events-none" />
-      <div className="absolute w-80 h-80 rounded-full bg-indigo/20 blur-[100px] bottom-[10%] right-[15%] orb-2 pointer-events-none" />
-      <div className="absolute w-64 h-64 rounded-full bg-violet-dim/30 blur-[80px] top-[60%] left-[40%] orb-3 pointer-events-none" />
-
-      {/* LEFT PANEL — 55% */}
-      <div className="relative z-10 flex flex-col justify-center px-12 lg:px-20 w-full lg:w-[55%]">
-        {/* Eyebrow */}
-        <motion.p
-          initial={prefersReducedMotion ? {} : { opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="text-violet-light text-[11px] font-medium tracking-[0.25em] uppercase mb-6"
-        >
-          ADAPTIVE AI TUTORING PLATFORM
-        </motion.p>
-
-        {/* H1 */}
-        <motion.h1
-          initial={prefersReducedMotion ? {} : { opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className="font-display text-5xl lg:text-[64px] leading-[1.1] text-paper mb-6"
-        >
-          Learn Smarter.
-          <br />
-          <span className="gradient-text">Not Harder.</span>
-        </motion.h1>
-
-        {/* Subheadline */}
-        <motion.p
-          initial={prefersReducedMotion ? {} : { opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-          className="font-body text-lg text-paper/60 mb-10 max-w-lg"
-        >
-          Adaptive AI tutors that evolve with every lesson, quiz, and question you ask.
-          Personalized education powered by four specialized agents working in concert.
-        </motion.p>
-
-        {/* Agent status strip */}
-        <motion.div
-          initial={prefersReducedMotion ? {} : { opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4 }}
-          className="flex flex-wrap gap-2 mb-6"
-        >
-          {[
-            { label: 'Curriculum Planner', color: 'emerald' },
-            { label: 'Quiz Generator', color: 'emerald' },
-            { label: 'Progress Tracker', color: 'emerald' },
-            { label: 'Doubt-Solver', color: 'emerald' },
-          ].map(({ label }) => (
-            <span
-              key={label}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-emerald/10 text-emerald border border-emerald/30 agent-pill-active"
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald" />
-              {label} 🟢
-            </span>
-          ))}
-        </motion.div>
-
-      </div>
-
-      {/* RIGHT PANEL — 45% */}
-      <div className="hidden lg:flex items-center justify-center w-[45%] relative z-10 px-12">
-        <motion.div
-          initial={prefersReducedMotion ? {} : { opacity: 0, x: 40 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ type: 'spring', stiffness: 80, damping: 20, delay: 0.15 }}
-          className="glass-strong rounded-3xl p-8 w-full max-w-md shadow-2xl shadow-black/50"
-        >
-          <h2 className="font-display text-2xl text-paper mb-2">Welcome back</h2>
-          <p className="text-sm text-paper/50 mb-8">Sign in to your AI learning workspace</p>
-
-          {/* Google SSO */}
-          <button className="w-full flex items-center justify-center gap-3 bg-white text-gray-800 font-medium py-3 rounded-xl hover:bg-gray-100 transition-colors mb-4">
-            <svg className="w-5 h-5" viewBox="0 0 24 24">
-              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-            </svg>
-            Continue with Google
-          </button>
-
-          <div className="flex items-center gap-3 mb-4">
-            <div className="h-px flex-1 bg-surface-3" />
-            <span className="text-xs text-paper/30">or</span>
-            <div className="h-px flex-1 bg-surface-3" />
+    <div style={{ minHeight: '100%', background: 'var(--paper-0)', overflow: 'auto' }}>
+      {/* Nav */}
+      <nav style={{ position: 'sticky', top: 0, zIndex: 10, background: 'rgba(250,248,242,0.9)', backdropFilter: 'blur(8px)', borderBottom: '1px solid var(--line-1)' }}>
+        <div style={{ maxWidth: 1200, margin: '0 auto', padding: '12px 32px', display: 'flex', alignItems: 'center', gap: 24 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ width: 22, height: 22, borderRadius: 5, background: 'var(--ink-0)', color: 'var(--paper-0)', display: 'grid', placeItems: 'center', fontFamily: 'var(--font-serif)', fontSize: 13, fontStyle: 'italic' }}>æ</div>
+            <span className="t-md fg-0" style={{ fontWeight: 600 }}>Atelier</span>
           </div>
+          <div style={{ flex: 1, display: 'flex', gap: 18 }}>
+            {['Product', 'Agents', 'Pricing'].map((n) => (
+              <a key={n} className="t-sm fg-2" style={{ cursor: 'pointer' }}>{n}</a>
+            ))}
+          </div>
+          <Button size="sm" variant="ghost" onClick={() => navigate('/onboarding')}>Sign in</Button>
+          <Button size="sm" variant="primary" onClick={() => navigate('/onboarding')}>Get started</Button>
+        </div>
+      </nav>
 
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="block text-xs text-paper/50 mb-1.5">Email address</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@company.com"
-                required
-                className="w-full bg-surface-2 border border-surface-3 rounded-xl px-4 py-3 text-sm text-paper placeholder-paper/30 focus:outline-none focus:ring-2 focus:ring-violet/50 focus:border-violet transition"
-              />
+      {/* Hero */}
+      <section style={{ maxWidth: 1100, margin: '0 auto', padding: '72px 32px 56px' }}>
+        <div className="caps" style={{ color: 'var(--accent)', marginBottom: 16 }}>Adaptive AI tutoring · Beta 0429</div>
+        <h1 className="serif" style={{ fontSize: 'clamp(44px,6vw,78px)', lineHeight: 0.98, margin: 0, fontWeight: 400, color: 'var(--ink-0)', letterSpacing: '-0.03em', maxWidth: 860 }}>
+          A tutor that learns<br />
+          <span style={{ fontStyle: 'italic', color: 'var(--accent)' }}>how you learn.</span>
+        </h1>
+        <p className="t-lg fg-2" style={{ maxWidth: 560, marginTop: 24, lineHeight: 1.65 }}>
+          Four specialized agents — Curriculum, Quiz, Progress, and Doubt-Solver — collaborate to plan your week, generate questions on demand, track every concept, and answer your questions with full context.
+        </p>
+        <div style={{ marginTop: 28, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Button size="lg" variant="primary" iconRight="arrow" onClick={() => navigate('/onboarding')} >
+            Start your first lesson
+          </Button>
+          <Button size="lg" variant="ghost" icon="play">Watch a 90s tour</Button>
+          <span className="t-sm fg-3" style={{ marginLeft: 4 }}>Free · no card · 3-minute setup</span>
+        </div>
+
+        {/* Agents row */}
+        <div style={{ marginTop: 48, padding: 16, background: 'var(--paper-1)', border: '1px solid var(--line-1)', borderRadius: 'var(--r-3)' }}>
+          <div className="caps" style={{ color: 'var(--ink-3)', marginBottom: 10 }}>Agents on call</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
+            {([
+              { kind: 'curr',  name: 'Curriculum Planner', desc: 'Sketches your week, adapts on Sunday.' },
+              { kind: 'quiz',  name: 'Quiz Generator',     desc: 'Spawns questions calibrated to your retention.' },
+              { kind: 'prog',  name: 'Progress Tracker',   desc: 'Tracks 32 sub-skills. Surfaces gaps.' },
+              { kind: 'doubt', name: 'Doubt-Solver',       desc: 'Cites your own materials when answering.' },
+            ] as const).map((a) => (
+              <div key={a.kind}>
+                <AgentPill kind={a.kind} state="active" />
+                <div className="t-md fg-0" style={{ fontWeight: 500, marginTop: 8 }}>{a.name}</div>
+                <div className="t-sm fg-2" style={{ marginTop: 2 }}>{a.desc}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* App preview */}
+      <section style={{ maxWidth: 1100, margin: '0 auto', padding: '0 32px 80px' }}>
+        <div style={{ border: '1px solid var(--line-2)', borderRadius: 'var(--r-4)', overflow: 'hidden', boxShadow: 'var(--shadow-3)' }}>
+          <div style={{ padding: '8px 12px', background: 'var(--paper-1)', borderBottom: '1px solid var(--line-1)', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ display: 'flex', gap: 5 }}>
+              {[0, 1, 2].map((i) => <span key={i} style={{ width: 9, height: 9, borderRadius: '50%', background: 'var(--line-2)' }} />)}
+            </div>
+            <span className="t-xs fg-3 mono">atelier.app/dashboard</span>
+          </div>
+          <div style={{ padding: 24, display: 'grid', gridTemplateColumns: '160px 1fr 220px', gap: 20, minHeight: 320, background: 'var(--paper-0)' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {['Dashboard', 'Today', 'Assistant', 'Courses', 'Doubts', 'Progress'].map((it, i) => (
+                <div key={it} style={{ padding: '5px 8px', borderRadius: 5, background: i === 0 ? 'var(--paper-3)' : 'transparent', fontSize: 12, color: i === 0 ? 'var(--ink-0)' : 'var(--ink-2)' }}>{it}</div>
+              ))}
             </div>
             <div>
-              <label className="block text-xs text-paper/50 mb-1.5">Password</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                required
-                className="w-full bg-surface-2 border border-surface-3 rounded-xl px-4 py-3 text-sm text-paper placeholder-paper/30 focus:outline-none focus:ring-2 focus:ring-violet/50 focus:border-violet transition"
-              />
+              <div className="serif" style={{ fontSize: 28, color: 'var(--ink-0)' }}>Good morning, Mira.</div>
+              <div className="t-sm fg-2" style={{ marginTop: 4, marginBottom: 16 }}>3 things on the docket today.</div>
+              {['Ridge regression — derivation', 'Bayesian inference quiz', 'Review: derivatives'].map((t) => (
+                <div key={t} style={{ padding: 10, border: '1px solid var(--line-1)', borderRadius: 6, display: 'flex', gap: 10, alignItems: 'center', background: 'var(--paper-1)', marginBottom: 6 }}>
+                  <Icon name="book" size={13} style={{ color: 'var(--ink-3)' }} />
+                  <span className="t-sm fg-0" style={{ flex: 1, fontWeight: 500 }}>{t}</span>
+                  <span className="t-xs fg-3">20m</span>
+                </div>
+              ))}
             </div>
-            <Button type="submit" variant="primary" size="lg" isLoading={isLoading} className="w-full">
-              Sign in to AI Tutor
-            </Button>
-          </form>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ padding: 12, background: 'var(--paper-1)', border: '1px solid var(--line-1)', borderRadius: 'var(--r-3)' }}>
+                <div className="caps" style={{ color: 'var(--ink-2)' }}>Streak</div>
+                <div className="serif" style={{ fontSize: 28, color: 'var(--ink-0)', marginTop: 4 }}>12 <span className="t-xs fg-3" style={{ fontSize: 12 }}>days</span></div>
+              </div>
+              <div style={{ padding: 12, background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', borderRadius: 'var(--r-3)' }}>
+                <div className="caps" style={{ color: 'var(--accent)' }}>Suggested</div>
+                <div className="t-sm fg-0" style={{ marginTop: 4, fontWeight: 500 }}>Refresh derivatives</div>
+                <div className="t-xs fg-3" style={{ marginTop: 2 }}>9-min · retention dipping</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
 
-          <p className="text-center text-xs text-paper/40 mt-6">
-            New to AI Tutor?{' '}
-            <a href="/onboarding" className="text-violet-light hover:underline">
-              Create your learning profile →
-            </a>
-          </p>
-        </motion.div>
-      </div>
-
-      {/* Mobile login form */}
-      <div className="lg:hidden absolute bottom-0 left-0 right-0 p-6 glass border-t border-surface-2/50 z-20">
-        <form onSubmit={handleLogin} className="flex flex-col gap-3">
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="Email"
-            className="bg-surface-2 border border-surface-3 rounded-xl px-4 py-3 text-sm text-paper placeholder-paper/30 focus:outline-none focus:ring-2 focus:ring-violet/50"
-          />
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Password"
-            className="bg-surface-2 border border-surface-3 rounded-xl px-4 py-3 text-sm text-paper placeholder-paper/30 focus:outline-none focus:ring-2 focus:ring-violet/50"
-          />
-          <Button type="submit" isLoading={isLoading} className="w-full">Sign In</Button>
-        </form>
-      </div>
+      {/* Footer */}
+      <footer style={{ borderTop: '1px solid var(--line-1)', padding: '28px 32px', background: 'var(--paper-1)' }}>
+        <div style={{ maxWidth: 1100, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span className="t-sm fg-3">© 2026 Atelier Learning · Original design system</span>
+          <div style={{ display: 'flex', gap: 12 }}>
+            {['Privacy', 'Terms', 'Status'].map((l) => <a key={l} className="t-sm fg-2" style={{ cursor: 'pointer' }}>{l}</a>)}
+          </div>
+        </div>
+      </footer>
     </div>
   )
 }

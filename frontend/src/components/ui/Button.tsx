@@ -1,62 +1,80 @@
 import { forwardRef, type ButtonHTMLAttributes } from 'react'
-import { motion } from 'framer-motion'
+import { Icon } from './Icon'
 
-type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'outline'
-type Size = 'sm' | 'md' | 'lg'
+type Variant = 'primary' | 'secondary' | 'ghost' | 'outline' | 'accent' | 'danger'
+type Size = 'xs' | 'sm' | 'md' | 'lg'
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant
   size?: Size
-  isLoading?: boolean
-  leftIcon?: React.ReactNode
-  rightIcon?: React.ReactNode
+  icon?: string
+  iconRight?: string
+  loading?: boolean
+  full?: boolean
+  as?: 'button' | 'a'
+  href?: string
 }
 
-const variantClasses: Record<Variant, string> = {
-  primary:
-    'bg-violet text-white hover:bg-violet-light active:scale-[0.98] shadow-lg shadow-violet/30',
-  secondary:
-    'bg-surface-2 text-paper hover:bg-surface-3 border border-surface-3',
-  ghost:
-    'bg-transparent text-paper/70 hover:text-paper hover:bg-surface-2',
-  danger:
-    'bg-rose text-white hover:bg-rose/80 shadow-lg shadow-rose/20',
-  outline:
-    'bg-transparent border border-violet text-violet hover:bg-violet/10',
+const variantStyles: Record<Variant, React.CSSProperties & { hover: string }> = {
+  primary:   { background: 'var(--ink-0)', color: 'var(--paper-0)', border: '1px solid var(--ink-0)', hover: 'var(--ink-1)' },
+  accent:    { background: 'var(--accent)', color: '#fff', border: '1px solid var(--accent)', hover: 'var(--accent-hover)' },
+  secondary: { background: 'var(--paper-1)', color: 'var(--ink-0)', border: '1px solid var(--line-2)', hover: 'var(--paper-2)' },
+  ghost:     { background: 'transparent', color: 'var(--ink-1)', border: '1px solid transparent', hover: 'var(--paper-2)' },
+  outline:   { background: 'transparent', color: 'var(--ink-0)', border: '1px solid var(--line-2)', hover: 'var(--paper-1)' },
+  danger:    { background: 'var(--neg-soft)', color: 'var(--neg)', border: '1px solid transparent', hover: 'var(--neg-soft)' },
 }
 
-const sizeClasses: Record<Size, string> = {
-  sm: 'px-3 py-1.5 text-sm rounded-lg',
-  md: 'px-5 py-2.5 text-sm rounded-xl',
-  lg: 'px-7 py-3.5 text-base rounded-xl',
+const sizeStyles: Record<Size, { height: number; px: number; fontSize: number; gap: number }> = {
+  xs: { height: 22, px: 8,  fontSize: 11, gap: 4 },
+  sm: { height: 26, px: 10, fontSize: 12, gap: 5 },
+  md: { height: 30, px: 12, fontSize: 13, gap: 6 },
+  lg: { height: 38, px: 16, fontSize: 14, gap: 8 },
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ variant = 'primary', size = 'md', isLoading, leftIcon, rightIcon, children, className = '', disabled, ...props }, ref) => {
+  ({ variant = 'secondary', size = 'md', icon, iconRight, loading, disabled, full, className = '', children, as: Tag = 'button', ...props }, ref) => {
+    const v = variantStyles[variant]
+    const s = sizeStyles[size]
+    const isDisabled = disabled || loading
+
     return (
-      <motion.button
+      <button
         ref={ref}
-        whileTap={{ scale: disabled || isLoading ? 1 : 0.97 }}
-        className={`
-          inline-flex items-center justify-center gap-2 font-body font-medium
-          transition-all duration-150 focus-visible:ring-2 focus-visible:ring-violet-light
-          disabled:opacity-40 disabled:cursor-not-allowed
-          ${variantClasses[variant]} ${sizeClasses[size]} ${className}
-        `}
-        disabled={disabled || isLoading}
-        {...(props as React.ComponentProps<typeof motion.button>)}
+        disabled={isDisabled}
+        className={className}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: s.gap,
+          height: s.height,
+          padding: `0 ${s.px}px`,
+          fontSize: s.fontSize,
+          fontWeight: 500,
+          background: v.background,
+          color: v.color,
+          border: v.border,
+          borderRadius: 'var(--r-2)',
+          cursor: isDisabled ? 'not-allowed' : 'pointer',
+          opacity: disabled ? 0.5 : 1,
+          transition: 'background var(--dur-fast) var(--ease-out)',
+          width: full ? '100%' : 'auto',
+          letterSpacing: '-0.005em',
+          whiteSpace: 'nowrap',
+          flexShrink: 0,
+          fontFamily: 'inherit',
+        }}
+        onMouseEnter={(e) => !isDisabled && (e.currentTarget.style.background = v.hover)}
+        onMouseLeave={(e) => !isDisabled && (e.currentTarget.style.background = v.background as string)}
+        {...props}
       >
-        {isLoading ? (
-          <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-          </svg>
-        ) : leftIcon}
+        {loading ? (
+          <span style={{ width: 12, height: 12, border: '1.5px solid currentColor', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite', display: 'inline-block' }} />
+        ) : icon ? <Icon name={icon} size={s.fontSize + 1} /> : null}
         {children}
-        {!isLoading && rightIcon}
-      </motion.button>
+        {iconRight && !loading && <Icon name={iconRight} size={s.fontSize + 1} />}
+      </button>
     )
   }
 )
-
 Button.displayName = 'Button'

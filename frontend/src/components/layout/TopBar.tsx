@@ -1,73 +1,128 @@
-import { Link, useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { Icon } from '@/components/ui/Icon'
+import { Button } from '@/components/ui/Button'
 import { useLearnerStore } from '@/stores/learnerStore'
+import { useCmdkStore } from '@/stores/cmdkStore'
 import { authAPI } from '@/lib/api'
 
+const BREADCRUMBS: Record<string, string[]> = {
+  '/dashboard':  ['Dashboard'],
+  '/learn':      ['Today'],
+  '/assistant':  ['Assistant'],
+  '/courses':    ['Courses'],
+  '/doubts':     ['Doubts'],
+  '/progress':   ['Progress'],
+  '/admin':      ['Admin', 'Agent Operations'],
+  '/onboarding': ['Onboarding'],
+}
+
+function getBreadcrumbs(pathname: string): string[] {
+  const match = Object.entries(BREADCRUMBS).find(([k]) => pathname === k || pathname.startsWith(k + '/'))
+  return match ? match[1] : [pathname.replace('/', '')]
+}
+
 export function TopBar() {
-  const { name, xp, streak, reset } = useLearnerStore()
+  const location = useLocation()
   const navigate = useNavigate()
+  const { name, reset } = useLearnerStore()
+  const openCmdk = useCmdkStore((s) => s.setOpen)
+  const crumbs = getBreadcrumbs(location.pathname)
 
   const handleLogout = async () => {
-    try {
-      await authAPI.logout()
-    } catch {
-      // best-effort
-    }
+    try { await authAPI.logout() } catch {}
     reset()
     navigate('/')
   }
 
   return (
-    <header className="h-14 glass border-b border-surface-2/50 flex items-center px-6 gap-4 z-40 sticky top-0">
-      {/* Logo */}
-      <Link to="/dashboard" className="flex items-center gap-2 mr-4">
-        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet to-indigo flex items-center justify-center text-white text-sm font-bold">
-          AI
-        </div>
-        <span className="font-display font-semibold text-paper hidden sm:block">
-          AI Tutor
-        </span>
-      </Link>
-
-      {/* Nav Links */}
-      <nav className="hidden md:flex items-center gap-1 flex-1">
-        {[
-          { to: '/dashboard', label: 'Dashboard' },
-          { to: '/courses', label: 'Courses' },
-          { to: '/learn', label: 'Learn' },
-          { to: '/doubts', label: 'Ask Doubt' },
-          { to: '/progress', label: 'Progress' },
-          { to: '/assistant', label: 'Assistant' },
-        ].map(({ to, label }) => (
-          <Link
-            key={to}
-            to={to}
-            className="px-3 py-1.5 text-sm text-paper/60 hover:text-paper hover:bg-surface-2 rounded-lg transition-colors"
-          >
-            {label}
-          </Link>
+    <div
+      style={{
+        height: 'var(--topbar-h)',
+        padding: '0 16px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        background: 'var(--paper-0)',
+        borderBottom: '1px solid var(--line-1)',
+        flexShrink: 0,
+      }}
+    >
+      {/* Breadcrumbs */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
+        {crumbs.map((b, i) => (
+          <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            {i > 0 && <Icon name="chevR" size={11} style={{ color: 'var(--ink-3)' }} />}
+            <span
+              className={i === crumbs.length - 1 ? 'fg-0' : 'fg-2'}
+              style={{
+                fontSize: 14,
+                fontWeight: i === crumbs.length - 1 ? 500 : 400,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {b}
+            </span>
+          </span>
         ))}
-      </nav>
+      </div>
 
-      {/* Right side */}
-      <div className="flex items-center gap-3 ml-auto">
-        {/* Streak */}
-        <div className="flex items-center gap-1 bg-amber/10 border border-amber/20 rounded-lg px-2.5 py-1">
-          <span className="text-sm">🔥</span>
-          <span className="text-xs font-medium text-amber">{streak}</span>
-        </div>
-        {/* XP */}
-        <div className="flex items-center gap-1 bg-violet/10 border border-violet/20 rounded-lg px-2.5 py-1">
-          <span className="text-xs font-medium text-violet-light">{xp.toLocaleString()} XP</span>
-        </div>
-        {/* Avatar */}
+      {/* Actions */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <button
+          onClick={() => openCmdk(true)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '4px 8px',
+            background: 'var(--paper-1)',
+            border: '1px solid var(--line-1)',
+            borderRadius: 'var(--r-2)',
+            fontSize: 12,
+            color: 'var(--ink-3)',
+            cursor: 'pointer',
+          }}
+        >
+          <Icon name="search" size={12} />
+          <span>⌘K</span>
+        </button>
+
+        <Button
+          size="sm"
+          variant="accent"
+          icon="sparkle"
+          onClick={() => navigate('/assistant')}
+        >
+          Ask Atelier
+        </Button>
+
+        <button
+          title="Notifications"
+          style={{ padding: 6, color: 'var(--ink-2)', borderRadius: 'var(--r-1)', lineHeight: 0 }}
+        >
+          <Icon name="bell" size={14} />
+        </button>
+
         <button
           onClick={handleLogout}
-          title="Logout"
-          className="w-8 h-8 rounded-full bg-gradient-to-br from-violet to-indigo flex items-center justify-center text-white text-xs font-semibold hover:opacity-80 transition-opacity"
+          title={name ? `Logout ${name}` : 'Logout'}
+          style={{
+            width: 26,
+            height: 26,
+            borderRadius: 'var(--r-pill)',
+            background: 'var(--ink-0)',
+            color: 'var(--paper-0)',
+            display: 'grid',
+            placeItems: 'center',
+            fontFamily: 'var(--font-serif)',
+            fontSize: 12,
+            fontStyle: 'italic',
+            cursor: 'pointer',
+          }}
         >
-          {name ? name[0].toUpperCase() : '?'}
+          {name ? name[0].toUpperCase() : 'æ'}
         </button>
       </div>
-    </header>
+    </div>
   )
 }
