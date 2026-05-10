@@ -14,7 +14,7 @@ dependencies = [
     "langchain>=0.3.13,<0.4",
     "langchain-core>=0.3.40,<0.4",
     "duckduckgo-search>=6.0",
-    "huggingface-hub>=0.26.2",
+    "huggingface-hub>=0.29.0",
     "python-jose[cryptography]==3.3.0",
     "bcrypt>=4.2",
     "python-multipart==0.0.12",
