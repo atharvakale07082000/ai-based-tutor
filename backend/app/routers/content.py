@@ -3,8 +3,9 @@ import re
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.db.mongo import col_content
+from app.db.mongo import col_content, col_learners
 from app.auth.jwt import get_current_user_id
+from app.hf.recommendation_agent import rank_content_for_learner
 
 router = APIRouter()
 log = structlog.get_logger()
@@ -58,10 +59,24 @@ async def list_content(
     skip = (page - 1) * limit
     items = list(col_content().find(query, PROJ).skip(skip).limit(limit + 1))
     has_more = len(items) > limit
+    result_items = items[:limit]
+
+    # Semantic recommendation: rank items by learner profile (page 1 only, no filter active)
+    if page == 1 and not topic and not search and not type:
+        try:
+            learner = col_learners().find_one({"user_id": user_id}, {"_id": 0})
+            if learner:
+                result_items = await rank_content_for_learner(
+                    result_items,
+                    goal_vector=learner.get("goal_vector") or [],
+                    topic_proficiency=learner.get("topic_proficiency_map") or {},
+                )
+        except Exception as e:
+            log.warning("recommendation_agent_skipped", error=str(e))
 
     return {
-        "items": items[:limit],
-        "total": len(items[:limit]),
+        "items": result_items,
+        "total": len(result_items),
         "has_more": has_more,
     }
 

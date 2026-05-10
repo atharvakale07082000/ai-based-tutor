@@ -21,3 +21,14 @@ class LearnerProfileUpdate(BaseModel):
     goal_vector: list[str] | None = None
     learning_style: str | None = None
     session_cadence: dict[str, Any] | None = None
+
+
+class OnboardRequest(BaseModel):
+    name: str
+    goals: list[str]
+    hoursPerWeek: int
+    difficulty: str  # "gentle" | "balanced" | "aggressive"
+
+
+class OnboardResponse(BaseModel):
+    name: str

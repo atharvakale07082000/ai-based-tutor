@@ -1,47 +1,66 @@
 import { Suspense, lazy, useState, useEffect } from 'react'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { AnimatePresence } from 'framer-motion'
 import { Toaster } from 'react-hot-toast'
 import { useLearnerStore } from '@/stores/learnerStore'
+import { useThemeStore } from '@/stores/themeStore'
+import { Sidebar } from '@/components/layout/Sidebar'
+import { TopBar } from '@/components/layout/TopBar'
+import { AgentStatusBar } from '@/components/agents/AgentStatusBar'
+import { CommandPalette } from '@/components/layout/CommandPalette'
+import { PageWrapper } from '@/components/layout/PageWrapper'
+import { useAgentSocket } from '@/hooks/useAgentSocket'
 
-// Route-based code splitting (lazy load every page)
-const LandingPage = lazy(() => import('@/pages/LandingPage'))
-const OnboardingPage = lazy(() => import('@/pages/OnboardingPage'))
-const DashboardPage = lazy(() => import('@/pages/DashboardPage'))
-const LearnFeedPage = lazy(() => import('@/pages/LearnFeedPage'))
-const ModulePlayerPage = lazy(() => import('@/pages/ModulePlayerPage'))
-const DoubtChatPage = lazy(() => import('@/pages/DoubtChatPage'))
-const QuizPage = lazy(() => import('@/pages/QuizPage'))
-const ProgressPage = lazy(() => import('@/pages/ProgressPage'))
-const AdminPage = lazy(() => import('@/pages/AdminPage'))
-const CoursePlannerPage = lazy(() => import('@/pages/CoursePlannerPage'))
-const CourseDetailPage = lazy(() => import('@/pages/CourseDetailPage'))
+const LandingPage        = lazy(() => import('@/pages/LandingPage'))
+const OnboardingPage     = lazy(() => import('@/pages/OnboardingPage'))
+const DashboardPage      = lazy(() => import('@/pages/DashboardPage'))
+const LearnFeedPage      = lazy(() => import('@/pages/LearnFeedPage'))
+const ModulePlayerPage   = lazy(() => import('@/pages/ModulePlayerPage'))
+const DoubtChatPage      = lazy(() => import('@/pages/DoubtChatPage'))
+const QuizPage           = lazy(() => import('@/pages/QuizPage'))
+const ProgressPage       = lazy(() => import('@/pages/ProgressPage'))
+const AdminPage          = lazy(() => import('@/pages/AdminPage'))
+const CoursePlannerPage  = lazy(() => import('@/pages/CoursePlannerPage'))
+const CourseDetailPage   = lazy(() => import('@/pages/CourseDetailPage'))
 const ModuleInterviewPage = lazy(() => import('@/pages/ModuleInterviewPage'))
-const AssistantPage = lazy(() => import('@/pages/AssistantPage'))
+const AssistantPage      = lazy(() => import('@/pages/AssistantPage'))
 
 const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 1000 * 60 * 2,
-      retry: 2,
-    },
-  },
+  defaultOptions: { queries: { staleTime: 1000 * 60 * 2, retry: 2 } },
 })
 
 function PageLoader() {
   return (
-    <div className="min-h-screen bg-ink flex items-center justify-center">
-      <div className="flex flex-col items-center gap-4">
-        <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-violet to-indigo flex items-center justify-center text-white text-lg font-bold animate-pulse">
-          AI
+    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+        <div
+          style={{
+            width: 32,
+            height: 32,
+            borderRadius: 8,
+            background: 'var(--ink-0)',
+            color: 'var(--paper-0)',
+            display: 'grid',
+            placeItems: 'center',
+            fontFamily: 'var(--font-serif)',
+            fontSize: 18,
+            fontStyle: 'italic',
+          }}
+        >
+          æ
         </div>
-        <div className="flex gap-1.5">
+        <div style={{ display: 'flex', gap: 4 }}>
           {[0, 1, 2].map((i) => (
             <div
               key={i}
-              className="w-1.5 h-1.5 rounded-full bg-violet/60"
-              style={{ animation: `blink 1.2s ease-in-out ${i * 0.2}s infinite` }}
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: '50%',
+                background: 'var(--accent)',
+                opacity: 0.6,
+                animation: `blink 1.2s ease-in-out ${i * 0.2}s infinite`,
+              }}
             />
           ))}
         </div>
@@ -66,14 +85,42 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
-function OfflineBanner() {
-  if (typeof window !== 'undefined' && !navigator.onLine) {
+// Pages that skip the shell entirely
+const PUBLIC_ROUTES = ['/', '/onboarding', '/login']
+
+function AppShell({ children }: { children: React.ReactNode }) {
+  const location = useLocation()
+  const learnerId = useLearnerStore((s) => s.id ?? undefined)
+  useAgentSocket({ learnerId })
+
+  const isPublic = PUBLIC_ROUTES.includes(location.pathname)
+
+  if (isPublic) {
     return (
-      <div className="fixed top-0 left-0 right-0 z-[100] bg-rose/90 text-white text-sm text-center py-2">
-        No internet connection — some features may be unavailable
+      <div style={{ height: '100%', overflow: 'auto' }}>
+        {children}
       </div>
     )
   }
+
+  return (
+    <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
+      <Sidebar />
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <TopBar />
+        <AgentStatusBar />
+        <main style={{ flex: 1, overflowY: 'auto' }}>
+          {children}
+        </main>
+      </div>
+      <CommandPalette />
+    </div>
+  )
+}
+
+// Apply theme on initial load
+function ThemeInitializer() {
+  useThemeStore()
   return null
 }
 
@@ -81,44 +128,50 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        <OfflineBanner />
-        <Suspense fallback={<PageLoader />}>
-          <AnimatePresence mode="wait">
+        <ThemeInitializer />
+        <Suspense fallback={
+          <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--paper-0)' }}>
+            <PageLoader />
+          </div>
+        }>
+          <AppShell>
             <Routes>
               <Route path="/" element={<LandingPage />} />
               <Route path="/onboarding" element={<OnboardingPage />} />
-              <Route path="/dashboard" element={<PrivateRoute><DashboardPage /></PrivateRoute>} />
-              <Route path="/learn" element={<PrivateRoute><LearnFeedPage /></PrivateRoute>} />
-              <Route path="/learn/:moduleId" element={<PrivateRoute><ModulePlayerPage /></PrivateRoute>} />
-              <Route path="/doubts" element={<PrivateRoute><DoubtChatPage /></PrivateRoute>} />
-              <Route path="/quiz/:quizId" element={<PrivateRoute><QuizPage /></PrivateRoute>} />
-              <Route path="/progress" element={<PrivateRoute><ProgressPage /></PrivateRoute>} />
-              <Route path="/admin/*" element={<PrivateRoute><AdminPage /></PrivateRoute>} />
-              <Route path="/courses" element={<PrivateRoute><CoursePlannerPage /></PrivateRoute>} />
-              <Route path="/courses/:planId" element={<PrivateRoute><CourseDetailPage /></PrivateRoute>} />
-              <Route path="/courses/:planId/modules/:moduleId/interview" element={<PrivateRoute><ModuleInterviewPage /></PrivateRoute>} />
-              <Route path="/assistant" element={<PrivateRoute><AssistantPage /></PrivateRoute>} />
+              <Route path="/dashboard" element={<PrivateRoute><PageWrapper><DashboardPage /></PageWrapper></PrivateRoute>} />
+              <Route path="/learn" element={<PrivateRoute><PageWrapper><LearnFeedPage /></PageWrapper></PrivateRoute>} />
+              <Route path="/learn/:moduleId" element={<PrivateRoute><PageWrapper><ModulePlayerPage /></PageWrapper></PrivateRoute>} />
+              <Route path="/doubts" element={<PrivateRoute><PageWrapper><DoubtChatPage /></PageWrapper></PrivateRoute>} />
+              <Route path="/quiz/:quizId" element={<PrivateRoute><PageWrapper><QuizPage /></PageWrapper></PrivateRoute>} />
+              <Route path="/progress" element={<PrivateRoute><PageWrapper><ProgressPage /></PageWrapper></PrivateRoute>} />
+              <Route path="/admin/*" element={<PrivateRoute><PageWrapper><AdminPage /></PageWrapper></PrivateRoute>} />
+              <Route path="/courses" element={<PrivateRoute><PageWrapper><CoursePlannerPage /></PageWrapper></PrivateRoute>} />
+              <Route path="/courses/:planId" element={<PrivateRoute><PageWrapper><CourseDetailPage /></PageWrapper></PrivateRoute>} />
+              <Route path="/courses/:planId/modules/:moduleId/interview" element={<PrivateRoute><PageWrapper><ModuleInterviewPage /></PageWrapper></PrivateRoute>} />
+              <Route path="/assistant" element={<PrivateRoute><PageWrapper><AssistantPage /></PageWrapper></PrivateRoute>} />
               <Route path="/login" element={<Navigate to="/" replace />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
-          </AnimatePresence>
+          </AppShell>
         </Suspense>
-      </BrowserRouter>
 
-      <Toaster
-        position="bottom-right"
-        toastOptions={{
-          style: {
-            background: '#1F2937',
-            color: '#F9FAFB',
-            border: '1px solid #374151',
-            borderRadius: '12px',
-            fontSize: '14px',
-          },
-          success: { iconTheme: { primary: '#10B981', secondary: '#fff' } },
-          error: { iconTheme: { primary: '#F43F5E', secondary: '#fff' } },
-        }}
-      />
+        <Toaster
+          position="bottom-right"
+          toastOptions={{
+            style: {
+              background: 'var(--paper-1)',
+              color: 'var(--ink-0)',
+              border: '1px solid var(--line-1)',
+              borderRadius: 8,
+              fontSize: 13,
+              fontFamily: 'var(--font-sans)',
+              boxShadow: 'var(--shadow-3)',
+            },
+            success: { iconTheme: { primary: 'var(--pos)', secondary: '#fff' } },
+            error:   { iconTheme: { primary: 'var(--neg)', secondary: '#fff' } },
+          }}
+        />
+      </BrowserRouter>
     </QueryClientProvider>
   )
 }

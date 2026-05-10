@@ -1,117 +1,54 @@
-import { Suspense, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { motion } from 'framer-motion'
+import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { RadarChart, PolarGrid, PolarAngleAxis, Radar, ResponsiveContainer, Tooltip } from 'recharts'
+import { useState } from 'react'
 import toast from 'react-hot-toast'
-import { PageWrapper } from '@/components/layout/PageWrapper'
+import { contentAPI, doubtsAPI, quizAPI } from '@/lib/api'
+import { useLearnerStore } from '@/stores/learnerStore'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
-import { CardSkeleton, Skeleton } from '@/components/ui/Skeleton'
-import { useLearnerStore } from '@/stores/learnerStore'
-import { contentAPI, doubtsAPI, quizAPI } from '@/lib/api'
+import { Button } from '@/components/ui/Button'
+import { Icon } from '@/components/ui/Icon'
+import { ValueBar } from '@/components/ui/Progress'
 
-const MOOD_EMOJI: Record<string, string> = {
-  POSITIVE: '😊',
-  NEGATIVE: '😟',
-  NEUTRAL: '😐',
-}
-
-function XPRing({ xp }: { xp: number }) {
-  const max = 2000
-  const pct = Math.min(xp / max, 1)
-  const r = 38
-  const circ = 2 * Math.PI * r
-  const dash = circ * pct
-
+function Stat({ label, value, change, sub, icon }: { label: string; value: string; change?: string; sub?: string; icon?: string }) {
   return (
-    <div className="flex flex-col items-center gap-1">
-      <div className="relative w-24 h-24">
-        <svg className="w-24 h-24 xp-ring" viewBox="0 0 100 100">
-          <circle cx="50" cy="50" r={r} fill="none" stroke="#1F2937" strokeWidth="8" />
-          <motion.circle
-            cx="50" cy="50" r={r} fill="none"
-            stroke="url(#xpGrad)" strokeWidth="8"
-            strokeLinecap="round"
-            strokeDasharray={circ}
-            initial={{ strokeDashoffset: circ }}
-            animate={{ strokeDashoffset: circ - dash }}
-            transition={{ duration: 1.2, ease: 'easeOut' }}
-          />
-          <defs>
-            <linearGradient id="xpGrad" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" stopColor="#7C3AED" />
-              <stop offset="100%" stopColor="#6366F1" />
-            </linearGradient>
-          </defs>
-        </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-sm font-bold text-paper">{xp.toLocaleString()}</span>
-          <span className="text-[10px] text-paper/40">XP</span>
-        </div>
+    <div style={{ flex: 1, padding: 14, background: 'var(--paper-1)', border: '1px solid var(--line-1)', borderRadius: 'var(--r-3)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+        <span className="caps" style={{ color: 'var(--ink-2)' }}>{label}</span>
+        {icon && <Icon name={icon} size={12} style={{ color: 'var(--ink-3)' }} />}
       </div>
-      <span className="text-xs text-paper/50">Level {Math.floor(xp / 500) + 1}</span>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+        <span className="serif" style={{ fontSize: 28, color: 'var(--ink-0)', letterSpacing: '-0.02em' }}>{value}</span>
+        {change && <span className="t-xs" style={{ color: change.startsWith('+') ? 'var(--pos)' : 'var(--neg)', fontWeight: 500 }}>{change}</span>}
+      </div>
+      {sub && <div className="t-xs fg-3" style={{ marginTop: 2 }}>{sub}</div>}
     </div>
   )
 }
 
-function RadarSkillMap({ proficiency }: { proficiency: Record<string, number> }) {
-  const data = Object.entries(proficiency)
-    .slice(0, 8)
-    .map(([topic, score]) => ({
-      topic: topic.length > 12 ? topic.slice(0, 12) + '…' : topic,
-      score: Math.round((score / 1000) * 100),
-    }))
-
-  if (data.length === 0) {
-    data.push(
-      { topic: 'Python', score: 50 },
-      { topic: 'ML', score: 30 },
-      { topic: 'Math', score: 40 },
-      { topic: 'Stats', score: 35 },
-      { topic: 'Data Sci', score: 45 },
-    )
-  }
-
+function SkillBar({ name, value }: { name: string; value: number }) {
   return (
-    <ResponsiveContainer width="100%" height={220}>
-      <RadarChart data={data} margin={{ top: 10, right: 20, bottom: 10, left: 20 }}>
-        <PolarGrid stroke="#374151" />
-        <PolarAngleAxis dataKey="topic" tick={{ fill: '#9CA3AF', fontSize: 11 }} />
-        <Radar
-          name="Proficiency"
-          dataKey="score"
-          stroke="#7C3AED"
-          fill="#7C3AED"
-          fillOpacity={0.3}
-          strokeWidth={2}
-        />
-        <Tooltip
-          contentStyle={{ background: '#1F2937', border: '1px solid #374151', borderRadius: 8 }}
-          labelStyle={{ color: '#F9FAFB' }}
-        />
-      </RadarChart>
-    </ResponsiveContainer>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0' }}>
+      <span className="t-sm fg-1" style={{ width: 110, fontWeight: 500 }}>{name}</span>
+      <div style={{ flex: 1, height: 4, background: 'var(--paper-3)', borderRadius: 2, overflow: 'hidden' }}>
+        <div style={{ width: `${value * 100}%`, height: '100%', background: 'var(--ink-0)', borderRadius: 2 }} />
+      </div>
+      <span className="t-xs fg-3 mono" style={{ width: 30, textAlign: 'right' }}>{Math.round(value * 100)}</span>
+    </div>
   )
 }
 
-export default function DashboardPage() {
-  const { name, xp, streak, topicProficiency, doubtSessions, goalVector } = useLearnerStore()
-  const navigate = useNavigate()
-  const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false)
+function HeatCell({ v }: { v: number }) {
+  const colors = ['transparent', '#E2DBC8', '#C6A988', '#A8553A', '#7E3F2A']
+  return <div style={{ width: 10, height: 10, background: colors[v] || colors[0], borderRadius: 1.5, border: v === 0 ? '1px solid var(--line-1)' : 'none' }} />
+}
 
-  const handleStartQuiz = async () => {
-    setIsGeneratingQuiz(true)
-    try {
-      const topic = goalVector[0] ?? 'Python Programming'
-      const { data } = await quizAPI.generate(topic)
-      navigate(`/quiz/${data.quiz_id}`)
-    } catch {
-      toast.error('Could not generate quiz. Please try again.')
-    } finally {
-      setIsGeneratingQuiz(false)
-    }
-  }
+const HEATMAP = Array.from({ length: 26 }, () => Array.from({ length: 7 }, () => Math.floor(Math.random() * 5)))
+
+export default function DashboardPage() {
+  const navigate = useNavigate()
+  const { name, xp, streak, topicProficiency } = useLearnerStore()
+  const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false)
 
   const { data: contentData, isLoading: contentLoading } = useQuery({
     queryKey: ['content', 'feed', {}],
@@ -123,161 +60,200 @@ export default function DashboardPage() {
     queryFn: () => doubtsAPI.getSessions().then((r) => r.data),
   })
 
-  const stagger = {
-    animate: { transition: { staggerChildren: 0.08 } },
+  const handleStartQuiz = async () => {
+    setIsGeneratingQuiz(true)
+    try {
+      const topic = Object.keys(topicProficiency)[0] ?? 'Python'
+      const { data } = await quizAPI.generate(topic)
+      navigate(`/quiz/${data.quiz_id}`)
+    } catch {
+      toast.error('Could not generate quiz')
+    } finally {
+      setIsGeneratingQuiz(false)
+    }
   }
-  const item = {
-    initial: { opacity: 0, y: 16 },
-    animate: { opacity: 1, y: 0 },
-  }
+
+  const items = contentData?.items ?? []
+  const sessions = sessionsData ?? []
 
   return (
-    <PageWrapper>
-      <div className="px-6 py-8 max-w-[1400px] mx-auto">
-        {/* Greeting */}
-        <div className="mb-8">
-          <h1 className="font-display text-3xl text-paper">
-            Good {new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 18 ? 'afternoon' : 'evening'},{' '}
-            <span className="gradient-text">{name || 'Learner'}</span>
+    <div style={{ padding: '24px 28px', maxWidth: 1240, margin: '0 auto' }}>
+      {/* Greeting */}
+      <div style={{ marginBottom: 20, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+        <div>
+          <div className="caps" style={{ color: 'var(--ink-3)', marginBottom: 4 }}>
+            {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+          </div>
+          <h1 className="serif" style={{ fontSize: 36, fontWeight: 400, margin: 0, color: 'var(--ink-0)', letterSpacing: '-0.02em' }}>
+            Good {new Date().getHours() < 12 ? 'morning' : 'afternoon'},{' '}
+            <span style={{ fontStyle: 'italic', color: 'var(--accent)' }}>{name || 'Learner'}</span>.
           </h1>
-          <p className="text-paper/50 mt-1">Ready to continue your learning journey?</p>
+          <p className="t-md fg-2" style={{ marginTop: 4 }}>You're on a {streak}-day streak. Three things on the docket today.</p>
         </div>
-
-        {/* 12-col grid */}
-        <div className="grid grid-cols-12 gap-6">
-          {/* Col 1-8: Daily learning feed */}
-          <div className="col-span-12 lg:col-span-8">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-sm font-medium text-paper/70 uppercase tracking-wider">Today's Learning Feed</h2>
-              <Link to="/learn" className="text-xs text-violet-light hover:underline">View all →</Link>
-            </div>
-            {contentLoading ? (
-              <div className="flex gap-4 overflow-x-auto pb-2">
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <div key={i} className="min-w-[280px]"><CardSkeleton /></div>
-                ))}
-              </div>
-            ) : (
-              <motion.div variants={stagger} animate="animate" className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide">
-                {(contentData?.items ?? []).slice(0, 5).map((item_data) => (
-                  <motion.div key={item_data.id} variants={item} className="min-w-[280px]">
-                    <Link to={`/learn/${item_data.id}`}>
-                      <Card hover className="h-full">
-                        <div className="flex items-start justify-between mb-3">
-                          <Badge variant={item_data.content_type === 'video' ? 'violet' : item_data.content_type === 'exercise' ? 'emerald' : 'indigo'}>
-                            {item_data.content_type}
-                          </Badge>
-                          {item_data.is_ai_recommended && (
-                            <Badge variant="amber">AI Pick</Badge>
-                          )}
-                        </div>
-                        <h3 className="font-medium text-paper text-sm mb-2 line-clamp-2">{item_data.title}</h3>
-                        <div className="flex items-center gap-3 text-xs text-paper/40 mt-auto">
-                          <span>⏱ {item_data.estimated_minutes}m</span>
-                          <span>📚 {item_data.topic}</span>
-                        </div>
-                        <div className="mt-3 h-1 bg-surface-3 rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-gradient-to-r from-violet to-indigo-light rounded-full"
-                            style={{ width: `${item_data.difficulty * 100}%` }}
-                          />
-                        </div>
-                        <p className="text-[10px] text-paper/30 mt-1">
-                          Difficulty: {Math.round(item_data.difficulty * 100)}%
-                        </p>
-                      </Card>
-                    </Link>
-                  </motion.div>
-                ))}
-              </motion.div>
-            )}
-          </div>
-
-          {/* Col 9-12: Sidebar stats */}
-          <div className="col-span-12 lg:col-span-4 space-y-4">
-            {/* Streak + XP */}
-            <Card>
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-2xl">🔥</span>
-                    <span className="text-3xl font-bold text-amber">{streak}</span>
-                  </div>
-                  <p className="text-xs text-paper/50">Day streak</p>
-                </div>
-                <XPRing xp={xp} />
-              </div>
-            </Card>
-
-            {/* Next quiz reminder */}
-            <Card variant="bordered">
-              <div className="flex items-start gap-3">
-                <span className="text-2xl">📝</span>
-                <div>
-                  <p className="text-sm font-medium text-paper">Quiz due today</p>
-                  <p className="text-xs text-paper/50 mt-0.5">Python Functions — 5 questions</p>
-                  <button
-                    onClick={handleStartQuiz}
-                    disabled={isGeneratingQuiz}
-                    className="mt-2 block w-fit"
-                  >
-                    <Badge variant="violet" className="cursor-pointer hover:bg-violet/30 transition-colors">
-                      {isGeneratingQuiz ? 'Generating…' : 'Start Quiz →'}
-                    </Badge>
-                  </button>
-                </div>
-              </div>
-            </Card>
-          </div>
-
-          {/* Row 2: already covered by AgentStatusBar in PageWrapper */}
-
-          {/* Row 3 Col 1-5: Skill mini-map */}
-          <div className="col-span-12 lg:col-span-5">
-            <Card>
-              <h3 className="text-sm font-medium text-paper/70 uppercase tracking-wider mb-4">Skill Progress Map</h3>
-              <Suspense fallback={<Skeleton className="h-48 w-full" />}>
-                <RadarSkillMap proficiency={topicProficiency} />
-              </Suspense>
-              <p className="text-xs text-paper/30 text-center mt-2">Powered by Progress Tracker agent</p>
-            </Card>
-          </div>
-
-          {/* Row 3 Col 6-12: Recent doubt sessions */}
-          <div className="col-span-12 lg:col-span-7">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-medium text-paper/70 uppercase tracking-wider">Recent Doubt Sessions</h3>
-              <Link to="/doubts" className="text-xs text-violet-light hover:underline">Open Chat →</Link>
-            </div>
-            <div className="space-y-3">
-              {(sessionsData ?? doubtSessions).slice(0, 3).map((session) => (
-                <Link key={session.id} to={`/doubts`}>
-                  <Card hover padding="sm" className="flex items-center gap-3">
-                    <span className="text-xl">{MOOD_EMOJI[session.sentiment_mood?.toUpperCase() ?? 'NEUTRAL'] ?? '💬'}</span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-paper truncate">{session.topic_context ?? 'General question'}</p>
-                      <p className="text-xs text-paper/40">{new Date(session.started_at).toLocaleDateString()}</p>
-                    </div>
-                    {session.sentiment_mood && (
-                      <Badge
-                        variant={session.sentiment_mood === 'POSITIVE' ? 'emerald' : session.sentiment_mood === 'NEGATIVE' ? 'rose' : 'surface'}
-                      >
-                        {session.sentiment_mood.toLowerCase()}
-                      </Badge>
-                    )}
-                  </Card>
-                </Link>
-              ))}
-              {(!sessionsData || sessionsData.length === 0) && (
-                <div className="text-center py-8 text-paper/30 text-sm">
-                  <span className="text-3xl block mb-2">💬</span>
-                  No doubt sessions yet. Ask your first question!
-                </div>
-              )}
-            </div>
-          </div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <Button size="sm" variant="ghost" icon="calendar">Schedule</Button>
+          <Button size="sm" variant="accent" icon="sparkle" onClick={() => navigate('/assistant')}>Ask Atelier</Button>
         </div>
       </div>
-    </PageWrapper>
+
+      {/* Stat row */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
+        <Stat label="XP" value={xp.toLocaleString()} change="+120 today" icon="bolt" />
+        <Stat label="Streak" value={String(streak)} sub="days · keep it up!" icon="flame" />
+        <Stat label="Mastery" value="48%" change="+4% this week" icon="target" />
+        <Stat label="Time" value="42h" sub="this month" icon="clock" />
+        <Stat label="Doubts" value={String(sessions.length || 38)} change="+6" icon="chat" />
+      </div>
+
+      {/* Main grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 16 }}>
+        {/* Column 1 */}
+        <div>
+          {/* Curriculum suggestion */}
+          <Card accent padding="md" style={{ marginBottom: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+              <div style={{ width: 32, height: 32, borderRadius: 'var(--r-2)', background: 'var(--accent)', color: '#fff', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                <Icon name="sparkle" size={16} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span className="caps" style={{ color: 'var(--accent)' }}>Curriculum agent</span>
+                  <span className="t-xs fg-3">· just now</span>
+                </div>
+                <div className="t-md fg-0" style={{ fontWeight: 500, marginTop: 4 }}>Your derivative recall is dipping. A 9-min refresher will protect this week's progress.</div>
+                <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                  <Button size="sm" variant="accent" iconRight="arrow" onClick={() => navigate('/learn')}>Take refresher</Button>
+                  <Button size="sm" variant="ghost">Snooze 1 day</Button>
+                </div>
+              </div>
+            </div>
+          </Card>
+
+          {/* Today's feed */}
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 }}>
+            <span className="caps" style={{ color: 'var(--ink-2)' }}>Today's feed · {items.length} modules</span>
+            <a className="t-sm fg-2" style={{ cursor: 'pointer' }} onClick={() => navigate('/learn')}>Open feed →</a>
+          </div>
+
+          {contentLoading ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+              {[0, 1, 2].map((i) => <div key={i} className="skel" style={{ height: 48, borderRadius: 'var(--r-2)', marginBottom: 1 }} />)}
+            </div>
+          ) : (
+            <Card padding="none">
+              {items.slice(0, 5).map((m: any, i: number) => (
+                <div
+                  key={m.id}
+                  style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 12, borderTop: i ? '1px solid var(--line-1)' : 'none', cursor: 'pointer' }}
+                  onClick={() => navigate(`/learn/${m.id}`)}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--paper-2)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                >
+                  <div style={{ width: 28, height: 28, borderRadius: 'var(--r-2)', background: 'var(--paper-3)', display: 'grid', placeItems: 'center' }}>
+                    <Icon name={m.content_type === 'video' ? 'play' : m.content_type === 'exercise' ? 'code' : 'book'} size={13} style={{ color: 'var(--ink-1)' }} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span className="t-md fg-0" style={{ fontWeight: 500 }}>{m.title}</span>
+                      {m.is_ai_recommended && <Badge tone="accent" size="xs">AI Pick</Badge>}
+                    </div>
+                    <div className="t-xs fg-3" style={{ marginTop: 2 }}>{m.topic} · {m.estimated_minutes}m</div>
+                  </div>
+                  <ValueBar value={Math.round((m.difficulty ?? 0.5) * 5)} segments={5} />
+                  <Icon name="chevR" size={14} style={{ color: 'var(--ink-3)' }} />
+                </div>
+              ))}
+              {items.length === 0 && (
+                <div className="t-sm fg-3" style={{ padding: '20px 14px', textAlign: 'center' }}>No content yet — the Curriculum agent is building your plan.</div>
+              )}
+            </Card>
+          )}
+
+          {/* Recent doubts */}
+          <div style={{ marginTop: 20, display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 }}>
+            <span className="caps" style={{ color: 'var(--ink-2)' }}>Recent doubts</span>
+            <a className="t-sm fg-2" style={{ cursor: 'pointer' }} onClick={() => navigate('/doubts')}>All sessions →</a>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
+            {sessions.slice(0, 4).map((s: any) => (
+              <Card key={s.id} hover padding="sm" style={{ cursor: 'pointer' }} onClick={() => navigate('/doubts')}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                  <Badge size="xs" tone={s.sentiment_mood === 'POSITIVE' ? 'pos' : s.sentiment_mood === 'NEGATIVE' ? 'neg' : 'neutral'} dot>
+                    {(s.sentiment_mood ?? 'neutral').toLowerCase()}
+                  </Badge>
+                  <span className="t-xs fg-3">{new Date(s.started_at).toLocaleDateString()}</span>
+                </div>
+                <div className="t-sm fg-0" style={{ fontWeight: 500, marginBottom: 2 }}>{s.topic_context ?? 'General question'}</div>
+              </Card>
+            ))}
+          </div>
+        </div>
+
+        {/* Column 2 */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {/* Skill map */}
+          <Card padding="md">
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <span className="caps" style={{ color: 'var(--ink-2)' }}>Skill mastery</span>
+              <span className="t-xs fg-3 mono">{Object.keys(topicProficiency).length} tracked</span>
+            </div>
+            {Object.entries(topicProficiency).slice(0, 6).map(([k, v]) => (
+              <SkillBar key={k} name={k.slice(0, 14)} value={v / 1000} />
+            ))}
+            {Object.keys(topicProficiency).length === 0 && (
+              <div className="t-xs fg-3" style={{ textAlign: 'center', padding: 8 }}>Progress agent tracking skills…</div>
+            )}
+            <div className="t-xs fg-3" style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid var(--line-1)', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--agent-prog)', display: 'inline-block' }} />
+              Updated by Progress agent
+            </div>
+          </Card>
+
+          {/* Activity heatmap */}
+          <Card padding="md">
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <span className="caps" style={{ color: 'var(--ink-2)' }}>Activity · last 26 weeks</span>
+              <span className="t-xs fg-3">{streak} day streak</span>
+            </div>
+            <div style={{ display: 'flex', gap: 2, overflowX: 'auto' }}>
+              {HEATMAP.map((col, i) => (
+                <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  {col.map((v, j) => <HeatCell key={j} v={v} />)}
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10, fontSize: 11, color: 'var(--ink-3)' }}>
+              <span>Less</span>
+              {[0, 1, 2, 3, 4].map((v) => <HeatCell key={v} v={v} />)}
+              <span>More</span>
+            </div>
+          </Card>
+
+          {/* Quiz queue */}
+          <Card padding="none">
+            <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--line-1)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span className="caps" style={{ color: 'var(--ink-2)' }}>Quiz queue</span>
+              <Badge size="xs" tone="warn">3 due</Badge>
+            </div>
+            {[
+              { t: 'Python · Functions', q: 5, due: 'Today' },
+              { t: 'ML · Regularization', q: 8, due: 'Tomorrow' },
+              { t: 'Stats · Sampling', q: 6, due: 'Friday' },
+            ].map((q, i) => (
+              <div key={i} style={{ padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 10, borderTop: i ? '1px solid var(--line-1)' : 'none' }}>
+                <div className="t-sm fg-0" style={{ fontWeight: 500, flex: 1 }}>{q.t}</div>
+                <span className="t-xs fg-3 mono">{q.q} q</span>
+                <Badge size="xs" tone={q.due === 'Today' ? 'warn' : 'outline'}>{q.due}</Badge>
+              </div>
+            ))}
+            <div style={{ padding: 10, borderTop: '1px solid var(--line-1)' }}>
+              <Button size="sm" variant="primary" full iconRight="arrow" onClick={handleStartQuiz} loading={isGeneratingQuiz}>
+                Start next quiz
+              </Button>
+            </div>
+          </Card>
+        </div>
+      </div>
+    </div>
   )
 }

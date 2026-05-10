@@ -1,46 +1,62 @@
 import type { HTMLAttributes } from 'react'
+import { Icon } from './Icon'
 
-type BadgeVariant = 'violet' | 'indigo' | 'emerald' | 'amber' | 'rose' | 'surface' | 'hf'
+type Tone = 'neutral' | 'accent' | 'pos' | 'warn' | 'neg' | 'info' | 'outline'
+type BadgeSize = 'xs' | 'sm' | 'md'
 
 interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
-  variant?: BadgeVariant
+  tone?: Tone
+  size?: BadgeSize
   dot?: boolean
+  icon?: string
   glow?: boolean
 }
 
-const variantClasses: Record<BadgeVariant, string> = {
-  violet: 'bg-violet/20 text-violet-light border border-violet/30',
-  indigo: 'bg-indigo/20 text-indigo-light border border-indigo/30',
-  emerald: 'bg-emerald/20 text-emerald border border-emerald/30',
-  amber: 'bg-amber/20 text-amber border border-amber/30',
-  rose: 'bg-rose/20 text-rose border border-rose/30',
-  surface: 'bg-surface-2 text-paper/70 border border-surface-3',
-  hf: 'bg-orange-500/20 text-orange-400 border border-orange-500/30',
+const tones: Record<Tone, React.CSSProperties> = {
+  neutral: { background: 'var(--paper-2)', color: 'var(--ink-1)', border: '1px solid var(--line-1)' },
+  accent:  { background: 'var(--accent-soft)', color: 'var(--accent)', border: '1px solid var(--accent-line)' },
+  pos:     { background: 'var(--pos-soft)', color: 'var(--pos)', border: '1px solid transparent' },
+  warn:    { background: 'var(--warn-soft)', color: 'var(--warn)', border: '1px solid transparent' },
+  neg:     { background: 'var(--neg-soft)', color: 'var(--neg)', border: '1px solid transparent' },
+  info:    { background: 'var(--info-soft)', color: 'var(--info)', border: '1px solid transparent' },
+  outline: { background: 'transparent', color: 'var(--ink-2)', border: '1px solid var(--line-2)' },
 }
 
-export function Badge({ variant = 'violet', dot, glow, className = '', children, ...props }: BadgeProps) {
+const sizes = {
+  xs: { height: 16, px: 5, fs: 10 },
+  sm: { height: 18, px: 6, fs: 11 },
+  md: { height: 22, px: 8, fs: 12 },
+}
+
+export function Badge({ tone = 'neutral', size = 'sm', dot, icon, className = '', children, ...props }: BadgeProps) {
+  const t = tones[tone]
+  const s = sizes[size]
   return (
     <span
-      className={`
-        inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium
-        ${variantClasses[variant]}
-        ${glow ? 'agent-pill-active' : ''}
-        ${className}
-      `}
+      className={className}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 4,
+        height: s.height,
+        padding: `0 ${s.px}px`,
+        ...t,
+        borderRadius: 'var(--r-1)',
+        fontSize: s.fs,
+        fontWeight: 500,
+        letterSpacing: 0,
+        whiteSpace: 'nowrap',
+      }}
       {...props}
     >
-      {dot && (
-        <span className={`w-1.5 h-1.5 rounded-full ${variant === 'emerald' ? 'bg-emerald' : variant === 'rose' ? 'bg-rose' : variant === 'amber' ? 'bg-amber' : 'bg-violet-light'}`} />
-      )}
+      {dot && <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor' }} />}
+      {icon && <Icon name={icon} size={s.fs} />}
       {children}
     </span>
   )
 }
 
+// Legacy alias so old code importing HFBadge doesn't break
 export function HFBadge({ className = '' }: { className?: string }) {
-  return (
-    <Badge variant="hf" className={className}>
-      🤗 Hugging Face
-    </Badge>
-  )
+  return <Badge tone="info" className={className}>🤗 HuggingFace</Badge>
 }
