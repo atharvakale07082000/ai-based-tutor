@@ -119,9 +119,19 @@ async def doubt_agent_node(state: AgentState) -> dict:
                 "learner_mood": learner_mood,
             }
         )
+        report = {
+            "agent": "doubt",
+            "summary": (
+                f"Answered question on '{context}'. "
+                f"Response length: {len(full_response)} chars. "
+                f"Learner mood: {learner_mood}. "
+                f"Topic grounded: {grounding.passed}."
+            ),
+        }
         log.info("doubt_agent_done", response_length=len(full_response), mood=learner_mood)
 
         return {
             "doubt_response": full_response,
             "error": None,
+            "agent_reports": [report],
         }

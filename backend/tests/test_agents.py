@@ -247,23 +247,39 @@ class TestPlannerAgent:
 
 # ── Autonomous Orchestrator Graph ──────────────────────────────────────────────
 
+_MOCK_QUESTIONS = [
+    {
+        "id": "q1",
+        "question": "What is a Python variable used for?",
+        "options": ["Store data", "Run loops", "Define classes", "Import modules"],
+        "correct_index": 0,
+        "explanation": "Variables store data in Python.",
+        "bloom_level": "remember",
+    }
+]
+
+
 class TestAutonomousOrchestrator:
     @pytest.mark.asyncio
     async def test_start_task_builds_curriculum_then_quiz(self):
-        """task_type='start' with no existing curriculum → curriculum → planner → quiz."""
+        """task_type='start' with no existing curriculum → supervisor → curriculum → supervisor → quiz."""
         async def _mock_tool(name, **kwargs):
             if name == "classify_topic":
                 return {"labels": ["Python Programming"], "scores": [0.9]}
             if name == "score_difficulty":
                 return {"score": 0.5}
             if name == "generate_quiz":
-                return {"questions": [
-                    {"id": "q1", "question": "Q?", "options": ["a", "b", "c", "d"],
-                     "correct_index": 0, "explanation": "x", "bloom_level": "remember"}
-                ]}
+                return {"questions": _MOCK_QUESTIONS}
             return {}
 
-        with patch("app.agents.tools.call_tool", side_effect=_mock_tool):
+        async def _mock_llm_decide(state):
+            # After curriculum is built, route to quiz
+            if state.get("curriculum_path"):
+                return ("quiz", "curriculum built, quiz next")
+            return ("curriculum", "no curriculum yet")
+
+        with patch("app.agents.tools.call_tool", side_effect=_mock_tool), \
+             patch("app.agents.supervisor._llm_decide", side_effect=_mock_llm_decide):
             from app.agents.orchestrator import orchestrator
             state = _base_state(
                 task_type="start",
@@ -276,20 +292,24 @@ class TestAutonomousOrchestrator:
 
     @pytest.mark.asyncio
     async def test_progress_task_chains_to_next_quiz(self):
-        """task_type='progress' → progress_agent → planner → quiz."""
+        """task_type='progress' → supervisor → progress → supervisor → quiz."""
         async def _mock_tool(name, **kwargs):
             if name == "analyze_sentiment":
                 return {"label": "POSITIVE", "score": 0.9}
             if name == "score_difficulty":
                 return {"score": 0.5}
             if name == "generate_quiz":
-                return {"questions": [
-                    {"id": "q2", "question": "Q2?", "options": ["a", "b", "c", "d"],
-                     "correct_index": 1, "explanation": "y", "bloom_level": "understand"}
-                ]}
+                return {"questions": _MOCK_QUESTIONS}
             return {}
 
-        with patch("app.agents.tools.call_tool", side_effect=_mock_tool):
+        async def _mock_llm_decide(state):
+            delta = state.get("progress_delta") or {}
+            if delta.get("elo_processed"):
+                return ("quiz", "Elo updated, quiz next")
+            return ("progress", "quiz score needs Elo update")
+
+        with patch("app.agents.tools.call_tool", side_effect=_mock_tool), \
+             patch("app.agents.supervisor._llm_decide", side_effect=_mock_llm_decide):
             from app.agents.orchestrator import orchestrator
             curriculum_path = [
                 {"domain": "Python", "subtopic": "Variables & Data Types", "priority": 0, "elo": 500.0},
@@ -308,7 +328,7 @@ class TestAutonomousOrchestrator:
 
     @pytest.mark.asyncio
     async def test_session_ends_when_all_mastered(self):
-        """After progress pushes topic over mastery, planner should end session."""
+        """When all topics are above mastery threshold, supervisor ends session."""
         with patch("app.agents.tools.call_tool", new_callable=AsyncMock) as mock_tool:
             mock_tool.return_value = {"label": "POSITIVE", "score": 0.99}
             from app.agents.orchestrator import orchestrator

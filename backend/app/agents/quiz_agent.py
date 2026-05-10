@@ -70,11 +70,18 @@ async def quiz_agent_node(state: AgentState) -> dict:
             if not questions:
                 log.warning("quiz_agent_all_questions_rejected", topic=topic)
 
+            report = {
+                "agent": "quiz",
+                "summary": (
+                    f"Generated {len(questions)} questions for '{topic}' "
+                    f"at Bloom '{bloom_level}' (Elo {int(elo)}). Awaiting human submission."
+                ),
+            }
             span.update(output={"question_count": len(questions), "bloom_level": bloom_level})
             log.info("quiz_agent_done", question_count=len(questions))
-            return {"quiz_questions": questions, "bloom_level": bloom_level, "error": None}
+            return {"quiz_questions": questions, "bloom_level": bloom_level, "error": None, "agent_reports": [report]}
 
         except Exception as e:
             log.error("quiz_agent_error", error=str(e))
             span.update(output={"error": str(e)})
-            return {"quiz_questions": [], "error": str(e)}
+            return {"quiz_questions": [], "error": str(e), "agent_reports": [{"agent": "quiz", "summary": f"Failed: {e}"}]}

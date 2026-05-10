@@ -60,6 +60,19 @@ async def progress_agent_node(state: AgentState) -> dict:
                 except Exception:
                     updated_delta["mood"] = "NEUTRAL"
 
+            elo_direction = "↑" if new_elo > current_elo else "↓"
+            mastered_now = new_elo >= 700 and current_elo < 700
+            report = {
+                "agent": "progress",
+                "summary": (
+                    f"Updated Elo for '{topic}': {int(current_elo)} → {int(new_elo)} {elo_direction}. "
+                    f"Score: {quiz_score:.0%}. Mood: {updated_delta.get('mood', 'NEUTRAL')}."
+                    + (" Topic newly MASTERED." if mastered_now else "")
+                ),
+            }
+            # Mark delta as processed so supervisor knows Elo is up to date
+            updated_delta["elo_processed"] = True
+
             span.update(
                 output={"old_elo": current_elo, "new_elo": new_elo, "mood": updated_delta.get("mood")}
             )
@@ -68,9 +81,10 @@ async def progress_agent_node(state: AgentState) -> dict:
                 "topic_proficiency": proficiency,
                 "progress_delta": updated_delta,
                 "error": None,
+                "agent_reports": [report],
             }
 
         except Exception as e:
             log.error("progress_agent_error", error=str(e))
             span.update(output={"error": str(e)})
-            return {"error": str(e)}
+            return {"error": str(e), "agent_reports": [{"agent": "progress", "summary": f"Failed: {e}"}]}

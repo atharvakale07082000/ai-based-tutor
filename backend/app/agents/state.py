@@ -4,6 +4,11 @@ from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 
 
+def _append_reports(existing: list, new: list) -> list:
+    """Reducer: append new agent reports without overwriting prior ones."""
+    return list(existing or []) + list(new or [])
+
+
 class AgentState(TypedDict):
     learner_id: str
     task_type: str  # "curriculum" | "quiz" | "progress" | "doubt" | "start"
@@ -17,10 +22,16 @@ class AgentState(TypedDict):
     progress_delta: dict
     bloom_level: str
     error: str | None
-    # Autonomous session fields
-    next_action: str        # "curriculum" | "quiz" | "end" — set by planner
-    resume_action: str      # where to return after a doubt is resolved
-    iteration_count: int    # incremented by planner each cycle
-    max_iterations: int     # hard cap to prevent infinite loops (default 10)
-    session_complete: bool  # true when all topics mastered or max_iterations hit
-    mastery_threshold: float  # Elo score at which a topic is considered mastered
+
+    # ── Supervisor (multi-agent) fields ───────────────────────────────────────
+    # Each agent appends a structured brief here; supervisor reads them to decide.
+    agent_reports: Annotated[list[dict], _append_reports]
+    supervisor_decision: str   # last routing decision made by LLM supervisor
+    iteration_count: int       # incremented by supervisor on each loop
+    max_iterations: int        # hard cap (default 8)
+    session_complete: bool
+    mastery_threshold: float   # Elo threshold for mastery (default 700)
+
+    # Legacy compat fields (kept so existing routers don't break)
+    next_action: str
+    resume_action: str

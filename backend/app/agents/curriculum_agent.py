@@ -136,4 +136,15 @@ async def _build_curriculum(state: AgentState) -> dict:
 
     final_path = unique_path[:max_len]
     log.info("curriculum_agent_done", path_length=len(final_path))
-    return {"curriculum_path": final_path, "error": None}
+
+    mastered = sum(1 for item in final_path if proficiency.get(item["subtopic"], 0) >= 700)
+    report = {
+        "agent": "curriculum",
+        "summary": (
+            f"Built {len(final_path)} topics across "
+            f"{len({i['domain'] for i in final_path})} domains. "
+            f"{mastered} already mastered. "
+            f"Next: {final_path[0]['subtopic'] if final_path else 'none'}."
+        ),
+    }
+    return {"curriculum_path": final_path, "error": None, "agent_reports": [report]}
