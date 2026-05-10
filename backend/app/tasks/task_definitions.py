@@ -92,48 +92,143 @@ def send_progress_digest(self, learner_id: str | None = None):
                 ).sort("completed_at", -1).limit(5))
                 avg_score = round(sum(q.get("score", 0) for q in quizzes) / max(len(quizzes), 1) * 100)
 
-                trending_html = "".join(
-                    f"<li><b>{t['subtopic']}</b> <span style='color:#888'>({t['domain']})</span></li>"
-                    for t in trending
-                )
-                mastered_html = "".join(f"<li>✅ {t}</li>" for t in mastered[:5]) or "<li>Keep going — mastery at Elo ≥ 700!</li>"
+                trending_rows = "".join(f"""
+                    <tr>
+                      <td style="padding:10px 0;border-bottom:1px solid #EDE8DF;">
+                        <span style="font-size:13px;font-weight:600;color:#1A1209;">{t['subtopic']}</span>
+                      </td>
+                      <td style="padding:10px 0;border-bottom:1px solid #EDE8DF;text-align:right;">
+                        <span style="font-size:11px;color:#888;background:#F4F0E8;padding:2px 8px;border-radius:20px;">{t['domain']}</span>
+                      </td>
+                    </tr>""" for t in trending)
 
-                html = f"""
-<html><body style="font-family:Georgia,serif;max-width:560px;margin:auto;color:#2C2416;background:#FDFAF5;padding:32px">
-  <div style="font-size:11px;letter-spacing:0.12em;color:#888;text-transform:uppercase;margin-bottom:4px">Atelier · Weekly Digest</div>
-  <h1 style="font-size:28px;font-weight:400;margin:0 0 8px;letter-spacing:-0.01em">Your week in review, {name}.</h1>
-  <p style="color:#666;font-size:14px;margin-bottom:24px">Here's what you accomplished and what's trending in your domains.</p>
+                mastered_rows = "".join(f"""
+                    <tr>
+                      <td style="padding:8px 0;border-bottom:1px solid #EDE8DF;">
+                        <table cellpadding="0" cellspacing="0" style="width:100%"><tr>
+                          <td style="width:20px;vertical-align:middle;">
+                            <div style="width:8px;height:8px;background:#3D7A5E;border-radius:50%;"></div>
+                          </td>
+                          <td style="font-size:13px;color:#1A1209;font-weight:500;">{t}</td>
+                          <td style="text-align:right;font-size:11px;color:#3D7A5E;font-weight:600;">Mastered</td>
+                        </tr></table>
+                      </td>
+                    </tr>""" for t in mastered[:5]) or """
+                    <tr><td style="padding:12px 0;font-size:13px;color:#888;font-style:italic;">
+                      Keep going — mastery unlocks at Elo 700.
+                    </td></tr>"""
 
-  <table style="width:100%;border-collapse:collapse;margin-bottom:24px">
-    <tr>
-      <td style="padding:12px;background:#fff;border:1px solid #E8E2D8;border-radius:8px;text-align:center">
-        <div style="font-size:11px;color:#888;text-transform:uppercase">XP</div>
-        <div style="font-size:26px;font-weight:600">{xp:,}</div>
-      </td>
-      <td style="width:8px"></td>
-      <td style="padding:12px;background:#fff;border:1px solid #E8E2D8;border-radius:8px;text-align:center">
-        <div style="font-size:11px;color:#888;text-transform:uppercase">Streak</div>
-        <div style="font-size:26px;font-weight:600">{streak}d 🔥</div>
-      </td>
-      <td style="width:8px"></td>
-      <td style="padding:12px;background:#fff;border:1px solid #E8E2D8;border-radius:8px;text-align:center">
-        <div style="font-size:11px;color:#888;text-transform:uppercase">Avg score</div>
-        <div style="font-size:26px;font-weight:600">{avg_score}%</div>
-      </td>
-    </tr>
+                # Elo progress bar (capped at 1000)
+                top_topics = sorted(proficiency.items(), key=lambda x: x[1], reverse=True)[:4]
+                progress_rows = "".join(f"""
+                    <tr><td style="padding:6px 0;">
+                      <table cellpadding="0" cellspacing="0" style="width:100%"><tr>
+                        <td style="font-size:12px;color:#444;width:160px;white-space:nowrap;overflow:hidden;">{topic[:22]}</td>
+                        <td style="padding:0 10px;">
+                          <div style="height:5px;background:#EDE8DF;border-radius:3px;overflow:hidden;">
+                            <div style="width:{min(int(elo/10), 100)}%;height:100%;background:{'#2C2416' if elo>=700 else '#A8895A'};border-radius:3px;"></div>
+                          </div>
+                        </td>
+                        <td style="font-size:11px;color:#888;text-align:right;white-space:nowrap;">{int(elo)} elo</td>
+                      </tr></table>
+                    </td></tr>""" for topic, elo in top_topics)
+
+                from datetime import datetime as _dt
+                week_label = _dt.now().strftime("%B %d, %Y")
+
+                html = f"""<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Atelier Weekly Digest</title></head>
+<body style="margin:0;padding:0;background:#F4F0E8;font-family:Georgia,serif;">
+<table cellpadding="0" cellspacing="0" style="width:100%;background:#F4F0E8;padding:32px 0;">
+  <tr><td align="center">
+  <table cellpadding="0" cellspacing="0" style="width:100%;max-width:560px;background:#FDFAF5;border-radius:12px;overflow:hidden;box-shadow:0 2px 24px rgba(44,36,22,0.08);">
+
+    <!-- Header -->
+    <tr><td style="background:#2C2416;padding:28px 36px;">
+      <table cellpadding="0" cellspacing="0" style="width:100%"><tr>
+        <td>
+          <div style="font-size:11px;letter-spacing:0.14em;color:#A8895A;text-transform:uppercase;margin-bottom:6px;">Atelier · Weekly Digest</div>
+          <div style="font-size:26px;color:#FDFAF5;font-weight:400;letter-spacing:-0.01em;line-height:1.2;">Your week in review,<br><em style="color:#D4B896;">{name}.</em></div>
+        </td>
+        <td align="right" valign="top">
+          <div style="font-size:11px;color:#6B5A42;margin-top:4px;">{week_label}</div>
+        </td>
+      </tr></table>
+    </td></tr>
+
+    <!-- Stats row -->
+    <tr><td style="padding:0 36px;">
+      <table cellpadding="0" cellspacing="0" style="width:100%;margin:24px 0;">
+        <tr>
+          <td style="background:#fff;border:1px solid #EDE8DF;border-radius:8px;padding:16px;text-align:center;width:33%;">
+            <div style="font-size:10px;letter-spacing:0.1em;color:#AAA;text-transform:uppercase;margin-bottom:6px;">Total XP</div>
+            <div style="font-size:28px;font-weight:700;color:#2C2416;letter-spacing:-0.02em;">{xp:,}</div>
+          </td>
+          <td style="width:8px;"></td>
+          <td style="background:#fff;border:1px solid #EDE8DF;border-radius:8px;padding:16px;text-align:center;width:33%;">
+            <div style="font-size:10px;letter-spacing:0.1em;color:#AAA;text-transform:uppercase;margin-bottom:6px;">Streak</div>
+            <div style="font-size:28px;font-weight:700;color:#2C2416;letter-spacing:-0.02em;">{streak}<span style="font-size:14px;">d</span> &#128293;</div>
+          </td>
+          <td style="width:8px;"></td>
+          <td style="background:#fff;border:1px solid #EDE8DF;border-radius:8px;padding:16px;text-align:center;width:33%;">
+            <div style="font-size:10px;letter-spacing:0.1em;color:#AAA;text-transform:uppercase;margin-bottom:6px;">Quiz Avg</div>
+            <div style="font-size:28px;font-weight:700;color:#2C2416;letter-spacing:-0.02em;">{avg_score}<span style="font-size:14px;">%</span></div>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+
+    <!-- Divider -->
+    <tr><td style="padding:0 36px;"><div style="height:1px;background:#EDE8DF;"></div></td></tr>
+
+    <!-- Skill progress -->
+    <tr><td style="padding:20px 36px 4px;">
+      <div style="font-size:10px;letter-spacing:0.12em;color:#AAA;text-transform:uppercase;margin-bottom:12px;">Skill Progress</div>
+      <table cellpadding="0" cellspacing="0" style="width:100%;">
+        {progress_rows or '<tr><td style="font-size:13px;color:#888;font-style:italic;padding:8px 0;">Start a quiz to track your skill Elo.</td></tr>'}
+      </table>
+    </td></tr>
+
+    <!-- Mastered topics -->
+    <tr><td style="padding:20px 36px 4px;">
+      <div style="font-size:10px;letter-spacing:0.12em;color:#AAA;text-transform:uppercase;margin-bottom:12px;">Topics Mastered</div>
+      <table cellpadding="0" cellspacing="0" style="width:100%;">
+        {mastered_rows}
+      </table>
+    </td></tr>
+
+    <!-- Trending -->
+    <tr><td style="padding:20px 36px 4px;">
+      <div style="font-size:10px;letter-spacing:0.12em;color:#AAA;text-transform:uppercase;margin-bottom:12px;">Trending This Week</div>
+      <table cellpadding="0" cellspacing="0" style="width:100%;">
+        {trending_rows or '<tr><td style="font-size:13px;color:#888;font-style:italic;padding:8px 0;">Discovery runs at 03:00 UTC daily.</td></tr>'}
+      </table>
+    </td></tr>
+
+    <!-- CTA -->
+    <tr><td style="padding:28px 36px 36px;">
+      <table cellpadding="0" cellspacing="0"><tr>
+        <td style="background:#2C2416;border-radius:7px;">
+          <a href="https://ai-based-tutor.vercel.app/dashboard"
+             style="display:inline-block;padding:12px 28px;color:#FDFAF5;text-decoration:none;font-size:14px;font-family:Georgia,serif;letter-spacing:0.02em;">
+            Open Atelier &rarr;
+          </a>
+        </td>
+      </tr></table>
+    </td></tr>
+
+    <!-- Footer -->
+    <tr><td style="background:#F4F0E8;padding:16px 36px;border-top:1px solid #EDE8DF;">
+      <p style="margin:0;font-size:11px;color:#AAA;font-family:Arial,sans-serif;">
+        You're receiving this because you enrolled at Atelier AI Tutor.
+      </p>
+    </td></tr>
+
   </table>
-
-  <h3 style="font-size:13px;text-transform:uppercase;letter-spacing:0.08em;color:#888;margin:0 0 8px">Topics Mastered</h3>
-  <ul style="font-size:14px;line-height:1.8;padding-left:18px;margin-bottom:24px">{mastered_html}</ul>
-
-  <h3 style="font-size:13px;text-transform:uppercase;letter-spacing:0.08em;color:#888;margin:0 0 8px">Trending This Week</h3>
-  <ul style="font-size:14px;line-height:1.8;padding-left:18px;margin-bottom:32px">{trending_html}</ul>
-
-  <a href="https://ai-based-tutor.vercel.app/dashboard"
-     style="display:inline-block;padding:10px 24px;background:#2C2416;color:#FDFAF5;text-decoration:none;border-radius:6px;font-size:14px">
-    Open Atelier →
-  </a>
-  <p style="font-size:11px;color:#aaa;margin-top:24px">You're receiving this because you enrolled at Atelier AI Tutor.</p>
+  </td></tr>
+</table>
 </body></html>"""
 
                 msg = MIMEMultipart("alternative")

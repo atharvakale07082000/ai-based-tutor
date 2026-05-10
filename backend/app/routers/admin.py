@@ -69,3 +69,27 @@ async def update_config(config: dict, user_id: str = Depends(get_current_user_id
 @router.get("/config")
 async def get_config(user_id: str = Depends(get_current_user_id)):
     return _agent_config
+
+
+@router.post("/send-digest")
+async def trigger_digest(
+    email: str = Query(..., description="Send digest to this email address"),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Manually trigger the weekly digest for a specific email address."""
+    from app.db.mongo import col_users
+
+    user_doc = col_users().find_one({"email": email}, {"_id": 0, "id": 1})
+    if not user_doc:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail=f"No user found with email {email}")
+
+    learner = col_learners().find_one({"user_id": user_doc["id"]}, {"_id": 0, "id": 1})
+    if not learner:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Learner profile not found for that user")
+
+    from app.tasks.task_definitions import send_progress_digest
+    send_progress_digest.delay(learner_id=learner["id"])
+    log.info("digest_triggered_manually", email=email, learner_id=learner["id"])
+    return {"ok": True, "message": f"Digest queued for {email}"}
