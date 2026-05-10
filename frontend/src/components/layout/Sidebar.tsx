@@ -1,4 +1,5 @@
 import { useLocation, useNavigate } from 'react-router-dom'
+import toast from 'react-hot-toast'
 import { Icon } from '@/components/ui/Icon'
 import { AgentPill } from '@/components/ui/AgentPill'
 import { Avatar } from '@/components/ui/Avatar'
@@ -6,6 +7,7 @@ import { useLearnerStore } from '@/stores/learnerStore'
 import { useAgentStore } from '@/stores/agentStore'
 import { useThemeStore } from '@/stores/themeStore'
 import { useCmdkStore } from '@/stores/cmdkStore'
+import { authAPI, setAccessToken } from '@/lib/api'
 
 interface NavItem { id: string; label: string; icon: string; kbd?: string }
 interface NavGroup { group: string; items: NavItem[] }
@@ -41,10 +43,18 @@ const AGENT_MAP = { curr: 'curriculum', quiz: 'quiz', prog: 'progress', doubt: '
 export function Sidebar() {
   const location = useLocation()
   const navigate = useNavigate()
-  const { name, xp, streak } = useLearnerStore()
+  const { name, xp, streak, reset } = useLearnerStore()
   const agents = useAgentStore((s) => s.agents)
   const { theme, toggleTheme } = useThemeStore()
   const openCmdk = useCmdkStore((s) => s.setOpen)
+
+  const handleLogout = async () => {
+    try { await authAPI.logout() } catch { /* ignore */ }
+    setAccessToken(null)
+    reset()
+    toast.success('Signed out.')
+    navigate('/')
+  }
 
   return (
     <aside
@@ -215,6 +225,23 @@ export function Sidebar() {
             return <AgentPill key={k} kind={k} state={state} mini />
           })}
         </div>
+
+        {/* Logout */}
+        <button
+          onClick={handleLogout}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            width: '100%', marginTop: 8, padding: '5px 6px',
+            background: 'none', border: 0, borderRadius: 'var(--r-2)',
+            color: 'var(--ink-3)', fontSize: 12, cursor: 'pointer',
+            fontFamily: 'inherit', textAlign: 'left',
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--paper-2)'; e.currentTarget.style.color = 'var(--neg)' }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--ink-3)' }}
+        >
+          <Icon name="logout" size={13} />
+          <span>Sign out</span>
+        </button>
       </div>
     </aside>
   )
