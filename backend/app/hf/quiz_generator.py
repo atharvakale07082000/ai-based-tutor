@@ -1,67 +1,97 @@
 import asyncio
+import json
+import re
 import uuid
 import structlog
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.hf.client import get_hf_client
 from app.hf.models import HF_MODELS
-from app.prompts.loader import get_bloom_prompt, get_quiz_limits
+from app.prompts.loader import get_quiz_limits
 
 log = structlog.get_logger()
 
+_SYSTEM_PROMPT = """You are an expert quiz question generator for an AI tutoring platform.
 
-def _parse_quiz_response(text: str, topic: str, bloom_level: str) -> dict:
-    """Parse model output into a structured question dict."""
-    lines = [l.strip() for l in text.strip().split("\n") if l.strip()]
-    question = f"What is a key concept in {topic}?"
-    options = ["Option A", "Option B", "Option C", "Option D"]
-    correct_index = 0
+Output ONLY a JSON object in this exact schema — no prose, no markdown fences:
+{
+  "question": "<full question sentence, at least 10 words>",
+  "options": ["<correct answer>", "<wrong 1>", "<wrong 2>", "<wrong 3>"],
+  "correct_index": 0,
+  "explanation": "<one sentence why the correct answer is right>"
+}
 
-    for line in lines:
-        if line.startswith("Q:"):
-            question = line[2:].strip()
-        elif line.startswith("A)"):
-            options[0] = line[2:].strip()
-        elif line.startswith("B)"):
-            options[1] = line[2:].strip()
-        elif line.startswith("C)"):
-            options[2] = line[2:].strip()
-        elif line.startswith("D)"):
-            options[3] = line[2:].strip()
-        elif "ANSWER:" in line:
-            ans = line.split("ANSWER:")[-1].strip()
-            correct_index = {"A": 0, "B": 1, "C": 2, "D": 3}.get(
-                ans.upper()[0] if ans else "A", 0
-            )
+Rules:
+- options must be exactly 4 real, specific answers (never placeholders like Option A)
+- correct_index is always 0 (shuffle happens client-side)
+- question must be directly about the specified topic
+- distractors must be plausible but clearly wrong on reflection
+"""
+
+_USER_TEMPLATE = {
+    "remember":  "Generate a factual recall question about: {topic}.",
+    "understand": "Generate a comprehension/explanation question about: {topic}. Ask the learner to explain or paraphrase the concept.",
+    "apply":     "Generate an application question about: {topic}. Include a real-world scenario in the question stem.",
+    "analyze":   "Generate an analysis question about: {topic}. The learner must identify relationships, causes, or components.",
+    "evaluate":  "Generate an evaluation question about: {topic}. The learner must judge, critique, or justify a design decision.",
+    "create":    "Generate a synthesis question about: {topic}. The learner must propose, design, or construct something.",
+}
+
+
+def _parse_response(text: str, topic: str, bloom_level: str) -> dict | None:
+    """Extract a question dict from LLM output. Returns None if unparseable."""
+    # Strip markdown fences
+    cleaned = re.sub(r"```(?:json)?", "", text).strip().rstrip("`").strip()
+
+    # Try direct JSON parse
+    try:
+        data = json.loads(cleaned)
+    except json.JSONDecodeError:
+        # Try to find first {...} block
+        m = re.search(r"\{.*\}", cleaned, re.DOTALL)
+        if not m:
+            return None
+        try:
+            data = json.loads(m.group())
+        except json.JSONDecodeError:
+            return None
+
+    question = str(data.get("question", "")).strip()
+    options = data.get("options", [])
+    correct_index = int(data.get("correct_index", 0))
+    explanation = str(data.get("explanation", f"Tests {bloom_level}-level knowledge of {topic}.")).strip()
+
+    # Validate
+    if not question or len(question) < 10:
+        return None
+    if not isinstance(options, list) or len(options) < 4:
+        return None
+    options = [str(o).strip() for o in options[:4]]
+    # Reject placeholder options
+    bad = {"option a", "option b", "option c", "option d", "concept a", "concept b", "a)", "b)"}
+    if any(o.lower() in bad or len(o) < 3 for o in options):
+        return None
+    if not (0 <= correct_index <= 3):
+        correct_index = 0
 
     return {
         "id": str(uuid.uuid4()),
         "question": question,
         "options": options,
         "correct_index": correct_index,
-        "explanation": f"The correct answer relates to {topic} at the {bloom_level} cognitive level.",
+        "explanation": explanation,
         "bloom_level": bloom_level,
     }
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=8))
 async def generate_quiz_questions(topic: str, bloom_level: str, count: int = 5) -> list[dict]:
-    """
-    Generate `count` quiz questions for `topic` at `bloom_level`.
-    Prompts are loaded from prompts/quiz_generator.yaml.
-    """
     model_cfg = HF_MODELS["QUIZ_GENERATOR"]
     client = get_hf_client(provider=model_cfg["provider"])
     model_id = model_cfg["model_id"]
     limits = get_quiz_limits()
 
-    # Load prompt from YAML
-    user_prompt = get_bloom_prompt(topic, bloom_level)
-    system_prompt = (
-        "You are an expert quiz question generator. "
-        "Output only the question in the exact format requested, nothing else."
-    )
-
+    user_prompt = _USER_TEMPLATE.get(bloom_level, _USER_TEMPLATE["understand"]).format(topic=topic)
     log.info("quiz_generator_start", topic=topic, bloom_level=bloom_level, count=count)
 
     questions: list[dict] = []
@@ -71,24 +101,20 @@ async def generate_quiz_questions(topic: str, bloom_level: str, count: int = 5) 
                 client.chat_completion,
                 model=model_id,
                 messages=[
-                    {"role": "system", "content": system_prompt},
+                    {"role": "system", "content": _SYSTEM_PROMPT},
                     {"role": "user", "content": user_prompt},
                 ],
-                max_tokens=limits.get("max_tokens", 250),
-                temperature=limits.get("temperature", 0.8),
+                max_tokens=limits.get("max_tokens", 300),
+                temperature=limits.get("temperature", 0.7),
             )
             text = result.choices[0].message.content or ""
-            q = _parse_quiz_response(text, topic, bloom_level)
-            questions.append(q)
+            q = _parse_response(text, topic, bloom_level)
+            if q:
+                questions.append(q)
+            else:
+                log.warning("quiz_parse_failed", index=i, raw=text[:120])
         except Exception as e:
             log.warning("quiz_generation_failed", index=i, error=str(e))
-            questions.append({
-                "id": str(uuid.uuid4()),
-                "question": f"What is a key concept in {topic}?",
-                "options": ["Concept A", "Concept B", "Concept C", "Concept D"],
-                "correct_index": 0,
-                "explanation": f"This question tests {bloom_level}-level knowledge of {topic}.",
-                "bloom_level": bloom_level,
-            })
 
+    log.info("quiz_generator_done", topic=topic, generated=len(questions), requested=count)
     return questions

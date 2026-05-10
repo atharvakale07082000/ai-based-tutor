@@ -38,33 +38,38 @@ class TestDoubtSolver:
             assert len(tokens) > 0
 
 
+_MOCK_JSON_Q = '{"question": "What is a Python decorator used for?", "options": ["Wrapping functions to extend behavior", "Defining class variables", "Importing modules", "Handling exceptions"], "correct_index": 0, "explanation": "Decorators wrap functions to add behavior."}'
+
+
 class TestQuizGenerator:
     @pytest.mark.asyncio
     async def test_generate_returns_questions(self):
+        mock_result = MagicMock()
+        mock_result.choices[0].message.content = _MOCK_JSON_Q
         with patch("app.hf.quiz_generator.get_hf_client") as mock_client:
-            mock_client.return_value.text_generation.return_value = (
-                "Q: What is Python? A) A snake B) A language C) A framework D) A library ANSWER: B"
-            )
+            mock_client.return_value.chat_completion.return_value = mock_result
             from app.hf.quiz_generator import generate_quiz_questions
             questions = await generate_quiz_questions("Python", "remember", count=2)
             assert len(questions) == 2
             assert "question" in questions[0]
-            assert "options" in questions[0]
+            assert len(questions[0]["options"]) == 4
 
     @pytest.mark.asyncio
     async def test_generate_uses_bloom_prompt(self):
+        mock_result = MagicMock()
+        mock_result.choices[0].message.content = _MOCK_JSON_Q
         with patch("app.hf.quiz_generator.get_hf_client") as mock_client:
-            mock_client.return_value.text_generation.return_value = "Q: test A) a B) b C) c D) d ANSWER: A"
+            mock_client.return_value.chat_completion.return_value = mock_result
             from app.hf.quiz_generator import generate_quiz_questions
             questions = await generate_quiz_questions("ML", "analyze", count=1)
             assert questions[0]["bloom_level"] == "analyze"
 
     def test_parse_quiz_response_extracts_correct_index(self):
-        from app.hf.quiz_generator import _parse_quiz_response
-        text = "Q: What is 2+2?\nA) 4\nB) 3\nC) 5\nD) 6\nANSWER: A"
-        result = _parse_quiz_response(text, "Math", "remember")
+        from app.hf.quiz_generator import _parse_response
+        result = _parse_response(_MOCK_JSON_Q, "Python", "remember")
+        assert result is not None
         assert result["correct_index"] == 0
-        assert "4" in result["options"][0]
+        assert "Wrapping" in result["options"][0]
 
 
 class TestSentiment:

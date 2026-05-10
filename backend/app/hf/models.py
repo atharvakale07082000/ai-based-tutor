@@ -1,16 +1,16 @@
 HF_MODELS: dict[str, dict] = {
-    # ── Generation tasks (provider: together) ────────────────────────────────
+    # ── Generation tasks (provider: together — verified working) ──────────────
     "DOUBT_SOLVER": {
         "model_id": "Qwen/Qwen2.5-7B-Instruct",
         "task": "text-generation",
-        "provider": "auto",
-        "description": "Streaming doubt resolution chatbot (Qwen2.5-7B via HF auto-router)",
+        "provider": "together",
+        "description": "Streaming doubt resolution chatbot (Qwen2.5-7B via Together)",
     },
     "QUIZ_GENERATOR": {
         "model_id": "Qwen/Qwen2.5-7B-Instruct",
         "task": "text-generation",
-        "provider": "auto",
-        "description": "Quiz question generation via Qwen2.5-7B-Instruct (HF auto-router)",
+        "provider": "together",
+        "description": "Quiz question generation via Qwen2.5-7B-Instruct (Together)",
     },
     # ── Classification / embedding tasks (provider: hf-inference) ────────────
     "TOPIC_CLASSIFIER": {
@@ -20,10 +20,10 @@ HF_MODELS: dict[str, dict] = {
         "description": "Classify learner goals into topics",
     },
     "DIFFICULTY_SCORER": {
-        "model_id": "cross-encoder/ms-marco-MiniLM-L-6-v2",
-        "task": "text-classification",
+        "model_id": "facebook/bart-large-mnli",
+        "task": "zero-shot-classification",
         "provider": "hf-inference",
-        "description": "Score content difficulty",
+        "description": "Score content difficulty via zero-shot classification",
     },
     "EMBEDDINGS": {
         "model_id": "sentence-transformers/all-MiniLM-L6-v2",
@@ -57,8 +57,8 @@ HF_MODELS: dict[str, dict] = {
         "description": "Semantic content recommendation via learner profile embeddings",
     },
     "SPACED_REPETITION": {
-        "model_id": "cross-encoder/ms-marco-MiniLM-L-6-v2",
-        "task": "text-classification",
+        "model_id": "facebook/bart-large-mnli",
+        "task": "zero-shot-classification",
         "provider": "hf-inference",
         "description": "SM-2 spaced repetition scheduler with HF difficulty calibration",
     },

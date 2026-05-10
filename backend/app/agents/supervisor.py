@@ -147,7 +147,7 @@ async def _llm_decide(state: AgentState) -> tuple[str, str]:
         from app.config import settings
 
         client = InferenceClient(
-            provider="nebius",
+            provider="together",
             api_key=settings.HF_TOKEN,
         )
 

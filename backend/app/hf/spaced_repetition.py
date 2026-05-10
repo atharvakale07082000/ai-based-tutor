@@ -85,9 +85,13 @@ def compute_due_topics(
     return sorted(results, key=lambda x: x["urgency"], reverse=True)
 
 
+_DIFFICULTY_LABELS = ["beginner", "intermediate", "advanced"]
+_LABEL_SCORES = {"beginner": 0.2, "intermediate": 0.5, "advanced": 0.85}
+
+
 async def score_content_difficulty(text: str) -> float:
     """
-    Use HuggingFace cross-encoder to estimate how difficult a piece of text is.
+    Use HuggingFace zero-shot classification to estimate topic difficulty.
     Returns 0.0–1.0 (higher = harder).
     """
     model_cfg = HF_MODELS["DIFFICULTY_SCORER"]
@@ -95,13 +99,14 @@ async def score_content_difficulty(text: str) -> float:
 
     try:
         result = await asyncio.to_thread(
-            client.text_classification,
+            client.zero_shot_classification,
             text,
+            candidate_labels=_DIFFICULTY_LABELS,
             model=model_cfg["model_id"],
         )
-        # cross-encoder returns relevance score; we invert: high relevance → lower difficulty
-        score = result[0].score if result else 0.5
-        return round(1.0 - score, 3)
+        labels = result.labels if hasattr(result, "labels") else [r["label"] for r in result]
+        top_label = labels[0] if labels else "intermediate"
+        return _LABEL_SCORES.get(top_label, 0.5)
     except Exception as e:
         log.warning("difficulty_scorer_error", error=str(e))
         return 0.5
