@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from typing import TypedDict, Optional
 
 import structlog
-from duckduckgo_search import DDGS
+from ddgs import DDGS
 
 from app.hf.client import get_hf_client
 from app.hf.models import HF_MODELS

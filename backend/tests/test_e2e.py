@@ -74,10 +74,8 @@ _STATE: dict = {}   # populated by first login test, reused by later tests
 
 @pytest_asyncio.fixture
 async def client():
-    """Fresh ASGI client with tables created."""
+    """Fresh ASGI client (MongoDB-backed app, no table creation needed)."""
     from app.main import app
-    from app.database import create_all_tables
-    await create_all_tables()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c
 

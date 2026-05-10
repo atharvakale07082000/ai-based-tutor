@@ -93,7 +93,7 @@ async def rank_content_for_learner(
         for i, item in enumerate(items_to_score):
             updated = dict(item)
             updated["is_ai_recommended"] = i in top_indices
-            updated["_relevance_score"] = round(scored[next(j for j, (idx, _) in enumerate(scored) if idx == i)][1], 4) if i < len(scored) else 0.0
+            updated["_relevance_score"] = float(round(scored[next(j for j, (idx, _) in enumerate(scored) if idx == i)][1], 4)) if i < len(scored) else 0.0
             result.append(updated)
 
         # Append remaining items (beyond 20) unchanged

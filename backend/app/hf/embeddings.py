@@ -20,10 +20,13 @@ async def get_embeddings(text: str) -> list[float]:
         model=model_id,
     )
 
-    # Result may be nested for sentence transformers
-    if isinstance(result, list) and isinstance(result[0], list):
-        return result[0]
-    return list(result) if hasattr(result, '__iter__') else []
+    # HF returns numpy arrays or nested lists; always coerce to native Python floats
+    if hasattr(result, 'ndim'):  # numpy array
+        flat = result[0] if result.ndim == 2 else result
+        return [float(x) for x in flat.tolist()]
+    if isinstance(result, list) and result and isinstance(result[0], list):
+        return [float(x) for x in result[0]]
+    return [float(x) for x in result] if hasattr(result, '__iter__') else []
 
 
 def cosine_similarity(a: list[float], b: list[float]) -> float:
