@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Card } from '@/components/ui/Card'
@@ -5,7 +6,8 @@ import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Icon } from '@/components/ui/Icon'
 import { CardSkeleton } from '@/components/ui/Skeleton'
-import { coursesAPI, type CourseModule } from '@/lib/api'
+import { coursesAPI, quizAPI, type CourseModule } from '@/lib/api'
+import toast from 'react-hot-toast'
 
 const TYPE_ICON: Record<string, string> = { video: 'play', article: 'book', course: 'sparkle', book: 'book', tool: 'code' }
 
@@ -18,10 +20,24 @@ const STATUS_CONFIG = {
 
 function ModuleRow({ module, index, planId, isUnlocked }: { module: CourseModule; index: number; planId: string; isUnlocked: boolean }) {
   const navigate = useNavigate()
+  const [quizLoading, setQuizLoading] = useState(false)
   const cfg = STATUS_CONFIG[module.interview_status]
   const score = module.interview_score != null ? (module.interview_score * 10).toFixed(1) : null
   const passed = module.interview_status === 'passed'
   const failed = module.interview_status === 'failed'
+  const primaryTopic = module.topics[0] || module.title
+
+  const handleTakeQuiz = async () => {
+    setQuizLoading(true)
+    try {
+      const { data } = await quizAPI.generate(primaryTopic)
+      navigate(`/quiz/${data.quiz_id}`)
+    } catch {
+      toast.error('Could not generate quiz')
+    } finally {
+      setQuizLoading(false)
+    }
+  }
 
   return (
     <div style={{ display: 'flex', gap: 16, paddingBottom: 16, opacity: isUnlocked ? 1 : 0.45 }}>
@@ -80,14 +96,33 @@ function ModuleRow({ module, index, planId, isUnlocked }: { module: CourseModule
         )}
 
         {isUnlocked && (
-          <Button
-            size="sm"
-            variant={passed ? 'secondary' : 'primary'}
-            iconRight="arrow"
-            onClick={() => navigate(`/courses/${planId}/modules/${module.id}/interview`)}
-          >
-            {passed ? 'Review interview' : failed ? 'Retry interview' : 'Start AI Interview'}
-          </Button>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <Button
+              size="sm"
+              variant="secondary"
+              icon="book"
+              onClick={() => navigate(`/learn?topic=${encodeURIComponent(primaryTopic)}`)}
+            >
+              Study
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              icon="zap"
+              loading={quizLoading}
+              onClick={handleTakeQuiz}
+            >
+              Quiz
+            </Button>
+            <Button
+              size="sm"
+              variant={passed ? 'ghost' : 'primary'}
+              iconRight="arrow"
+              onClick={() => navigate(`/courses/${planId}/modules/${module.id}/interview`)}
+            >
+              {passed ? 'Review interview' : failed ? 'Retry interview' : 'AI Interview'}
+            </Button>
+          </div>
         )}
         {!isUnlocked && (
           <div className="t-xs fg-3" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { assistantAPI } from '@/lib/api'
 import { useLearnerStore } from '@/stores/learnerStore'
@@ -9,19 +10,71 @@ import { Avatar } from '@/components/ui/Avatar'
 import { AgentPill } from '@/components/ui/AgentPill'
 import { useAgentStore } from '@/stores/agentStore'
 
+interface ActionCard {
+  kind: string
+  payload: Record<string, unknown>
+}
+
 interface Message {
   id: string
   role: 'user' | 'assistant'
   content: string
   streaming?: boolean
-  agents?: string[]
+  actions?: ActionCard[]
 }
 
 function StreamCursor() {
   return <span style={{ display: 'inline-block', width: 8, height: 14, background: 'var(--ink-0)', verticalAlign: 'middle', marginLeft: 2, animation: 'blink 1s steps(1) infinite' }} />
 }
 
+function ActionCardView({ action, onNavigate }: { action: ActionCard; onNavigate: (url: string) => void }) {
+  const { kind, payload } = action
+  if (kind === 'quiz_created') {
+    return (
+      <div style={{ marginTop: 10, padding: '12px 14px', background: 'var(--paper-2)', border: '1px solid var(--line-2)', borderRadius: 'var(--r-2)', maxWidth: 340 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+          <Icon name="zap" size={13} style={{ color: 'var(--accent)' }} />
+          <span className="t-sm fg-0" style={{ fontWeight: 500 }}>Quiz ready — {String(payload.topic)}</span>
+        </div>
+        <div className="t-xs fg-2" style={{ marginBottom: 10 }}>
+          {String(payload.question_count)} questions · {String(payload.bloom_level)} level
+        </div>
+        <Button size="sm" variant="primary" onClick={() => onNavigate(String(payload.url))}>
+          Take Quiz
+        </Button>
+      </div>
+    )
+  }
+  if (kind === 'plan_created') {
+    return (
+      <div style={{ marginTop: 10, padding: '12px 14px', background: 'var(--paper-2)', border: '1px solid var(--line-2)', borderRadius: 'var(--r-2)', maxWidth: 340 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+          <Icon name="book" size={13} style={{ color: 'var(--accent)' }} />
+          <span className="t-sm fg-0" style={{ fontWeight: 500 }}>{String(payload.title)}</span>
+        </div>
+        <div className="t-xs fg-2" style={{ marginBottom: 10 }}>
+          {String(payload.module_count)} modules · {String(payload.weeks)} weeks
+        </div>
+        <Button size="sm" variant="primary" onClick={() => onNavigate(String(payload.url))}>
+          View Course
+        </Button>
+      </div>
+    )
+  }
+  if (kind === 'navigate') {
+    return (
+      <div style={{ marginTop: 8 }}>
+        <Button size="sm" variant="outline" icon="arrow-right" onClick={() => onNavigate(String(payload.url))}>
+          Go to {String(payload.label)}
+        </Button>
+      </div>
+    )
+  }
+  return null
+}
+
 export default function AssistantPage() {
+  const navigate = useNavigate()
   const { name } = useLearnerStore()
   const agents = useAgentStore((s) => s.agents)
   const [messages, setMessages] = useState<Message[]>([])
@@ -41,14 +94,34 @@ export default function AssistantPage() {
     setStreaming(true)
 
     const assistantId = crypto.randomUUID()
-    setMessages((m) => [...m, { id: assistantId, role: 'assistant', content: '', streaming: true }])
+    setMessages((m) => [...m, { id: assistantId, role: 'assistant', content: '', streaming: true, actions: [] }])
 
     try {
       let full = ''
-      await assistantAPI.streamChat(text, (chunk: string) => {
-        full += chunk
-        setMessages((m) => m.map((msg) => msg.id === assistantId ? { ...msg, content: full } : msg))
-      })
+      // Build history from prior completed messages for multi-turn context
+      const history = messages
+        .filter((m) => !m.streaming && m.content)
+        .map((m) => ({ role: m.role, content: m.content }))
+
+      await assistantAPI.streamChat(
+        text,
+        (chunk: string) => {
+          full += chunk
+          setMessages((m) => m.map((msg) => msg.id === assistantId ? { ...msg, content: full } : msg))
+        },
+        (kind: string, payload: Record<string, unknown>) => {
+          setMessages((m) => m.map((msg) =>
+            msg.id === assistantId
+              ? { ...msg, actions: [...(msg.actions ?? []), { kind, payload }] }
+              : msg
+          ))
+          // Auto-navigate for navigate actions
+          if (kind === 'navigate' && payload.url) {
+            setTimeout(() => navigate(String(payload.url)), 800)
+          }
+        },
+        history,
+      )
       setMessages((m) => m.map((msg) => msg.id === assistantId ? { ...msg, streaming: false } : msg))
     } catch {
       toast.error('Assistant error — try again')
@@ -56,7 +129,7 @@ export default function AssistantPage() {
     } finally {
       setStreaming(false)
     }
-  }, [input, streaming])
+  }, [input, streaming, navigate])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); sendMessage() }
@@ -83,8 +156,14 @@ export default function AssistantPage() {
           </div>
         ))}
 
-        <div className="caps" style={{ color: 'var(--ink-3)', margin: '16px 0 8px' }}>Suggested</div>
-        {['Plan next week', 'Critique my proof', 'Quiz me on PCA', 'Explain gradient descent'].map((t) => (
+        <div className="caps" style={{ color: 'var(--ink-3)', margin: '16px 0 8px' }}>Try asking</div>
+        {[
+          'Quiz me on PCA',
+          'Plan a Python course',
+          'Explain gradient descent',
+          'Show my progress',
+          'What topics should I study?',
+        ].map((t) => (
           <button
             key={t}
             className="t-sm fg-1"
@@ -132,6 +211,10 @@ export default function AssistantPage() {
                   {msg.content}
                   {msg.streaming && <StreamCursor />}
                 </div>
+                {/* Action cards rendered below assistant content */}
+                {msg.role === 'assistant' && (msg.actions ?? []).map((action, i) => (
+                  <ActionCardView key={i} action={action} onNavigate={(url) => navigate(url)} />
+                ))}
                 {!msg.streaming && msg.role === 'assistant' && msg.content && (
                   <div style={{ display: 'flex', gap: 4, marginTop: 12 }}>
                     <Button size="xs" variant="outline" icon="check">Helpful</Button>
@@ -160,7 +243,6 @@ export default function AssistantPage() {
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
                 <Button size="xs" variant="ghost" icon="upload">Attach</Button>
                 <Button size="xs" variant="ghost" icon="mic">Voice</Button>
-                <Button size="xs" variant="outline" icon="layers">All agents</Button>
                 <span style={{ flex: 1 }} />
                 <span className="t-xs fg-3"><kbd>⌘</kbd><kbd>↵</kbd> to send</span>
                 <Button size="sm" variant="primary" icon="send" onClick={sendMessage} loading={streaming}>Send</Button>

@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { feedAPI, type FeedItem, type TrendTopic } from '@/lib/api'
@@ -275,8 +276,15 @@ function FeedCard({ item, onSnooze, onSchedule, onClear }: {
 
 export default function LearnFeedPage() {
   const qc = useQueryClient()
+  const [searchParams] = useSearchParams()
   const [domainFilter, setDomainFilter] = useState<string>('all')
   const [typeFilter, setTypeFilter] = useState<string>('all')
+
+  // Apply topic from URL query param (e.g. from CourseDetailPage "Study" button)
+  useEffect(() => {
+    const topic = searchParams.get('topic')
+    if (topic) setDomainFilter(topic)
+  }, [searchParams])
   const [scheduleItem, setScheduleItem] = useState<FeedItem | null>(null)
   const [showTrending, setShowTrending] = useState(true)
 

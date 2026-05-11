@@ -425,14 +425,19 @@ export const feedAPI = {
 // ─── Assistant ────────────────────────────────────────────────────────────────
 
 export const assistantAPI = {
-  streamChat: async (message: string, onChunk: (chunk: string) => void): Promise<void> => {
+  streamChat: async (
+    message: string,
+    onChunk: (chunk: string) => void,
+    onAction?: (kind: string, payload: Record<string, unknown>) => void,
+    history?: Array<{ role: string; content: string }>,
+  ): Promise<void> => {
     const response = await fetch(`${BASE_URL}/assistant/chat`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: accessToken ? `Bearer ${accessToken}` : '',
       },
-      body: JSON.stringify({ message }),
+      body: JSON.stringify({ message, history: history ?? [] }),
     })
     if (!response.ok || !response.body) throw new Error('Stream failed')
     const reader = response.body.getReader()
@@ -447,6 +452,7 @@ export const assistantAPI = {
         try {
           const event = JSON.parse(json)
           if (event.type === 'token' && event.content) onChunk(event.content)
+          if (event.type === 'action' && onAction) onAction(event.kind, event.payload ?? {})
           if (event.type === 'done') return
         } catch { /* skip */ }
       }
