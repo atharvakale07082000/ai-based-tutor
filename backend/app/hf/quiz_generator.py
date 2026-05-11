@@ -5,7 +5,7 @@ import uuid
 import structlog
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from app.hf.client import get_hf_client
+from app.hf.client import get_hf_client, record_auth_failure, record_auth_success
 from app.hf.models import HF_MODELS
 from app.prompts.loader import get_quiz_limits
 
@@ -97,24 +97,33 @@ async def generate_quiz_questions(topic: str, bloom_level: str, count: int = 5) 
     questions: list[dict] = []
     for i in range(count):
         try:
-            result = await asyncio.to_thread(
-                client.chat_completion,
-                model=model_id,
-                messages=[
-                    {"role": "system", "content": _SYSTEM_PROMPT},
-                    {"role": "user", "content": user_prompt},
-                ],
-                max_tokens=limits.get("max_tokens", 300),
-                temperature=limits.get("temperature", 0.7),
+            result = await asyncio.wait_for(
+                asyncio.to_thread(
+                    client.chat_completion,
+                    model=model_id,
+                    messages=[
+                        {"role": "system", "content": _SYSTEM_PROMPT},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    max_tokens=limits.get("max_tokens", 300),
+                    temperature=limits.get("temperature", 0.7),
+                ),
+                timeout=40.0,
             )
+            record_auth_success(model_cfg["provider"])
             text = result.choices[0].message.content or ""
             q = _parse_response(text, topic, bloom_level)
             if q:
                 questions.append(q)
             else:
-                log.warning("quiz_parse_failed", index=i, raw=text[:120])
+                log.warning("quiz_parse_failed", index=i, raw=text[:200])
+        except asyncio.TimeoutError:
+            log.error("quiz_generation_timeout", index=i, topic=topic)
         except Exception as e:
-            log.warning("quiz_generation_failed", index=i, error=str(e))
+            err = str(e)
+            if "401" in err or "403" in err:
+                record_auth_failure(model_cfg["provider"])
+            log.warning("quiz_generation_failed", index=i, topic=topic, error=err[:200])
 
     log.info("quiz_generator_done", topic=topic, generated=len(questions), requested=count)
     return questions

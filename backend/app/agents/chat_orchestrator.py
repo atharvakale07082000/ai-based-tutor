@@ -23,8 +23,9 @@ from typing import AsyncIterator
 
 import structlog
 
-from app.hf.client import get_hf_client
+from app.hf.client import get_hf_client, record_auth_failure, record_auth_success
 from app.hf.models import HF_MODELS
+from app.hf.utils import truncate_history
 from app.hf.doubt_solver import stream_doubt_response
 from app.db.mongo import col_learners, col_quizzes, col_chat_evals
 
@@ -92,14 +93,24 @@ INJECTION_PATTERNS = [
 
 def _llm_call(prompt: str, max_tokens: int = 512, temperature: float = 0.1) -> str:
     model_cfg = HF_MODELS["DOUBT_SOLVER"]
-    client = get_hf_client(model_cfg["provider"])
-    resp = client.chat_completion(
-        model=model_cfg["model_id"],
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=max_tokens,
-        temperature=temperature,
-    )
-    return (resp.choices[0].message.content or "").strip()
+    provider = model_cfg["provider"]
+    client = get_hf_client(provider)
+    # Truncate prompt to stay within token budget
+    prompt = prompt[:6000]
+    try:
+        resp = client.chat_completion(
+            model=model_cfg["model_id"],
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+        record_auth_success(provider)
+        return (resp.choices[0].message.content or "").strip()
+    except Exception as e:
+        err = str(e)
+        if "401" in err or "403" in err:
+            record_auth_failure(provider)
+        raise
 
 
 # ─── RAG context fetch ────────────────────────────────────────────────────────
@@ -155,9 +166,10 @@ async def _classify_intent(message: str, history: list[dict], user_ctx: dict) ->
 
     registry_desc = "\n".join(f'  - "{k}": {v["scope"]}' for k, v in AGENT_REGISTRY.items())
     ctx_str = json.dumps(user_ctx, indent=2) if user_ctx else "{}"
+    safe_history = truncate_history(history, max_turns=6, max_chars_per_msg=300)
     history_str = "\n".join(
-        f'{m["role"].upper()}: {m["content"][:120]}' for m in history[-6:]
-    ) if history else "None"
+        f'{m["role"].upper()}: {m["content"]}' for m in safe_history
+    ) if safe_history else "None"
 
     prompt = f"""You are an intent classifier for an AI learning platform. Classify the user message and select the best agent.
 
@@ -191,13 +203,24 @@ Respond with ONLY this JSON (no markdown):
   "delegation": {{"secondary_agent": "<agent_key or null>", "delegation_reason": "<why or null>"}}
 }}"""
 
-    text = await asyncio.to_thread(_llm_call, prompt, 400, 0.1)
+    try:
+        text = await asyncio.wait_for(asyncio.to_thread(_llm_call, prompt, 400, 0.1), timeout=30.0)
+    except asyncio.TimeoutError:
+        log.error("classify_intent_timeout", message=message[:60])
+        return {
+            "guardrail_pass": True, "agent": "general",
+            "reason": "Intent classification timed out",
+            "extracted": {"topic": None, "goal": None},
+            "navigate_url": None,
+            "delegation": {"secondary_agent": None},
+        }
     match = re.search(r'\{[\s\S]*\}', text)
     if match:
         text = match.group(0)
     try:
         return json.loads(text)
     except Exception:
+        log.warning("classify_intent_parse_failed", raw=text[:200])
         return {
             "guardrail_pass": True, "agent": "general",
             "reason": "Could not classify intent precisely",

@@ -1,4 +1,5 @@
 import json
+import warnings
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -53,3 +54,10 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# Startup safety checks
+if "change-this" in settings.SECRET_KEY and settings.APP_ENV == "production":
+    raise RuntimeError("SECRET_KEY must be changed before deploying to production")
+
+if not settings.HF_TOKEN and settings.APP_ENV == "production":
+    warnings.warn("HF_TOKEN is not set — all AI inference calls will fail in production", stacklevel=1)

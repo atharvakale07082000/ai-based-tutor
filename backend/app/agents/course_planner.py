@@ -148,12 +148,15 @@ Requirements:
 - Realistic time estimates per module
 - Return ONLY the JSON, nothing else."""
 
-    text = await asyncio.to_thread(_chat, prompt, 3000, 0.2)
-    text = text.strip()
-    match = re.search(r'\{[\s\S]*\}', text)
-    if match:
-        text = match.group(0)
-    return json.loads(text)
+    raw = await asyncio.wait_for(asyncio.to_thread(_chat, prompt, 3000, 0.2), timeout=90.0)
+    raw = raw.strip()
+    match = re.search(r'\{[\s\S]*\}', raw)
+    text = match.group(0) if match else raw
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        log.error("course_plan_json_parse_failed", error=str(e), raw_snippet=raw[:300])
+        raise ValueError(f"LLM did not return valid JSON: {e}") from e
 
 
 def _build_plan(goal: str, user_id: str, raw: dict) -> dict:
@@ -205,7 +208,11 @@ async def create_course_plan(goal: str, user_id: str) -> dict:
     await _save_plan(plan)
     log.info("course_planner_plan_saved", plan_id=plan["plan_id"])
     # Fire-and-forget: pre-populate quiz bank for all module topics
-    asyncio.create_task(_pregenerate_quizzes_for_plan(plan))
+    task = asyncio.create_task(_pregenerate_quizzes_for_plan(plan))
+    task.add_done_callback(
+        lambda t: log.error("quiz_pregenerate_task_failed", error=str(t.exception()))
+        if t.exception() else None
+    )
     return plan
 
 

@@ -51,15 +51,17 @@ async def quiz_agent_node(state: AgentState) -> dict:
             # Delegate: verify difficulty via difficulty-scorer sub-agent
             try:
                 diff_result = await call_tool("score_difficulty", text=topic)
-                difficulty_score = diff_result.get("score", 0.5)
+                difficulty_score = float(diff_result.get("score", 0.5))
+                difficulty_score = max(0.0, min(1.0, difficulty_score))  # clamp to [0,1]
                 # If topic difficulty is high (>0.75) but learner Elo is low (<400),
                 # drop one Bloom level to avoid overwhelming the learner
-                if difficulty_score > 0.75 and elo < 400 and bloom_level != "remember":
-                    idx = [lvl for _, lvl in BLOOM_LEVEL_BY_ELO].index(bloom_level)
-                    bloom_level = [lvl for _, lvl in BLOOM_LEVEL_BY_ELO][max(0, idx - 1)]
+                bloom_levels = [lvl for _, lvl in BLOOM_LEVEL_BY_ELO]
+                if difficulty_score > 0.75 and elo < 400 and bloom_level in bloom_levels:
+                    idx = bloom_levels.index(bloom_level)
+                    bloom_level = bloom_levels[max(0, idx - 1)]
                     log.info("quiz_bloom_adjusted", new_level=bloom_level, difficulty=difficulty_score)
-            except Exception:
-                pass  # difficulty sub-agent failure is non-fatal
+            except Exception as e:
+                log.warning("quiz_difficulty_check_failed", topic=topic, error=str(e))
 
             # Delegate: generate questions via quiz-generator sub-agent
             result = await call_tool("generate_quiz", topic=topic, bloom_level=bloom_level, count=5)

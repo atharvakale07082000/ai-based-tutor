@@ -10,17 +10,21 @@ import asyncio
 import structlog
 
 from app.hf.embeddings import get_embeddings, cosine_similarity
+from app.hf.utils import BoundedCache
 
 log = structlog.get_logger()
 
-# Embedding cache: avoids re-embedding the same text across requests
-_embed_cache: dict[str, list[float]] = {}
+# Thread-safe LRU embedding cache (max 512 entries ≈ 200 MB)
+_embed_cache: BoundedCache = BoundedCache(max_size=512)
 
 
 async def _cached_embed(text: str) -> list[float]:
-    if text not in _embed_cache:
-        _embed_cache[text] = await get_embeddings(text)
-    return _embed_cache[text]
+    cached = _embed_cache.get(text)
+    if cached is not None:
+        return cached
+    result = await get_embeddings(text)
+    _embed_cache.set(text, result)
+    return result
 
 
 def _build_learner_query(

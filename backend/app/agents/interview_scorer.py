@@ -20,14 +20,27 @@ log = structlog.get_logger()
 
 def _chat(prompt: str, max_tokens: int = 1200, temperature: float = 0.1) -> str:
     model_cfg = HF_MODELS["DOUBT_SOLVER"]
-    client = get_hf_client(model_cfg["provider"])
-    resp = client.chat_completion(
-        model=model_cfg["model_id"],
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=max_tokens,
-        temperature=temperature,
-    )
-    return (resp.choices[0].message.content or "").strip()
+    provider = model_cfg["provider"]
+    client = get_hf_client(provider)
+    # Truncate oversized prompts before sending
+    prompt = prompt[:7000]
+    try:
+        resp = client.chat_completion(
+            model=model_cfg["model_id"],
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+        from app.hf.client import record_auth_success
+        record_auth_success(provider)
+        return (resp.choices[0].message.content or "").strip()
+    except Exception as e:
+        err = str(e)
+        if "401" in err or "403" in err:
+            from app.hf.client import record_auth_failure
+            record_auth_failure(provider)
+        log.error("interview_scorer_llm_error", error=err[:200])
+        raise
 
 
 class ScoringState(TypedDict):
@@ -94,11 +107,12 @@ Return ONLY the JSON array."""
 def _node_build_scoring_matrix(state: ScoringState) -> dict:
     """Assign numeric scores 0-10 to each answer based on the analysis."""
     if not state["analyses"]:
+        log.warning("scorer_no_analyses", transcription_count=len(state["transcriptions"]))
         matrix = [
             {
                 "question_id": t.get("question_id"),
                 "score": 0,
-                "justification": "No answer analyzed.",
+                "justification": "Answer analysis failed — LLM returned no structured output.",
                 "concepts_covered": [],
                 "concepts_missed": [],
             }

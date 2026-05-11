@@ -148,34 +148,44 @@ async def supervisor_node(state: AgentState) -> dict:
 
 
 async def _llm_decide(state: AgentState) -> tuple[str, str]:
-    """Ask the LLM which agent to run next. Falls back to rule-based if LLM fails."""
+    """Ask the LLM which agent to run next. Falls back to rule-based on any failure."""
     try:
-        from huggingface_hub import InferenceClient
-        from app.config import settings
+        from app.hf.client import get_hf_client, record_auth_failure, record_auth_success
 
-        client = InferenceClient(
-            provider="together",
-            api_key=settings.HF_TOKEN,
-        )
-
+        client = get_hf_client("together")
         state_summary = _build_state_summary(state)
         user_msg = f"Current state:\n{state_summary}\n\nWhat should run next?"
 
-        response = client.chat.completions.create(
-            model="Qwen/Qwen2.5-7B-Instruct",
-            messages=[
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": user_msg},
-            ],
-            max_tokens=80,
-            temperature=0.1,
+        import asyncio
+        response = await asyncio.wait_for(
+            asyncio.to_thread(
+                client.chat_completion,
+                model="Qwen/Qwen2.5-7B-Instruct",
+                messages=[
+                    {"role": "system", "content": _SYSTEM_PROMPT},
+                    {"role": "user", "content": user_msg},
+                ],
+                max_tokens=80,
+                temperature=0.1,
+            ),
+            timeout=20.0,
         )
-
+        record_auth_success("together")
         raw = response.choices[0].message.content.strip()
         return _parse_decision(raw)
 
+    except asyncio.TimeoutError:
+        log.warning("supervisor_llm_timeout")
+        return _rule_based_fallback(state)
     except Exception as e:
-        log.warning("supervisor_llm_failed", error=str(e))
+        err = str(e)
+        if "401" in err or "403" in err:
+            try:
+                from app.hf.client import record_auth_failure
+                record_auth_failure("together")
+            except Exception:
+                pass
+        log.warning("supervisor_llm_failed", error=err[:200])
         return _rule_based_fallback(state)
 
 

@@ -32,7 +32,7 @@ def _enrich_with_trending(topic_graph: dict[str, list[str]]) -> dict[str, list[s
         batch_time = latest["discovered_at"]
         trends = list(col_trending_topics().find(
             {"discovered_at": batch_time}, {"_id": 0, "domain": 1, "subtopic": 1}
-        ))
+        ).limit(100))
 
         enriched = {k: list(v) for k, v in topic_graph.items()}
         for t in trends:
@@ -96,8 +96,12 @@ async def _build_curriculum(state: AgentState) -> dict:
             # Delegate to classify_topic sub-agent to map goal text → domain
             try:
                 classification = await call_tool("classify_topic", text=goal)
-                domain = classification["labels"][0] if classification["labels"] else "Python Programming"
-            except Exception:
+                labels = classification.get("labels") or []
+                domain = labels[0] if labels else "Python Programming"
+                if not labels:
+                    log.warning("curriculum_classify_empty", goal=goal[:60])
+            except Exception as e:
+                log.warning("curriculum_classify_failed", goal=goal[:60], error=str(e))
                 domain = "Python Programming"
 
             subtopics = topic_graph.get(domain, topic_graph["Python Programming"])
