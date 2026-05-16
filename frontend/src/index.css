@@ -226,6 +226,8 @@ input, textarea { font: inherit; color: inherit; }
 @keyframes meshRotate { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
 @keyframes float     { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-20px); } }
 @keyframes drainTimer { from { width: 100%; } to { width: 0%; } }
+@keyframes voiceBar   { from { transform: scaleY(0.1); } to { transform: scaleY(1); } }
+@keyframes rippleRing { 0% { transform: scale(1); opacity: 0.55; } 100% { transform: scale(2.8); opacity: 0; } }
 
 .fade-up { animation: fadeUp var(--dur-slow) var(--ease-out) both; }
 .fade-in { animation: fadeIn var(--dur-base) var(--ease-out) both; }
@@ -272,28 +274,136 @@ kbd, .kbd {
 .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
 .scrollbar-hide::-webkit-scrollbar { display: none; }
 
-/* PROSE for markdown */
-.prose-atelier h1, .prose-atelier h2, .prose-atelier h3 {
+/* PROSE — Atelier markdown (used by MarkdownMessage, ModulePlayer, etc.) */
+.prose-atelier > *:first-child { margin-top: 0 !important; }
+.prose-atelier > *:last-child  { margin-bottom: 0 !important; }
+
+.prose-atelier p {
+  margin: 0 0 0.7em;
+  line-height: 1.7;
+}
+.prose-atelier p:last-child { margin-bottom: 0; }
+
+.prose-atelier h1,
+.prose-atelier h2,
+.prose-atelier h3,
+.prose-atelier h4,
+.prose-atelier h5,
+.prose-atelier h6 {
   font-family: var(--font-serif);
   color: var(--ink-0);
   letter-spacing: -0.02em;
+  margin: 1.1em 0 0.4em;
 }
+.prose-atelier h1:first-child,
+.prose-atelier h2:first-child,
+.prose-atelier h3:first-child { margin-top: 0; }
+
+.prose-atelier h1 { font-size: var(--t-2xl); }
+.prose-atelier h2 { font-size: var(--t-xl);  }
+.prose-atelier h3 { font-size: var(--t-lg);  }
+.prose-atelier h4,
+.prose-atelier h5,
+.prose-atelier h6 { font-size: var(--t-md); font-weight: 600; font-family: var(--font-sans); letter-spacing: 0; }
+
+.prose-atelier ul,
+.prose-atelier ol {
+  padding-left: 1.4em;
+  margin: 0.35em 0 0.7em;
+}
+.prose-atelier li {
+  margin-bottom: 0.3em;
+  line-height: 1.65;
+}
+.prose-atelier li > ul,
+.prose-atelier li > ol { margin: 0.2em 0; }
+
+.prose-atelier a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  transition: color var(--dur-fast) var(--ease-out);
+}
+.prose-atelier a:hover { color: var(--accent-hover); }
+
+.prose-atelier strong { font-weight: 600; color: var(--ink-0); }
+.prose-atelier em    { font-style: italic; }
+
+/* Inline code */
 .prose-atelier code {
   font-family: var(--font-mono);
   background: var(--paper-2);
   padding: 2px 6px;
   border-radius: var(--r-1);
   font-size: 0.875em;
-  color: var(--ink-0);
+  color: var(--accent);
+  border: 1px solid var(--line-1);
 }
+
+/* Block code (SyntaxHighlighter wrapper) */
+.prose-pre-wrapper {
+  margin: 0.65em 0;
+  border-radius: var(--r-3);
+  overflow: hidden;
+}
+.prose-pre-wrapper:first-child { margin-top: 0; }
+.prose-pre-wrapper:last-child  { margin-bottom: 0; }
+
+/* Plain <pre> fallback */
 .prose-atelier pre {
   background: var(--ink-0) !important;
   color: var(--paper-0);
   border-radius: var(--r-3);
+  padding: 14px 16px;
+  overflow-x: auto;
+  margin: 0.65em 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.55;
 }
+.prose-atelier pre code {
+  background: none;
+  padding: 0;
+  border: none;
+  color: inherit;
+  font-size: inherit;
+}
+
 .prose-atelier blockquote {
-  border-left: 2px solid var(--accent);
+  border-left: 3px solid var(--accent);
   padding-left: 1rem;
+  margin: 0.6em 0;
   color: var(--ink-2);
   font-style: italic;
 }
+
+.prose-atelier hr {
+  border: none;
+  border-top: 1px solid var(--line-1);
+  margin: 0.9em 0;
+}
+
+.prose-atelier table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--t-sm);
+  border: 1px solid var(--line-1);
+  border-radius: var(--r-2);
+  overflow: hidden;
+  margin: 0.65em 0;
+}
+.prose-atelier th {
+  background: var(--paper-2);
+  padding: 6px 10px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--ink-0);
+  border-bottom: 1px solid var(--line-2);
+}
+.prose-atelier td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line-1);
+  color: var(--ink-1);
+}
+.prose-atelier tr:last-child td { border-bottom: none; }
