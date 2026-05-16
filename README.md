@@ -1,6 +1,6 @@
-# AI Tutor Platform
+# Atelier — AI Tutor Platform
 
-An intelligent, adaptive learning platform powered by a multi-agent AI system. The platform personalises every learner's journey — from curriculum planning and content delivery to doubt resolution and progress tracking — using a network of specialised LangGraph agents backed by Hugging Face sub-agents.
+An adaptive learning platform powered by a multi-agent AI system. Specialised ReAct agents handle curriculum planning, quiz generation, progress tracking, and doubt resolution — each streaming live reasoning steps to the frontend via Server-Sent Events.
 
 ---
 
@@ -13,10 +13,9 @@ An intelligent, adaptive learning platform powered by a multi-agent AI system. T
 - [Project Structure](#project-structure)
 - [Getting Started](#getting-started)
 - [API Reference](#api-reference)
-- [Evaluation System](#evaluation-system)
 - [Testing](#testing)
 - [Environment Variables](#environment-variables)
-- [Contributing](#contributing)
+- [Deployment](#deployment)
 
 ---
 
@@ -25,12 +24,13 @@ An intelligent, adaptive learning platform powered by a multi-agent AI system. T
 | Feature | Description |
 |---|---|
 | Adaptive curriculum | Planner agent selects topics based on learner Elo / Bloom's level |
-| Multi-agent orchestration | LangGraph graph: planner → curriculum → quiz, fully autonomous |
-| Real-time doubt resolution | SSE-streamed answers from a specialised doubt agent |
+| ReAct agents (v2) | Keyword + LLM routing → specialist agent → tool calls → streamed answer |
+| SSE streaming | Every thought, tool call, and token streamed in real time |
 | Elo-based progress | Rating updates after every quiz; mastery threshold at 700 |
-| Guardrails | Input/output filtering before every agent call |
+| 13-tool registry | HF, DB, and logic tools; each agent gets a curated whitelist |
+| Concurrency | 64-thread pool + HF semaphore (40) supports 200 simultaneous users |
+| Guardrails | Input/output safety filtering on every agent call |
 | Observability | Langfuse tracing on every node and tool call |
-| Eval storage | MongoDB stores per-run agent eval records |
 
 ---
 
@@ -39,36 +39,34 @@ An intelligent, adaptive learning platform powered by a multi-agent AI system. T
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                        Frontend (React)                         │
-│  Landing → Onboarding → Dashboard → LearnFeed → ModulePlayer   │
-│          DoubtChat → Quiz → Progress → Admin                    │
+│  Landing → Onboarding → Dashboard → Courses → ModulePlayer      │
+│  DoubtChat → Quiz → Progress → Assistant → AtelierV2            │
 └───────────────────────────┬─────────────────────────────────────┘
-                            │ HTTPS / Socket.IO
+                            │ HTTPS / Socket.IO / SSE
 ┌───────────────────────────▼─────────────────────────────────────┐
-│                  FastAPI Backend (Python)                        │
-│  ┌──────────┐  ┌───────────┐  ┌──────────┐  ┌──────────────┐  │
-│  │  /auth   │  │ /session  │  │  /quiz   │  │   /doubts    │  │
-│  │ /profile │  │ /progress │  │  /evals  │  │   /admin     │  │
-│  └──────────┘  └───────────┘  └──────────┘  └──────────────┘  │
-│                                                                 │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │              LangGraph Orchestrator                     │   │
-│  │                                                         │   │
-│  │   ┌──────────┐   ┌────────────┐   ┌──────────────┐    │   │
-│  │   │ Planner  │──▶│ Curriculum │──▶│    Planner   │    │   │
-│  │   │  Agent   │   │   Agent    │   │   (re-eval)  │    │   │
-│  │   └──────────┘   └────────────┘   └──────┬───────┘    │   │
-│  │                                          │             │   │
-│  │                                    ┌─────▼──────┐      │   │
-│  │                                    │ Quiz Agent │      │   │
-│  │                                    └────────────┘      │   │
-│  └─────────────────────────────────────────────────────────┘   │
-│                                                                 │
-│  ┌────────────┐  ┌──────────────┐  ┌────────────────────────┐  │
-│  │  Doubt     │  │  Progress    │  │   HF Sub-Agents        │  │
-│  │  Agent     │  │  Agent       │  │  (tool registry)       │  │
-│  └────────────┘  └──────────────┘  └────────────────────────┘  │
-│                                                                 │
-│  SQLite (users/sessions)  MongoDB (evals)  Redis (Celery/cache) │
+│                   FastAPI Backend (Python)                       │
+│                                                                  │
+│  /api/v1  ── auth, learner, quiz, doubts, progress, courses     │
+│  /api/v2  ── POST /chat  (SSE, ReAct agent stream)              │
+│                                                                  │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │                  Agent v2 (ReAct)                       │    │
+│  │                                                         │    │
+│  │   AgentRouter ──keyword──▶ Specialist Agent             │    │
+│  │        └────── LLM ──────▶ (fallback)                   │    │
+│  │                                                         │    │
+│  │   for step in range(max_steps=6):                       │    │
+│  │     decide_step()  →  SSE: thought                      │    │
+│  │     tool_registry.call()  →  SSE: tool_call/tool_result │    │
+│  │     stream_final_answer()  →  SSE: token … done         │    │
+│  └─────────────────────────────────────────────────────────┘    │
+│                                                                  │
+│  ┌────────────┐  ┌──────────────┐  ┌────────────────────────┐   │
+│  │ LangGraph  │  │  Tool        │  │   HF Inference         │   │
+│  │ (v1 graph) │  │  Registry    │  │   (Together API)       │   │
+│  └────────────┘  └──────────────┘  └────────────────────────┘   │
+│                                                                  │
+│  SQLite (users/sessions)     MongoDB (evals + progress)         │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -76,47 +74,36 @@ An intelligent, adaptive learning platform powered by a multi-agent AI system. T
 
 ## Agent System
 
-### Orchestration Graph
+### Agent v2 — ReAct Architecture
 
-The LangGraph graph runs autonomously (no human-in-loop):
+Each request to `POST /api/v2/chat` is routed to a specialist agent via a two-phase router:
+
+1. **Keyword phase** — instant (`<1 ms`), matches trigger words to an agent
+2. **LLM fallback** — Qwen2.5-7B via Together API (`~3 s`) when keywords are ambiguous
+
+The agent then runs a ReAct loop (up to 6 steps), streaming every event:
 
 ```
-START → planner_node → curriculum_node → planner_node → quiz_node → END
+routing → thought → tool_call → tool_result → ... → token(s) → done
 ```
 
-The planner decides which topic to teach next based on the learner's current Elo rating. After curriculum delivery, it re-evaluates and routes to quiz generation. All transitions are deterministic — the graph completes in a single run.
+### Specialist Agents
 
-### Agent Roles
+| Agent | Trigger keywords | Tool whitelist |
+|---|---|---|
+| **QuizAgent** | quiz, test, assess | `get_proficiency`, `score_difficulty`, `generate_quiz`, `save_quiz` |
+| **CurriculumAgent** | roadmap, path, curriculum | `classify_topic`, `get_topic_graph`, `get_proficiency` |
+| **ProgressAgent** | progress, elo, how am I doing | `get_proficiency`, `calculate_elo`, `analyze_sentiment`, `save_progress` |
+| **DoubtAgent** | explain, how does, why | `check_guardrail`, `get_proficiency`, `generate_explanation` |
+| **AssistantAgent** | (fallback) | all 13 tools |
 
-| Agent | Responsibility |
+### Tool Registry (13 tools)
+
+| Category | Tools |
 |---|---|
-| **Planner Agent** | Meta-agent — selects the next topic, routes to curriculum or quiz, makes the autonomous learning decisions |
-| **Curriculum Agent** | Generates structured learning content for a given topic and difficulty |
-| **Quiz Agent** | Produces Bloom's-taxonomy-aligned MCQs; calibrates difficulty to learner Elo |
-| **Progress Agent** | Updates Elo ratings after quiz completion; maps Elo to Bloom's level |
-| **Doubt Agent** | Resolves learner questions via SSE-streamed, context-aware answers |
-
-### Hugging Face Sub-Agents (Tool Registry)
-
-Agents delegate specialised tasks to HF-hosted sub-agents via `call_tool()` in `app/agents/tools.py`:
-
-| Tool | Model / Purpose |
-|---|---|
-| `topic_classifier` | Classifies submitted text into a topic category |
-| `sentiment` | Sentiment analysis on learner responses |
-| `difficulty_scorer` | Scores content difficulty (0–1 float) |
-| `quiz_generator` | Generates MCQ options and explanations |
-| `embeddings` | Produces sentence embeddings for semantic search |
-| `speech_to_text` | Transcribes audio doubt submissions |
-| `image_captioner` | Describes uploaded diagram images for doubt context |
-| `doubt_solver` | Streams a GPT-style answer to a learner's question |
-
-### Guardrails
-
-Every agent input/output passes through `app/guardrails.py`, which:
-- Blocks prompt injection and jailbreak attempts
-- Enforces topic relevance (off-topic queries are rejected before LLM call)
-- Sanitises personal data from outputs
+| HF (6) | `classify_topic`, `analyze_sentiment`, `score_difficulty`, `generate_quiz`, `get_embeddings`, `generate_explanation` |
+| DB (5) | `get_proficiency`, `get_topic_graph`, `save_quiz`, `save_progress`, `get_due_topics` |
+| Logic (2) | `calculate_elo`, `check_guardrail` |
 
 ### Elo & Bloom's Mapping
 
@@ -132,6 +119,15 @@ Mastery threshold: 700 Elo
 Update formula:    new_elo = current + 32 × (score − 0.5)
 ```
 
+### Concurrency
+
+| Component | Limit | Notes |
+|---|---|---|
+| Thread pool | 64 threads | Set at lifespan startup |
+| HF semaphore | 40 concurrent LLM calls | Queues excess cleanly |
+| FastAPI async | No limit | Pure asyncio |
+| Together API | Plan rate limit | Primary real-world ceiling |
+
 ---
 
 ## Tech Stack
@@ -141,16 +137,15 @@ Update formula:    new_elo = current + 32 × (score − 0.5)
 | Layer | Technology |
 |---|---|
 | Framework | FastAPI 0.115 + Uvicorn |
-| AI Orchestration | LangGraph (StateGraph) |
-| LLM Agents | LangChain + Hugging Face Hub |
-| Database (relational) | SQLite via SQLAlchemy async + aiosqlite |
-| Database (evals) | MongoDB via Motor (async) |
-| Cache / Queue | Redis + Celery |
-| Real-time | Socket.IO (python-socketio) |
-| Observability | Langfuse (tracing) |
+| AI (v2) | ReAct agents, Together API (Qwen2.5-7B) |
+| AI (v1) | LangGraph StateGraph + LangChain |
+| Inference | Hugging Face Hub (HF tools) |
+| Database | SQLite via SQLAlchemy async + aiosqlite |
+| Eval storage | MongoDB via Motor (async) |
+| Real-time | Socket.IO + SSE (`text/event-stream`) |
+| Observability | Langfuse |
 | Auth | JWT (python-jose) + bcrypt |
-| Prompts | YAML files, LRU-cached loader |
-| Runtime | Python 3.13 |
+| Runtime | Python 3.13, deployed via Docker |
 
 ### Frontend
 
@@ -158,12 +153,9 @@ Update formula:    new_elo = current + 32 × (score − 0.5)
 |---|---|
 | Framework | React 18 + TypeScript |
 | Build tool | Vite |
-| State management | Zustand |
-| Server state | TanStack Query (React Query) |
-| Animations | Framer Motion |
-| Charts | Recharts |
-| Real-time | Socket.io-client |
-| Styling | Tailwind CSS |
+| State | Zustand + TanStack Query |
+| Real-time | Socket.io-client + native `EventSource` (SSE) |
+| Styling | CSS custom properties (design tokens) |
 
 ---
 
@@ -173,58 +165,68 @@ Update formula:    new_elo = current + 32 × (score − 0.5)
 ai-tutor/
 ├── backend/
 │   ├── app/
-│   │   ├── agents/
-│   │   │   ├── curriculum_agent.py   # content delivery agent
-│   │   │   ├── quiz_agent.py         # MCQ generation agent
-│   │   │   ├── progress_agent.py     # Elo update agent
-│   │   │   ├── doubt_agent.py        # SSE doubt resolver
-│   │   │   ├── planner_agent.py      # meta-agent / orchestrator
-│   │   │   └── tools.py              # HF sub-agent tool registry
-│   │   ├── evals/
-│   │   │   └── mongo.py              # Motor async eval storage
-│   │   ├── graph/
-│   │   │   └── orchestrator.py       # LangGraph StateGraph definition
-│   │   ├── hf/
-│   │   │   └── doubt_solver.py       # SSE streaming wrapper
-│   │   ├── prompts/                  # YAML prompt templates (LRU cached)
-│   │   ├── routers/                  # FastAPI route handlers
+│   │   ├── agents/          # v1 LangGraph agents
+│   │   ├── agents_v2/       # v2 ReAct agents
+│   │   │   ├── base.py      # BaseAgent, ReAct loop, HF semaphore
+│   │   │   ├── router.py    # AgentRouter (keyword + LLM)
+│   │   │   ├── quiz_agent.py
+│   │   │   ├── curriculum_agent.py
+│   │   │   ├── progress_agent.py
+│   │   │   ├── doubt_agent.py
+│   │   │   └── assistant_agent.py
+│   │   ├── tools/           # Tool registry (13 tools)
+│   │   │   ├── registry.py
+│   │   │   ├── schemas.py
+│   │   │   └── implementations/
+│   │   │       ├── hf_tools.py
+│   │   │       ├── db_tools.py
+│   │   │       └── logic_tools.py
+│   │   ├── routers/
+│   │   │   ├── v2/chat.py   # SSE endpoint
 │   │   │   ├── auth.py
-│   │   │   ├── sessions.py
 │   │   │   ├── quiz.py
 │   │   │   ├── doubts.py
-│   │   │   ├── evals.py
-│   │   │   └── progress.py
-│   │   ├── config.py                 # Pydantic Settings
-│   │   ├── database.py               # SQLAlchemy async engine
-│   │   ├── guardrails.py             # Input/output safety filters
-│   │   └── main.py                   # FastAPI app factory
+│   │   │   ├── progress.py
+│   │   │   └── courses.py
+│   │   ├── evals/           # MongoDB eval storage
+│   │   ├── guardrails.py
+│   │   └── main.py
 │   ├── tests/
-│   │   ├── conftest.py               # shared fixtures
-│   │   ├── test_agents.py            # 72 unit tests
-│   │   ├── test_integration.py       # 38 integration tests + eval report
-│   │   └── test_e2e.py               # 38 E2E API tests
-│   ├── .env.sample                   # environment variable template
+│   │   ├── test_agents.py        # 47 unit tests
+│   │   ├── test_api.py           # 8 API tests
+│   │   ├── test_e2e.py           # 35 E2E tests
+│   │   ├── test_hf.py            # 12 HF tool tests
+│   │   ├── test_integration.py   # 38 integration tests
+│   │   ├── test_v2_stress.py     # 12 stress tests (125 queries)
+│   │   └── test_v2_concurrency.py  # 5 concurrency tests (200 users)
+│   ├── Dockerfile
 │   ├── pyproject.toml
 │   └── requirements.txt
 ├── frontend/
 │   ├── src/
 │   │   ├── pages/
-│   │   │   ├── Landing.tsx
-│   │   │   ├── Onboarding.tsx
-│   │   │   ├── Dashboard.tsx
-│   │   │   ├── LearnFeed.tsx
-│   │   │   ├── ModulePlayer.tsx
-│   │   │   ├── DoubtChat.tsx
-│   │   │   ├── Quiz.tsx
-│   │   │   ├── Progress.tsx
-│   │   │   └── Admin.tsx
+│   │   │   ├── LandingPage.tsx
+│   │   │   ├── OnboardingPage.tsx
+│   │   │   ├── DashboardPage.tsx
+│   │   │   ├── AssistantPage.tsx
+│   │   │   ├── AtelierV2Page.tsx   # v2 SSE chat interface
+│   │   │   ├── DoubtChatPage.tsx
+│   │   │   ├── QuizPage.tsx
+│   │   │   ├── ProgressPage.tsx
+│   │   │   ├── CoursePlannerPage.tsx
+│   │   │   ├── CourseDetailPage.tsx
+│   │   │   ├── ModulePlayerPage.tsx
+│   │   │   ├── ModuleInterviewPage.tsx
+│   │   │   └── FlashcardsPage.tsx
 │   │   ├── components/
-│   │   ├── store/                    # Zustand stores
-│   │   ├── hooks/                    # TanStack Query hooks
-│   │   └── App.tsx
-│   ├── package.json
-│   └── vite.config.ts
-├── .gitignore
+│   │   │   ├── agents/       # StreamTrace, ToolCallCard, AgentStatusBar
+│   │   │   ├── layout/       # Sidebar, TopBar, CommandPalette
+│   │   │   └── ui/           # Button, Badge, MarkdownMessage, …
+│   │   ├── stores/           # Zustand stores
+│   │   ├── hooks/
+│   │   └── lib/api.ts
+│   └── package.json
+├── render.yaml               # Render deployment config
 └── README.md
 ```
 
@@ -236,158 +238,83 @@ ai-tutor/
 
 - Python 3.13+
 - Node.js 18+
-- Redis (local or Docker)
 - MongoDB (local or Atlas)
 - A Hugging Face API token (`hf_...`)
+- A Together API key (for Qwen2.5-7B inference)
 
-### Backend Setup
+### Backend
 
 ```bash
 cd backend
 
-# Create virtual environment
 python -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
 
-# Install dependencies
 pip install -r requirements.txt
-# or with uv:
-# uv sync
+# or: uv sync
 
-# Configure environment
 cp .env.sample .env
-# Edit .env and fill in HF_TOKEN, MONGO_URL, SECRET_KEY, etc.
+# Fill in HF_TOKEN, TOGETHER_API_KEY, MONGO_URL, SECRET_KEY
 
-# Run database migrations
 python -m alembic upgrade head
-# or for first run:
-# python -c "from app.database import create_all_tables; import asyncio; asyncio.run(create_all_tables())"
 
-# Start the server
 uvicorn app.main:app --reload --port 8000
 ```
 
-### Frontend Setup
+### Frontend
 
 ```bash
 cd frontend
-
 npm install
-npm run dev          # starts Vite dev server on http://localhost:5173
+npm run dev      # http://localhost:5173
 ```
 
-### Docker (optional)
+### Docker (backend only)
 
 ```bash
-# Start Redis and MongoDB via Docker
-docker run -d -p 6379:6379 redis:7-alpine
-docker run -d -p 27017:27017 mongo:7
-
-# Then follow the backend/frontend setup steps above
+cd backend
+docker build -t ai-tutor-backend .
+docker run -p 8000:8000 --env-file .env ai-tutor-backend
 ```
 
 ---
 
 ## API Reference
 
-All routes are prefixed with `/api/v1`. Interactive docs available at `http://localhost:8000/docs`.
+Docs available at `http://localhost:8000/docs`.
 
-### Authentication
-
-| Method | Route | Description |
-|---|---|---|
-| `POST` | `/auth/register` | Register a new learner account |
-| `POST` | `/auth/login` | Obtain JWT access + refresh tokens |
-| `POST` | `/auth/refresh` | Rotate refresh token |
-
-### Learner Profile
+### v2 Chat (SSE)
 
 | Method | Route | Description |
 |---|---|---|
-| `POST` | `/learner-profile` | Create profile (topics, level) |
-| `GET` | `/learner-profile` | Get current learner profile |
+| `POST` | `/api/v2/chat` | Stream a ReAct agent response |
 
-### Learning Sessions
-
-| Method | Route | Description |
-|---|---|---|
-| `POST` | `/sessions` | Start a new learning session (triggers LangGraph run) |
-| `GET` | `/sessions` | List all sessions for the authenticated user |
-| `GET` | `/sessions/{session_id}` | Get session detail |
-
-### Quiz
-
-| Method | Route | Description |
-|---|---|---|
-| `POST` | `/quiz/generate` | Generate a quiz for a topic (async, via Celery) |
-| `POST` | `/quiz/{quiz_id}/submit` | Submit answers; returns score and Elo delta |
-| `GET` | `/quiz/{quiz_id}` | Get quiz questions |
-
-### Doubts
-
-| Method | Route | Description |
-|---|---|---|
-| `POST` | `/doubts/stream` | Submit a doubt; returns SSE stream (`text/event-stream`) |
-
-SSE format:
-```
-data: {"token": "Python list comprehensions"}\n\n
-data: {"token": " let you build..."}\n\n
-data: [DONE]\n\n
-```
-
-### Progress
-
-| Method | Route | Description |
-|---|---|---|
-| `GET` | `/progress` | Get Elo history and Bloom's level for the learner |
-
-### Evaluations
-
-| Method | Route | Description |
-|---|---|---|
-| `GET` | `/evals` | List agent eval records (filterable by agent/score) |
-| `GET` | `/evals/summary` | Aggregated pass-rate and average score per eval type |
-
----
-
-## Evaluation System
-
-Every agent run writes an eval record to MongoDB:
-
+Request body:
 ```json
-{
-  "session_id": "...",
-  "agent": "quiz_agent",
-  "eval_type": "quiz_format",
-  "score": 1.0,
-  "passed": true,
-  "details": { "num_options": 4, "has_explanation": true },
-  "timestamp": "2026-05-07T10:00:00Z"
-}
+{ "message": "explain gradient descent", "learner_id": "abc123" }
 ```
 
-### Eval Types
-
-| Eval Type | Agent | Checks |
-|---|---|---|
-| `curriculum_ordering` | curriculum_agent | Topics ordered by difficulty |
-| `quiz_format` | quiz_agent | 4 options, explanation present, correct answer valid |
-| `planner_decision` | planner_agent | Routing decision matches Elo threshold logic |
-| `doubt_relevance` | doubt_agent | Answer relevance score ≥ 0.6 |
-| `guardrail_triggered` | all | Guardrail fires on injection/off-topic inputs |
-
-### Latest Eval Report
-
+SSE event stream:
 ```
-OVERALL: 25 eval records | 24 passed | avg score 0.913 | 96% pass rate
-
-curriculum_ordering : 4/4  passed  (100%)
-guardrail_triggered : 2/2  passed  (100%)
-planner_decision    : 9/9  passed  (100%)
-quiz_format         : 7/7  passed  (100%)
-doubt_relevance     : 2/3  passed  ( 67%)  ← DA-04 intentionally tests off-topic rejection
+data: {"type": "routing", "agent": "doubt"}
+data: {"type": "thought", "step": 1, "content": "I should explain..."}
+data: {"type": "tool_call", "name": "generate_explanation", "args": {...}}
+data: {"type": "tool_result", "name": "generate_explanation", "latency_ms": 312}
+data: {"type": "token", "content": "Gradient descent"}
+data: {"type": "done", "steps": 2, "total_ms": 4210}
 ```
+
+### v1 Routes (prefixed `/api/v1`)
+
+| Group | Routes |
+|---|---|
+| Auth | `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh` |
+| Learner | `GET/POST /learner-profile`, `POST /learner/onboard` |
+| Quiz | `POST /quiz/generate`, `POST /quiz/{id}/submit`, `GET /quiz/{id}` |
+| Doubts | `POST /doubts/stream` (SSE) |
+| Progress | `GET /progress` |
+| Courses | `GET/POST /courses`, `GET /courses/{id}` |
+| Evals | `GET /evals`, `GET /evals/summary` |
 
 ---
 
@@ -396,39 +323,46 @@ doubt_relevance     : 2/3  passed  ( 67%)  ← DA-04 intentionally tests off-top
 ```bash
 cd backend
 
-# All 148 tests
+# Full suite (190 tests)
 pytest
 
-# By suite
-pytest tests/test_agents.py        # 72 unit tests
-pytest tests/test_integration.py   # 38 integration tests (prints eval report)
-pytest tests/test_e2e.py           # 38 E2E API tests
+# Individual suites
+pytest tests/test_agents.py          # 47 unit tests
+pytest tests/test_integration.py     # 38 integration tests
+pytest tests/test_e2e.py             # 35 E2E tests
+pytest tests/test_v2_stress.py       # stress: 125 queries across 5 agents
+pytest tests/test_v2_concurrency.py  # concurrency: 200 simultaneous users
 
-# With coverage
 pytest --cov=app --cov-report=term-missing
 ```
 
-### Test Coverage Summary
+### Test Summary
 
 | Suite | Count | What it covers |
 |---|---|---|
-| Unit (`test_agents.py`) | 72 | Each agent function in isolation with mocked tools |
-| Integration (`test_integration.py`) | 38 | Full agent runs, multi-agent workflows, eval record creation |
-| E2E (`test_e2e.py`) | 38 | All HTTP endpoints — auth, sessions, quiz, doubts, evals, progress |
+| `test_agents.py` | 47 | Agent functions in isolation, mocked tools |
+| `test_api.py` | 8 | Core API contract tests |
+| `test_e2e.py` | 35 | Full HTTP flow — auth through quiz submission |
+| `test_hf.py` | 12 | HF tool implementations |
+| `test_integration.py` | 38 | Multi-agent workflows, eval record creation |
+| `test_v2_stress.py` | 12 | 125 queries, SSE event structure, routing accuracy |
+| `test_v2_concurrency.py` | 5 | 200 concurrent SSE requests |
+| **Total** | **190** | **190 / 190 passing** |
 
 ---
 
 ## Environment Variables
 
-Copy `backend/.env.sample` to `backend/.env` and fill in the values:
+Copy `backend/.env.sample` to `backend/.env`:
 
 ```ini
 # Database
 DATABASE_URL=sqlite+aiosqlite:///./ai_tutor.db
 DATABASE_SYNC_URL=sqlite:///./ai_tutor.db
 
-# Redis
-REDIS_URL=redis://localhost:6379/0
+# MongoDB (evals + progress)
+MONGO_URL=mongodb://localhost:27017
+MONGO_DATABASE=ai_tutor
 
 # JWT
 SECRET_KEY=<256-bit random string>
@@ -436,39 +370,29 @@ ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
 REFRESH_TOKEN_EXPIRE_DAYS=30
 
-# Hugging Face
+# Inference
 HF_TOKEN=hf_<your_token>
+TOGETHER_API_KEY=<your_key>
 
-# Celery
-CELERY_BROKER_URL=redis://localhost:6379/0
-CELERY_RESULT_BACKEND=redis://localhost:6379/1
+# CORS
+CORS_ORIGINS=http://localhost:5173
 
-# App
-APP_ENV=development
-
-# Langfuse tracing (leave empty to disable)
+# Langfuse tracing (optional — leave empty to disable)
 LANGFUSE_PUBLIC_KEY=
 LANGFUSE_SECRET_KEY=
 LANGFUSE_HOST=https://cloud.langfuse.com
-
-# MongoDB (eval storage)
-MONGO_URL=mongodb://localhost:27017
-MONGO_DATABASE=ai_tutor_evals
-MONGO_COLLECTION_EVALS=agent_evals
 ```
 
-> **Security**: Never commit your `.env` file. It is listed in `.gitignore` by the backend-specific ignore rules.
+> Never commit `.env`. It is listed in `.gitignore`.
 
 ---
 
-## Contributing
+## Deployment
 
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/my-feature`
-3. Make changes, add tests
-4. Run the full test suite: `pytest` (all 148 tests must pass)
-5. Open a pull request
+The backend is configured for [Render](https://render.com) via `render.yaml` (Docker runtime). Set the following env vars in the Render dashboard: `MONGO_URL`, `HF_TOKEN`, `TOGETHER_API_KEY`, `SECRET_KEY`, `CORS_ORIGINS`.
+
+The frontend can be deployed to any static host (Vercel, Netlify, Render static site). Set `VITE_API_BASE_URL` to your backend URL.
 
 ---
 
-*Built with FastAPI, LangGraph, and React.*
+*Built with FastAPI, ReAct agents, and React.*
