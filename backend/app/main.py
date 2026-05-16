@@ -1,4 +1,5 @@
 import asyncio
+import concurrent.futures
 import structlog
 import socketio
 from contextlib import asynccontextmanager
@@ -26,11 +27,17 @@ async def _mongo_keepalive():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Increase thread pool for concurrent HF/DB sync calls (200+ users need 400+ slots)
+    loop = asyncio.get_event_loop()
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=64, thread_name_prefix="ai-tutor")
+    loop.set_default_executor(executor)
+    log.info("thread_pool_set", max_workers=64)
     ensure_indexes()
     log.info("mongo_indexes_ensured")
     task = asyncio.create_task(_mongo_keepalive())
     yield
     task.cancel()
+    executor.shutdown(wait=False)
 
 
 app = FastAPI(

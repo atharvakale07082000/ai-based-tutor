@@ -24,6 +24,11 @@ from app.tools import tool_registry
 
 log = structlog.get_logger()
 
+# Cap simultaneous outbound LLM calls to avoid exhausting Together API rate limits
+# and the thread pool under high concurrency.  40 slots ≈ 200 concurrent users
+# where each user makes 2 LLM calls, giving headroom for retries.
+_HF_SEMAPHORE = asyncio.Semaphore(40)
+
 
 class BaseAgent:
     name: str = "BaseAgent"
@@ -59,16 +64,17 @@ class BaseAgent:
         try:
             client = get_hf_client(provider=provider)
 
-            response = await asyncio.wait_for(
-                asyncio.to_thread(
-                    client.chat_completion,
-                    model=model_id,
-                    messages=messages,
-                    max_tokens=300,
-                    temperature=0.1,
-                ),
-                timeout=20.0,
-            )
+            async with _HF_SEMAPHORE:
+                response = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        client.chat_completion,
+                        model=model_id,
+                        messages=messages,
+                        max_tokens=300,
+                        temperature=0.1,
+                    ),
+                    timeout=20.0,
+                )
             record_auth_success(provider)
             raw = response.choices[0].message.content.strip()
 
@@ -134,10 +140,11 @@ class BaseAgent:
             )
 
         try:
-            stream = await asyncio.wait_for(
-                asyncio.to_thread(_sync_stream),
-                timeout=45.0,
-            )
+            async with _HF_SEMAPHORE:
+                stream = await asyncio.wait_for(
+                    asyncio.to_thread(_sync_stream),
+                    timeout=45.0,
+                )
             record_auth_success(provider)
         except asyncio.TimeoutError:
             log.error("base_agent_stream_timeout", agent=self.name)
