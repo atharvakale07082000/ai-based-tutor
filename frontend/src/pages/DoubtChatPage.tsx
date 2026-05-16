@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Icon } from '@/components/ui/Icon'
 import { Avatar } from '@/components/ui/Avatar'
 import { ChatBubbleSkeleton } from '@/components/ui/Skeleton'
+import { MarkdownMessage } from '@/components/ui/MarkdownMessage'
 import { useLearnerStore } from '@/stores/learnerStore'
 import toast from 'react-hot-toast'
 
@@ -20,10 +21,6 @@ interface Message {
 
 let mediaRecorder: MediaRecorder | null = null
 let recordedChunks: BlobPart[] = []
-
-function StreamCursor() {
-  return <span style={{ display: 'inline-block', width: 6, height: 12, background: 'var(--ink-0)', verticalAlign: 'middle', marginLeft: 2, animation: 'blink 1s steps(1) infinite' }} />
-}
 
 export default function DoubtChatPage() {
   const location = useLocation()
@@ -242,14 +239,16 @@ export default function DoubtChatPage() {
                     color: msg.role === 'user' ? 'var(--paper-0)' : 'var(--ink-0)',
                     borderRadius: msg.role === 'user' ? 'var(--r-2) var(--r-2) 2px var(--r-2)' : 'var(--r-2) var(--r-2) var(--r-2) 2px',
                     padding: '10px 14px',
-                    fontSize: 14,
-                    lineHeight: 1.6,
-                    whiteSpace: 'pre-wrap',
                   }}
                 >
-                  {msg.content}
-                  {isStreaming && msg.role === 'assistant' && !msg.content && <span className="t-sm fg-3">Thinking…</span>}
-                  {isStreaming && msg.role === 'assistant' && msg.content && <StreamCursor />}
+                  {msg.role === 'user' ? (
+                    <span style={{ fontSize: 14, lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{msg.content}</span>
+                  ) : (
+                    <MarkdownMessage
+                      content={msg.content}
+                      streaming={isStreaming && messages.indexOf(msg) === messages.length - 1}
+                    />
+                  )}
                 </div>
                 {msg.role === 'user' && <Avatar name={name || 'You'} size={26} />}
               </div>

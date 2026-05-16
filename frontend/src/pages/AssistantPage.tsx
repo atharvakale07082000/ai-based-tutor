@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/Button'
 import { Icon } from '@/components/ui/Icon'
 import { Avatar } from '@/components/ui/Avatar'
 import { AgentPill } from '@/components/ui/AgentPill'
+import { MarkdownMessage } from '@/components/ui/MarkdownMessage'
 import { useAgentStore } from '@/stores/agentStore'
 
 interface ActionCard {
@@ -21,10 +22,6 @@ interface Message {
   content: string
   streaming?: boolean
   actions?: ActionCard[]
-}
-
-function StreamCursor() {
-  return <span style={{ display: 'inline-block', width: 8, height: 14, background: 'var(--ink-0)', verticalAlign: 'middle', marginLeft: 2, animation: 'blink 1s steps(1) infinite' }} />
 }
 
 function ActionCardView({ action, onNavigate }: { action: ActionCard; onNavigate: (url: string) => void }) {
@@ -207,10 +204,13 @@ export default function AssistantPage() {
                   <span className="t-sm fg-0" style={{ fontWeight: 500 }}>{msg.role === 'user' ? (name || 'You') : 'Atelier'}</span>
                   {msg.streaming && <Badge tone="pos" size="xs" dot>streaming</Badge>}
                 </div>
-                <div className="t-md fg-1" style={{ lineHeight: 1.65, whiteSpace: 'pre-wrap' }}>
-                  {msg.content}
-                  {msg.streaming && <StreamCursor />}
-                </div>
+                {msg.role === 'user' ? (
+                  <div className="t-md fg-1" style={{ lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>
+                    {msg.content}
+                  </div>
+                ) : (
+                  <MarkdownMessage content={msg.content} streaming={msg.streaming} />
+                )}
                 {/* Action cards rendered below assistant content */}
                 {msg.role === 'assistant' && (msg.actions ?? []).map((action, i) => (
                   <ActionCardView key={i} action={action} onNavigate={(url) => navigate(url)} />
@@ -218,7 +218,15 @@ export default function AssistantPage() {
                 {!msg.streaming && msg.role === 'assistant' && msg.content && (
                   <div style={{ display: 'flex', gap: 4, marginTop: 12 }}>
                     <Button size="xs" variant="outline" icon="check">Helpful</Button>
-                    <Button size="xs" variant="ghost">Copy</Button>
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      onClick={() => {
+                        navigator.clipboard.writeText(msg.content).then(() => toast.success('Copied'))
+                      }}
+                    >
+                      Copy
+                    </Button>
                   </div>
                 )}
               </div>

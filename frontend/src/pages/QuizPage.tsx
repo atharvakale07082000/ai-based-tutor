@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { quizAPI } from '@/lib/api'
 import { runTextGeneration, runSentiment } from '@/lib/hf'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Icon } from '@/components/ui/Icon'
 import { useLearnerStore } from '@/stores/learnerStore'
+import { useAgentStore } from '@/stores/agentStore'
 import toast from 'react-hot-toast'
 
 const QUESTION_TIME = 60
@@ -37,6 +38,8 @@ export default function QuizPage() {
   const [reflectionMood, setReflectionMood] = useState<string | null>(null)
   const updateProficiency = useLearnerStore((s) => s.updateProficiency)
   const addQuizSession = useLearnerStore((s) => s.addQuizSession)
+  const updateAgentStatus = useAgentStore((s) => s.updateAgentStatus)
+  const queryClient = useQueryClient()
 
   const { data: quiz, isLoading } = useQuery({
     queryKey: ['quiz', quizId],
@@ -81,13 +84,17 @@ export default function QuizPage() {
 
   const handleFinish = async () => {
     if (!quiz) return
+    updateAgentStatus('progress', { status: 'processing' })
     try {
-      const { data } = await quizAPI.submit(quiz.quiz_id, answers)
+      const { data } = await quizAPI.submit(quiz.quiz_id, answers, reflection)
       setResult(data)
       setQuizDone(true)
       updateProficiency(quiz.topic, data.elo_update.new_elo)
       addQuizSession({ id: quiz.quiz_id, topic: quiz.topic, score: data.score, bloom_level: quiz.bloom_level, completed_at: new Date().toISOString() })
+      // Sync XP from the updated learner profile and invalidate progress cache
+      queryClient.invalidateQueries({ queryKey: ['progress'] })
     } catch { toast.error('Could not submit quiz results') }
+    finally { updateAgentStatus('progress', { status: 'active' }) }
   }
 
   const handleGetExplanation = async () => {

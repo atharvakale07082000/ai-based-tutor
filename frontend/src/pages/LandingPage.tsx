@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Navigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { authAPI, learnerAPI, setAccessToken } from '@/lib/api'
 import { useLearnerStore } from '@/stores/learnerStore'
@@ -197,7 +197,10 @@ const inputStyle: React.CSSProperties = {
 
 export default function LandingPage() {
   const navigate = useNavigate()
+  const learnerId = useLearnerStore((s) => s.id)
   const [showAuth, setShowAuth]     = useState(false)
+
+  if (learnerId) return <Navigate to="/dashboard" replace />
 
   return (
     <div style={{ minHeight: '100%', background: 'var(--paper-0)', overflow: 'auto' }}>

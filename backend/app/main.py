@@ -1,4 +1,5 @@
 import asyncio
+import concurrent.futures
 import structlog
 import socketio
 from contextlib import asynccontextmanager
@@ -8,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.db.mongo import ensure_indexes, get_client
 from app.routers import auth, learner, curriculum, content, quiz, doubts, progress, hf, admin, session, evals, courses, assistant, feed, leaderboard
+from app.routers.v2 import chat as chat_v2
 from app.websocket import sio
 
 log = structlog.get_logger()
@@ -25,11 +27,17 @@ async def _mongo_keepalive():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Increase thread pool for concurrent HF/DB sync calls (200+ users need 400+ slots)
+    loop = asyncio.get_event_loop()
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=64, thread_name_prefix="ai-tutor")
+    loop.set_default_executor(executor)
+    log.info("thread_pool_set", max_workers=64)
     ensure_indexes()
     log.info("mongo_indexes_ensured")
     task = asyncio.create_task(_mongo_keepalive())
     yield
     task.cancel()
+    executor.shutdown(wait=False)
 
 
 app = FastAPI(
@@ -63,6 +71,7 @@ app.include_router(courses.router, prefix="/api/v1/courses", tags=["courses"])
 app.include_router(assistant.router, prefix="/api/v1/assistant", tags=["assistant"])
 app.include_router(feed.router, prefix="/api/v1/feed", tags=["feed"])
 app.include_router(leaderboard.router, prefix="/api/v1/leaderboard", tags=["leaderboard"])
+app.include_router(chat_v2.router, prefix="/api/v2", tags=["v2"])
 
 
 @app.get("/health")

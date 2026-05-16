@@ -25,6 +25,7 @@ const CoursePlannerPage  = lazy(() => import('@/pages/CoursePlannerPage'))
 const CourseDetailPage   = lazy(() => import('@/pages/CourseDetailPage'))
 const ModuleInterviewPage = lazy(() => import('@/pages/ModuleInterviewPage'))
 const AssistantPage      = lazy(() => import('@/pages/AssistantPage'))
+const AtelierV2Page      = lazy(() => import('@/pages/AtelierV2Page'))
 const FlashcardsPage     = lazy(() => import('@/pages/FlashcardsPage'))
 
 const queryClient = new QueryClient({
@@ -83,7 +84,7 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
   }, [hydrated])
 
   if (!hydrated) return <PageLoader />
-  if (!learnerId) return <Navigate to="/" replace />
+  if (!learnerId) return <Navigate to="/onboarding" replace />
   return <>{children}</>
 }
 
@@ -152,6 +153,7 @@ export default function App() {
               <Route path="/courses/:planId" element={<PrivateRoute><PageWrapper><CourseDetailPage /></PageWrapper></PrivateRoute>} />
               <Route path="/courses/:planId/modules/:moduleId/interview" element={<PrivateRoute><PageWrapper><ModuleInterviewPage /></PageWrapper></PrivateRoute>} />
               <Route path="/assistant" element={<PrivateRoute><PageWrapper><AssistantPage /></PageWrapper></PrivateRoute>} />
+              <Route path="/assistant-v2" element={<PrivateRoute><PageWrapper><AtelierV2Page /></PageWrapper></PrivateRoute>} />
               <Route path="/flashcards" element={<PrivateRoute><PageWrapper><FlashcardsPage /></PageWrapper></PrivateRoute>} />
               <Route path="/login" element={<Navigate to="/" replace />} />
               <Route path="*" element={<Navigate to="/" replace />} />
