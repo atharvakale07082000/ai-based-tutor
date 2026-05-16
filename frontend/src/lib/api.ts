@@ -52,7 +52,7 @@ api.interceptors.response.use(
       } catch {
         setAccessToken(null)
         toast.error('Session expired. Please log in again.')
-        window.location.href = '/onboarding'
+        window.location.href = '/'
       }
     }
     return Promise.reject(error)

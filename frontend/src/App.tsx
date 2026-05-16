@@ -84,7 +84,7 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
   }, [hydrated])
 
   if (!hydrated) return <PageLoader />
-  if (!learnerId) return <Navigate to="/onboarding" replace />
+  if (!learnerId) return <Navigate to="/" replace />
   return <>{children}</>
 }
 
