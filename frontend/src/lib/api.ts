@@ -227,6 +227,7 @@ export interface ProgressData {
   quiz_accuracy: number
   doubts_resolved: number
   streak: number
+  xp: number
   mood_timeline: Array<{ session_id: string; mood: string; date: string }>
 }
 
@@ -364,10 +365,10 @@ export const coursesAPI = {
   startInterview: (planId: string, moduleId: string) =>
     api.post<Interview>(`/courses/${planId}/modules/${moduleId}/interview/start`),
   submitAnswer: (planId: string, moduleId: string, interviewId: string, questionId: number, answerText: string) =>
-    api.post(`/courses/${planId}/modules/${moduleId}/interview/${interviewId}/answer`, {
-      question_id: questionId,
-      answer_text: answerText,
-    }),
+    api.post<{ question_id: number; score: number; feedback: string; answer_text: string; key_points_covered: string[] }>(
+      `/courses/${planId}/modules/${moduleId}/interview/${interviewId}/answer`,
+      { question_id: questionId, answer_text: answerText },
+    ),
   completeInterview: (planId: string, moduleId: string, interviewId: string) =>
     api.post(`/courses/${planId}/modules/${moduleId}/interview/${interviewId}/complete`),
 }
@@ -442,20 +443,88 @@ export const assistantAPI = {
     if (!response.ok || !response.body) throw new Error('Stream failed')
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      const chunk = decoder.decode(value, { stream: true })
-      const lines = chunk.split('\n').filter((l) => l.startsWith('data: '))
-      for (const line of lines) {
-        const json = line.slice(6).trim()
-        try {
-          const event = JSON.parse(json)
-          if (event.type === 'token' && event.content) onChunk(event.content)
-          if (event.type === 'action' && onAction) onAction(event.kind, event.payload ?? {})
-          if (event.type === 'done') return
-        } catch { /* skip */ }
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        const chunk = decoder.decode(value, { stream: true })
+        const lines = chunk.split('\n').filter((l) => l.startsWith('data: '))
+        for (const line of lines) {
+          const json = line.slice(6).trim()
+          try {
+            const event = JSON.parse(json)
+            if (event.type === 'token' && event.content) onChunk(event.content)
+            if (event.type === 'action' && onAction) onAction(event.kind, event.payload ?? {})
+            if (event.type === 'done') return
+          } catch { /* skip malformed SSE line */ }
+        }
       }
+    } catch (err) {
+      reader.cancel().catch(() => {})
+      throw new Error(err instanceof Error ? err.message : 'Stream read error')
+    }
+  },
+}
+
+// ─── Assistant V2 ─────────────────────────────────────────────────────────────
+
+export type V2EventType = 'routing' | 'thought' | 'tool_call' | 'tool_result' | 'token' | 'action' | 'done' | 'error'
+
+export interface V2RoutingEvent    { type: 'routing';     agent: string; reason: string }
+export interface V2ThoughtEvent    { type: 'thought';     step: number;  content: string }
+export interface V2ToolCallEvent   { type: 'tool_call';   step: number;  name: string; args: Record<string, unknown> }
+export interface V2ToolResultEvent { type: 'tool_result'; step: number;  name: string; result: unknown; latency_ms: number }
+export interface V2TokenEvent      { type: 'token';       content: string }
+export interface V2ActionEvent     { type: 'action';      kind: string; payload: Record<string, unknown> }
+export interface V2DoneEvent       { type: 'done';        steps: number; total_ms: number }
+export interface V2ErrorEvent      { type: 'error';       message: string }
+
+export type V2Event =
+  | V2RoutingEvent
+  | V2ThoughtEvent
+  | V2ToolCallEvent
+  | V2ToolResultEvent
+  | V2TokenEvent
+  | V2ActionEvent
+  | V2DoneEvent
+  | V2ErrorEvent
+
+export const assistantV2API = {
+  streamChat: async (
+    message: string,
+    onEvent: (event: V2Event) => void,
+    history?: Array<{ role: string; content: string }>,
+    context?: Record<string, unknown>,
+  ): Promise<void> => {
+    const response = await fetch(`${BASE_URL}/v2/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: accessToken ? `Bearer ${accessToken}` : '',
+      },
+      body: JSON.stringify({ message, history: history ?? [], context: context ?? {} }),
+    })
+    if (!response.ok || !response.body) throw new Error('V2 stream failed')
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        const chunk = decoder.decode(value, { stream: true })
+        const lines = chunk.split('\n').filter((l) => l.startsWith('data: '))
+        for (const line of lines) {
+          const json = line.slice(6).trim()
+          if (json === '[DONE]') return
+          try {
+            const event = JSON.parse(json)
+            if (event.type) onEvent(event)
+          } catch { /* skip malformed */ }
+        }
+      }
+    } catch (err) {
+      reader.cancel().catch(() => {})
+      throw new Error(err instanceof Error ? err.message : 'Stream read error')
     }
   },
 }

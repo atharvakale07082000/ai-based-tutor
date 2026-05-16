@@ -536,6 +536,26 @@ class TestEvaluator:
         score, passed, _ = eval_planner_decision(inp, {"next_action": "quiz"})
         assert not passed
 
+    def test_progress_elo_eval_good_score_passes(self):
+        from app.evals.evaluator import eval_progress_elo
+        output = {"progress_delta": {"old_elo": 500.0, "new_elo": 516.0, "score": 1.0, "elo_processed": True}}
+        score, passed, details = eval_progress_elo({"score": 1.0}, output)
+        assert passed
+        assert score == 1.0
+
+    def test_progress_elo_eval_wrong_direction_fails(self):
+        from app.evals.evaluator import eval_progress_elo
+        # score > 0.5 but new_elo < old_elo — should not happen normally, but eval catches it
+        output = {"progress_delta": {"old_elo": 500.0, "new_elo": 480.0, "score": 0.9, "elo_processed": True}}
+        score, passed, details = eval_progress_elo({"score": 0.9}, output)
+        assert not passed
+
+    def test_progress_elo_eval_missing_data_returns_zero(self):
+        from app.evals.evaluator import eval_progress_elo
+        score, passed, details = eval_progress_elo({}, {"progress_delta": {}})
+        assert score == 0.0
+        assert not passed
+
     @pytest.mark.asyncio
     async def test_run_eval_without_store(self):
         from app.evals.evaluator import run_eval

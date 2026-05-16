@@ -13,6 +13,7 @@ EvalType = Literal[
     "curriculum_ordering",
     "planner_decision",
     "guardrail_triggered",
+    "progress_elo",
 ]
 
 

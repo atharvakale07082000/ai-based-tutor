@@ -60,8 +60,9 @@ async def progress_agent_node(state: AgentState) -> dict:
                 except Exception:
                     updated_delta["mood"] = "NEUTRAL"
 
+            mastery_threshold = state.get("mastery_threshold", 700.0)
             elo_direction = "↑" if new_elo > current_elo else "↓"
-            mastered_now = new_elo >= 700 and current_elo < 700
+            mastered_now = new_elo >= mastery_threshold and current_elo < mastery_threshold
             report = {
                 "agent": "progress",
                 "summary": (

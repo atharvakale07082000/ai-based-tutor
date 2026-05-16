@@ -331,6 +331,11 @@ class TestProgressAgentIntegration:
         assert result["topic_proficiency"]["Linear Algebra"] > 500.0
         assert result["progress_delta"]["mood"] == "POSITIVE"
 
+        from app.evals.evaluator import eval_progress_elo
+        score, passed, details = eval_progress_elo({"score": 0.9}, result)
+        _record("progress_elo", "progress_agent", score, passed, details,
+                "PA-01: good score → Elo increases")
+
     @pytest.mark.asyncio
     async def test_PA_02_elo_decreases_on_poor_score(self):
         """Score 0.1 → new Elo < old Elo."""
@@ -346,6 +351,11 @@ class TestProgressAgentIntegration:
 
         assert result["topic_proficiency"]["Calculus & Differentiation"] < 500.0
 
+        from app.evals.evaluator import eval_progress_elo
+        score, passed, details = eval_progress_elo({"score": 0.1}, result)
+        _record("progress_elo", "progress_agent", score, passed, details,
+                "PA-02: poor score → Elo decreases")
+
     @pytest.mark.asyncio
     async def test_PA_03_elo_clamped_at_zero(self):
         """Score 0.0 from very low Elo should not go below 0."""
@@ -359,6 +369,11 @@ class TestProgressAgentIntegration:
         result = await progress_agent_node(state)
         assert result["topic_proficiency"]["Optimization"] >= 0.0
 
+        from app.evals.evaluator import eval_progress_elo
+        score, passed, details = eval_progress_elo({"score": 0.0}, result)
+        _record("progress_elo", "progress_agent", score, passed, details,
+                "PA-03: Elo clamped at 0")
+
     @pytest.mark.asyncio
     async def test_PA_04_elo_clamped_at_1000(self):
         """Score 1.0 from near-max Elo should not exceed 1000."""
@@ -371,6 +386,11 @@ class TestProgressAgentIntegration:
         )
         result = await progress_agent_node(state)
         assert result["topic_proficiency"]["Large Language Models"] <= 1000.0
+
+        from app.evals.evaluator import eval_progress_elo
+        score, passed, details = eval_progress_elo({"score": 1.0}, result)
+        _record("progress_elo", "progress_agent", score, passed, details,
+                "PA-04: Elo clamped at 1000")
 
     @pytest.mark.asyncio
     async def test_PA_05_sentiment_captured_from_reflection(self):
@@ -391,6 +411,11 @@ class TestProgressAgentIntegration:
             result = await progress_agent_node(state)
 
         assert result["progress_delta"]["mood"] == "NEGATIVE"
+
+        from app.evals.evaluator import eval_progress_elo
+        score, passed, details = eval_progress_elo({"score": 0.3}, result)
+        _record("progress_elo", "progress_agent", score, passed, details,
+                "PA-05: NEGATIVE sentiment captured from reflection")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

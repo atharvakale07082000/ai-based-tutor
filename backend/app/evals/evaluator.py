@@ -143,6 +143,61 @@ def eval_guardrail_triggered(input: dict, output: dict) -> tuple[float, bool, di
     return 1.0, True, {"triggered": triggered, "reason": error}
 
 
+def eval_progress_elo(input: dict, output: dict) -> tuple[float, bool, dict]:
+    """
+    Correctness eval for progress_agent: was the Elo update valid?
+
+    Checks:
+    - elo_processed flag is True
+    - Elo moved in the right direction given the quiz score (>0.5 → up, <0.5 → down)
+    - new_elo stays within the [0, 1000] clamp bounds
+    """
+    delta = output.get("progress_delta", {})
+    quiz_score = input.get("score") if input.get("score") is not None else delta.get("score")
+    old_elo = delta.get("old_elo")
+    new_elo = delta.get("new_elo")
+    elo_processed = delta.get("elo_processed", False)
+
+    checks: list[dict] = []
+    passed_count = 0
+    total = 0
+
+    # Check 1: elo_processed flag set
+    total += 1
+    ok = bool(elo_processed)
+    checks.append({"check": "elo_processed", "passed": ok})
+    if ok:
+        passed_count += 1
+
+    # Check 2: direction matches score
+    if quiz_score is not None and old_elo is not None and new_elo is not None:
+        total += 1
+        if quiz_score > 0.5:
+            ok = new_elo > old_elo
+        elif quiz_score < 0.5:
+            ok = new_elo < old_elo
+        else:
+            ok = True  # score exactly 0.5: K*(0.5-0.5)=0, no movement expected
+        checks.append({"check": "direction_correct", "score": quiz_score,
+                       "old_elo": old_elo, "new_elo": new_elo, "passed": ok})
+        if ok:
+            passed_count += 1
+
+    # Check 3: clamped within [0, 1000]
+    if new_elo is not None:
+        total += 1
+        ok = 0.0 <= new_elo <= 1000.0
+        checks.append({"check": "elo_clamped", "new_elo": new_elo, "passed": ok})
+        if ok:
+            passed_count += 1
+
+    if total == 0:
+        return 0.0, False, {"reason": "no_elo_data"}
+
+    score = passed_count / total
+    return score, score == 1.0, {"checks": checks}
+
+
 # ── Dispatch table ────────────────────────────────────────────────────────────
 
 _EVAL_FNS: dict[str, callable] = {
@@ -151,6 +206,7 @@ _EVAL_FNS: dict[str, callable] = {
     "curriculum_ordering": eval_curriculum_ordering,
     "planner_decision": eval_planner_decision,
     "guardrail_triggered": eval_guardrail_triggered,
+    "progress_elo": eval_progress_elo,
 }
 
 

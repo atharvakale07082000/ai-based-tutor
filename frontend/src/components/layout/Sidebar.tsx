@@ -19,6 +19,7 @@ const NAV_GROUPS: NavGroup[] = [
       { id: '/dashboard',  label: 'Dashboard',  icon: 'home',     kbd: 'D' },
       { id: '/learn',      label: 'Today',       icon: 'feed',     kbd: 'T' },
       { id: '/assistant',  label: 'Assistant',   icon: 'sparkle',  kbd: 'A' },
+      { id: '/assistant-v2', label: 'Agent v2', icon: 'sparkle', kbd: 'V' },
     ],
   },
   {
