@@ -61,15 +61,19 @@ export default function OnboardingPage() {
   }, [learnerId, step])
 
   const toggleGoal = (g: string) =>
-    setGoals(goals.includes(g) ? goals.filter((x) => x !== g) : [...goals, g])
+    setGoals((prev) => {
+      if (prev.includes(g)) return prev.filter((x) => x !== g)
+      if (prev.length >= 10) { toast.error('Maximum 10 topics allowed.'); return prev }
+      return [...prev, g]
+    })
 
   // ── Step 0: Auth ─────────────────────────────────────────────────────────────
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!authEmail.trim() || authPass.length < 6) {
-      toast.error('Email and a password of at least 6 characters are required.')
-      return
-    }
+    if (!authEmail.trim()) { toast.error('Email is required.'); return }
+    if (authPass.length < 6) { toast.error('Password must be at least 6 characters.'); return }
+    if (authPass.length > 128) { toast.error('Password must be under 128 characters.'); return }
+    if (authMode === 'signup' && authName.trim().length > 50) { toast.error('Name must be under 50 characters.'); return }
     setAuthLoading(true)
     try {
       const { data } = await authAPI.login(authEmail.trim().toLowerCase(), authPass)
@@ -99,6 +103,20 @@ export default function OnboardingPage() {
     } finally {
       setAuthLoading(false)
     }
+  }
+
+  const handleContinue = () => {
+    if (step === 1) {
+      const trimmed = name.trim()
+      if (trimmed.length < 2) { toast.error('Name must be at least 2 characters.'); return }
+      if (trimmed.length > 50) { toast.error('Name must be under 50 characters.'); return }
+    }
+    if (step === 2 && goals.length < 1) {
+      toast.error('Select at least 1 topic to continue.')
+      return
+    }
+    if (step < TOTAL_STEPS) setStep((s) => s + 1)
+    else handleComplete()
   }
 
   // ── Final: build plan (call agents) ──────────────────────────────────────────
@@ -410,7 +428,7 @@ export default function OnboardingPage() {
             <Button
               variant="primary"
               iconRight={step < TOTAL_STEPS ? 'arrow' : 'check'}
-              onClick={() => step < TOTAL_STEPS ? setStep((s) => s + 1) : handleComplete()}
+              onClick={handleContinue}
               loading={false}
             >
               {step < TOTAL_STEPS ? 'Continue' : 'Build my plan'}

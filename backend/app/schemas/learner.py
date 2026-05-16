@@ -1,5 +1,5 @@
-from typing import Any
-from pydantic import BaseModel, ConfigDict
+from typing import Any, Literal
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class LearnerProfileSchema(BaseModel):
@@ -17,17 +17,17 @@ class LearnerProfileSchema(BaseModel):
 
 
 class LearnerProfileUpdate(BaseModel):
-    name: str | None = None
-    goal_vector: list[str] | None = None
+    name: str | None = Field(None, min_length=2, max_length=50)
+    goal_vector: list[str] | None = Field(None, max_length=20)
     learning_style: str | None = None
     session_cadence: dict[str, Any] | None = None
 
 
 class OnboardRequest(BaseModel):
-    name: str
-    goals: list[str]
-    hoursPerWeek: int
-    difficulty: str  # "gentle" | "balanced" | "aggressive"
+    name: str = Field(min_length=2, max_length=50)
+    goals: list[str] = Field(min_length=1, max_length=10)
+    hoursPerWeek: int = Field(ge=1, le=40)
+    difficulty: Literal["gentle", "balanced", "aggressive"]
 
 
 class OnboardResponse(BaseModel):

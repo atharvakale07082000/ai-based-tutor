@@ -85,6 +85,7 @@ export default function AssistantPage() {
   const sendMessage = useCallback(async () => {
     const text = input.trim()
     if (!text || streaming) return
+    if (text.length > 2000) { toast.error('Message too long (max 2000 characters).'); return }
     setInput('')
     const userMsg: Message = { id: crypto.randomUUID(), role: 'user', content: text }
     setMessages((m) => [...m, userMsg])
@@ -246,12 +247,18 @@ export default function AssistantPage() {
                 onKeyDown={handleKeyDown}
                 placeholder="Ask the agents anything — plan, quiz, debug, explain…"
                 rows={3}
+                maxLength={2000}
                 style={{ width: '100%', background: 'transparent', border: 0, outline: 'none', resize: 'none', fontSize: 14, color: 'var(--ink-0)', fontFamily: 'inherit', lineHeight: 1.5 }}
               />
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
                 <Button size="xs" variant="ghost" icon="upload">Attach</Button>
                 <Button size="xs" variant="ghost" icon="mic">Voice</Button>
                 <span style={{ flex: 1 }} />
+                {input.length > 1600 && (
+                  <span className="t-xs" style={{ color: input.length > 1900 ? 'var(--neg)' : 'var(--ink-3)' }}>
+                    {input.length}/2000
+                  </span>
+                )}
                 <span className="t-xs fg-3"><kbd>⌘</kbd><kbd>↵</kbd> to send</span>
                 <Button size="sm" variant="primary" icon="send" onClick={sendMessage} loading={streaming}>Send</Button>
               </div>

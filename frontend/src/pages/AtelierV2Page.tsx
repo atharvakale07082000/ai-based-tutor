@@ -100,6 +100,7 @@ export default function AtelierV2Page() {
   const sendMessage = useCallback(async () => {
     const text = input.trim()
     if (!text || streaming) return
+    if (text.length > 2000) { toast.error('Message too long (max 2000 characters).'); return }
     setInput('')
 
     const userMsg: V2Message = { id: crypto.randomUUID(), role: 'user', content: text, steps: [], actions: [] }
@@ -391,6 +392,7 @@ export default function AtelierV2Page() {
                 onKeyDown={handleKeyDown}
                 placeholder="Ask the v2 agents anything — tool traces included…"
                 rows={3}
+                maxLength={2000}
                 style={{
                   width: '100%',
                   background: 'transparent',
@@ -405,6 +407,11 @@ export default function AtelierV2Page() {
               />
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
                 <span style={{ flex: 1 }} />
+                {input.length > 1600 && (
+                  <span className="t-xs" style={{ color: input.length > 1900 ? 'var(--neg)' : 'var(--ink-3)' }}>
+                    {input.length}/2000
+                  </span>
+                )}
                 <span className="t-xs fg-3">
                   <kbd>⌘</kbd><kbd>↵</kbd> to send
                 </span>

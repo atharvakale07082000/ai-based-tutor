@@ -178,6 +178,14 @@ class BaseAgent:
         Stores context as self._current_context so subclasses can access it
         in overridden methods (e.g. DoubtAgent.stream_final_answer).
         """
+        query = query.strip()
+        if not query:
+            yield {"type": "error", "message": "Query cannot be empty."}
+            return
+        if len(query) > 2000:
+            query = query[:2000]
+            log.warning("base_agent_query_truncated", agent=self.name)
+
         self._current_context = context
         start_time = time.monotonic()
 

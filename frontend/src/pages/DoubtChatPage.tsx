@@ -58,7 +58,10 @@ export default function DoubtChatPage() {
   }
 
   const sendMessage = useCallback(async (text: string) => {
-    if (!text.trim() || isStreaming) return
+    const trimmed = text.trim()
+    if (!trimmed || isStreaming) return
+    if (trimmed.length < 3) { toast.error('Question must be at least 3 characters.'); return }
+    if (trimmed.length > 1500) { toast.error('Question is too long (max 1500 characters).'); return }
     setInput('')
     const userMsg: Message = { id: crypto.randomUUID(), role: 'user', content: text, timestamp: new Date() }
     setMessages((prev) => [...prev, userMsg])
@@ -150,9 +153,20 @@ export default function DoubtChatPage() {
     } catch { toast.error('Microphone permission denied') }
   }
 
+  const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp'])
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+    if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
+      toast.error('Unsupported image type. Use JPEG, PNG, GIF, or WebP.')
+      e.target.value = ''
+      return
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Image must be under 5 MB.')
+      e.target.value = ''
+      return
+    }
     try {
       const { data } = await doubtsAPI.caption(file)
       setInput((prev) => `[Image: ${data.caption}]\n${prev}`)
@@ -268,6 +282,7 @@ export default function DoubtChatPage() {
                 onKeyDown={handleKeyDown}
                 placeholder="Ask anything about your topic… (Enter to send, Shift+Enter for new line)"
                 rows={2}
+                maxLength={1500}
                 style={{ width: '100%', background: 'transparent', border: 0, outline: 'none', resize: 'none', fontSize: 14, color: 'var(--ink-0)', fontFamily: 'inherit', lineHeight: 1.5 }}
               />
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
@@ -287,6 +302,11 @@ export default function DoubtChatPage() {
                   <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleImageUpload} />
                 </label>
                 <span style={{ flex: 1 }} />
+                {input.length > 1200 && (
+                  <span className="t-xs" style={{ color: input.length > 1400 ? 'var(--neg)' : 'var(--ink-3)' }}>
+                    {input.length}/1500
+                  </span>
+                )}
                 <span className="t-xs fg-3"><kbd>↵</kbd> send</span>
                 <Button size="sm" variant="primary" icon="send" onClick={() => sendMessage(input)} loading={isStreaming}>Send</Button>
               </div>

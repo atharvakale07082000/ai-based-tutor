@@ -76,16 +76,30 @@ async def stream_doubt(
     )
 
 
+_AUDIO_TYPES = {"audio/mpeg", "audio/mp4", "audio/wav", "audio/webm", "audio/ogg", "audio/x-m4a"}
+_IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+_MAX_AUDIO_BYTES = 10 * 1024 * 1024   # 10 MB
+_MAX_IMAGE_BYTES = 5 * 1024 * 1024    # 5 MB
+
+
 @router.post("/transcribe")
 async def transcribe(audio: UploadFile = File(...), user_id: str = Depends(get_current_user_id)):
+    if audio.content_type not in _AUDIO_TYPES:
+        raise HTTPException(status_code=415, detail=f"Unsupported audio type: {audio.content_type}. Allowed: mp3, mp4, wav, webm, ogg, m4a.")
     audio_bytes = await audio.read()
+    if len(audio_bytes) > _MAX_AUDIO_BYTES:
+        raise HTTPException(status_code=413, detail="Audio file exceeds 10 MB limit.")
     transcript = await transcribe_audio(audio_bytes)
     return {"transcript": transcript}
 
 
 @router.post("/caption")
 async def caption(image: UploadFile = File(...), user_id: str = Depends(get_current_user_id)):
+    if image.content_type not in _IMAGE_TYPES:
+        raise HTTPException(status_code=415, detail=f"Unsupported image type: {image.content_type}. Allowed: jpeg, png, gif, webp.")
     image_bytes = await image.read()
+    if len(image_bytes) > _MAX_IMAGE_BYTES:
+        raise HTTPException(status_code=413, detail="Image file exceeds 5 MB limit.")
     caption_text = await caption_image(image_bytes)
     return {"caption": caption_text}
 

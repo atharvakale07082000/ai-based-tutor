@@ -1,4 +1,7 @@
-from pydantic import BaseModel
+from typing import Literal
+from pydantic import BaseModel, Field
+
+BloomLevel = Literal["remember", "understand", "apply", "analyze", "evaluate", "create"]
 
 
 class QuizQuestion(BaseModel):
@@ -11,9 +14,9 @@ class QuizQuestion(BaseModel):
 
 
 class QuizGenerateRequest(BaseModel):
-    topic: str
-    bloom_level: str | None = None
-    count: int = 5
+    topic: str = Field(min_length=2, max_length=200)
+    bloom_level: BloomLevel | None = None
+    count: int = Field(default=5, ge=3, le=20)
 
 
 class QuizSessionSchema(BaseModel):
@@ -25,8 +28,8 @@ class QuizSessionSchema(BaseModel):
 
 
 class QuizSubmitRequest(BaseModel):
-    answers: list[int]
-    reflection: str | None = None
+    answers: list[int] = Field(max_length=50)
+    reflection: str | None = Field(None, max_length=2000)
 
 
 class EloUpdate(BaseModel):

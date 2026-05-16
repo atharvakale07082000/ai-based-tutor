@@ -5,9 +5,10 @@ import json
 import time
 
 import structlog
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from typing import Literal
 
 from app.auth.jwt import get_current_user_id
 from app.db.mongo import col_learners
@@ -31,14 +32,22 @@ _AGENTS: dict[str, object] = {
 }
 
 
+class HistoryMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=2000)
+
+
 class ChatRequest(BaseModel):
-    message: str
-    history: list[dict] = []
+    message: str = Field(min_length=1, max_length=2000)
+    history: list[HistoryMessage] = Field(default=[], max_length=20)
     context: dict = {}
 
 
 @router.post("/chat")
 async def v2_chat(body: ChatRequest, user_id: str = Depends(get_current_user_id)):
+    stripped = body.message.strip()
+    if not stripped:
+        raise HTTPException(status_code=422, detail="Message cannot be blank.")
     """
     Agentic SSE endpoint.
 
@@ -61,12 +70,12 @@ async def v2_chat(body: ChatRequest, user_id: str = Depends(get_current_user_id)
             }
 
             # Route the query
-            agent_name, reason = await _agent_router.route(body.message, context)
+            agent_name, reason = await _agent_router.route(stripped, context)
             yield f"data: {json.dumps({'type': 'routing', 'agent': agent_name, 'reason': reason})}\n\n"
 
             # Run the selected agent
             agent = _AGENTS.get(agent_name, _AGENTS["assistant"])
-            async for event in agent.run(body.message, context):
+            async for event in agent.run(stripped, context):
                 yield f"data: {json.dumps(event)}\n\n"
 
         except Exception as e:
