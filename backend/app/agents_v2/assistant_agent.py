@@ -2,6 +2,7 @@
 AssistantAgent — general-purpose AI tutor assistant with access to all 13
 registered tools. Used as the fallback when the router is not confident.
 """
+
 from __future__ import annotations
 
 from app.agents_v2.base import BaseAgent

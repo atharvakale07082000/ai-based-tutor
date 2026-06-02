@@ -10,12 +10,12 @@ Naming convention:
   <AgentName><Skill>Input   — what the skill accepts
   <AgentName><Skill>Output  — what the skill returns
 """
+
 from __future__ import annotations
 
 from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
-
 
 # ── Shared types ──────────────────────────────────────────────────────────────
 
@@ -40,6 +40,7 @@ class QuizQuestion(BaseModel):
 
 # ── Supervisor ────────────────────────────────────────────────────────────────
 
+
 class SupervisorInput(BaseModel):
     task_type: str
     iteration_count: int = Field(ge=0)
@@ -61,6 +62,7 @@ class SupervisorOutput(BaseModel):
 
 # ── Curriculum agent ──────────────────────────────────────────────────────────
 
+
 class CurriculumInput(BaseModel):
     learner_id: str = Field(min_length=1)
     learner_profile: dict = {}
@@ -74,6 +76,7 @@ class CurriculumOutput(BaseModel):
 
 
 # ── Quiz agent ────────────────────────────────────────────────────────────────
+
 
 class QuizInput(BaseModel):
     current_topic: str = Field(min_length=1, max_length=200)
@@ -98,6 +101,7 @@ class QuizOutput(BaseModel):
 
 # ── Doubt agent ───────────────────────────────────────────────────────────────
 
+
 class DoubtInput(BaseModel):
     question: str = Field(min_length=3, max_length=2000)
     current_topic: str = ""
@@ -113,6 +117,7 @@ class DoubtOutput(BaseModel):
 
 
 # ── Progress agent ────────────────────────────────────────────────────────────
+
 
 class ProgressInput(BaseModel):
     current_topic: str = Field(min_length=1)
@@ -132,6 +137,7 @@ class ProgressOutput(BaseModel):
 
 # ── V2 Chat request/response ──────────────────────────────────────────────────
 
+
 class V2ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=2000)
     history: list[dict] = Field(default=[], max_length=20)
@@ -140,6 +146,7 @@ class V2ChatRequest(BaseModel):
 
 class AgentError(BaseModel):
     """Structured error returned on validation failure (never a stack trace)."""
+
     code: str
     message: str
     agent: str = ""

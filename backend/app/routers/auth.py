@@ -1,12 +1,12 @@
 import uuid
-import structlog
 from datetime import datetime, timezone
-from fastapi import APIRouter, HTTPException, status
 
-from app.db.mongo import col_users, col_learners
+import structlog
+from fastapi import APIRouter, Depends, HTTPException, status
+
+from app.auth.jwt import create_access_token, create_refresh_token, get_current_user_id, hash_password, verify_password
+from app.db.mongo import col_learners, col_users
 from app.schemas.auth import LoginRequest, LoginResponse, RefreshResponse, UserSchema
-from app.auth.jwt import hash_password, verify_password, create_access_token, create_refresh_token, get_current_user_id
-from fastapi import Depends
 
 router = APIRouter()
 log = structlog.get_logger()
@@ -32,21 +32,23 @@ async def login(body: LoginRequest):
         col_users().insert_one({**user})
 
         learner_id = str(uuid.uuid4())
-        col_learners().insert_one({
-            "id": learner_id,
-            "user_id": user_id,
-            "email": body.email,
-            "name": body.email.split("@")[0],
-            "goal_vector": [],
-            "topic_proficiency_map": {},
-            "learning_style": "visual",
-            "xp": 0,
-            "streak": 0,
-            "session_cadence": {},
-            "curriculum_version": 1,
-            "created_at": now,
-            "updated_at": now,
-        })
+        col_learners().insert_one(
+            {
+                "id": learner_id,
+                "user_id": user_id,
+                "email": body.email,
+                "name": body.email.split("@")[0],
+                "goal_vector": [],
+                "topic_proficiency_map": {},
+                "learning_style": "visual",
+                "xp": 0,
+                "streak": 0,
+                "session_cadence": {},
+                "curriculum_version": 1,
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
 
     if user.get("hashed_password") and not verify_password(body.password, user["hashed_password"]):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")

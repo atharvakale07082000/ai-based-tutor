@@ -1,25 +1,26 @@
 """POST /api/v2/chat — agentic SSE endpoint."""
+
 from __future__ import annotations
 
 import json
 import time
 import uuid
+from typing import Literal
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from typing import Literal
 from structlog.contextvars import bind_contextvars
 
+from app.agents_v2.assistant_agent import AssistantAgent
+from app.agents_v2.curriculum_agent import CurriculumAgent
+from app.agents_v2.doubt_agent import DoubtAgent
+from app.agents_v2.progress_agent import ProgressAgent
+from app.agents_v2.quiz_agent import QuizAgent
+from app.agents_v2.router import AgentRouter
 from app.auth.jwt import get_current_user_id
 from app.db.mongo import col_learners
-from app.agents_v2.router import AgentRouter
-from app.agents_v2.curriculum_agent import CurriculumAgent
-from app.agents_v2.quiz_agent import QuizAgent
-from app.agents_v2.progress_agent import ProgressAgent
-from app.agents_v2.doubt_agent import DoubtAgent
-from app.agents_v2.assistant_agent import AssistantAgent
 
 router = APIRouter()
 log = structlog.get_logger()
@@ -27,10 +28,10 @@ log = structlog.get_logger()
 _agent_router = AgentRouter()
 _AGENTS: dict[str, object] = {
     "curriculum": CurriculumAgent(),
-    "quiz":       QuizAgent(),
-    "progress":   ProgressAgent(),
-    "doubt":      DoubtAgent(),
-    "assistant":  AssistantAgent(),
+    "quiz": QuizAgent(),
+    "progress": ProgressAgent(),
+    "doubt": DoubtAgent(),
+    "assistant": AssistantAgent(),
 }
 
 

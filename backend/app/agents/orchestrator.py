@@ -19,15 +19,16 @@ Architecture:
 The LLM supervisor reads structured reports from each agent and decides
 what to call next — replacing the old hardcoded rule-based planner.
 """
-import structlog
-from langgraph.graph import StateGraph, END
 
+import structlog
+from langgraph.graph import END, StateGraph
+
+from app.agents.curriculum_agent import curriculum_agent_node
+from app.agents.doubt_agent import doubt_agent_node
+from app.agents.progress_agent import progress_agent_node
+from app.agents.quiz_agent import quiz_agent_node
 from app.agents.state import AgentState
 from app.agents.supervisor import supervisor_node
-from app.agents.curriculum_agent import curriculum_agent_node
-from app.agents.quiz_agent import quiz_agent_node
-from app.agents.progress_agent import progress_agent_node
-from app.agents.doubt_agent import doubt_agent_node
 
 log = structlog.get_logger()
 

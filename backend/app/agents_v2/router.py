@@ -4,6 +4,7 @@ AgentRouter — fast rule-based keyword routing with LLM fallback.
 Phase 1: keyword matching (O(1), no LLM call).
 Phase 2: LLM fallback only when Phase 1 yields no confident match.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -20,10 +21,10 @@ log = structlog.get_logger()
 
 class AgentRouter:
     _KEYWORD_MAP: dict[str, set[str]] = {
-        "quiz":       {"quiz", "test me", "question", "assess", "examine"},
+        "quiz": {"quiz", "test me", "question", "assess", "examine"},
         "curriculum": {"learn", "path", "roadmap", "curriculum", "plan my", "study plan", "learning goal"},
-        "progress":   {"score", "elo", "my progress", "how am i doing", "update my", "progress"},
-        "doubt":      {"explain", "what is", "how does", "why", "confused", "understand", "clarify", "difference between"},
+        "progress": {"score", "elo", "my progress", "how am i doing", "update my", "progress"},
+        "doubt": {"explain", "what is", "how does", "why", "confused", "understand", "clarify", "difference between"},
     }
 
     async def route(self, query: str, context: dict | None = None) -> tuple[str, str]:

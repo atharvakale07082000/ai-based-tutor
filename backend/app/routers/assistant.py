@@ -1,4 +1,5 @@
 """Agentic RAG Assistant — streaming SSE endpoint."""
+
 import json
 import uuid
 
@@ -8,8 +9,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from structlog.contextvars import bind_contextvars
 
-from app.auth.jwt import get_current_user_id
 from app.agents.chat_orchestrator import run_assistant
+from app.auth.jwt import get_current_user_id
 
 router = APIRouter()
 log = structlog.get_logger()
@@ -32,9 +33,7 @@ async def chat(
 
     async def event_stream():
         try:
-            async for event in run_assistant(
-                body.message, body.history, user_id, session_id=session_id
-            ):
+            async for event in run_assistant(body.message, body.history, user_id, session_id=session_id):
                 yield f"data: {json.dumps(event)}\n\n"
         except Exception as e:
             log.error("assistant_chat_error", error=str(e)[:500], session_id=session_id)

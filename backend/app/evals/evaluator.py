@@ -10,22 +10,25 @@ Each evaluator:
 Sync evals: structural checks, pure Python, no I/O.
 Async evals (suffix _accuracy / _alignment / _coherence / _routing): call the LLM judge.
 """
+
 from __future__ import annotations
+
 import inspect
 import re
+
 import structlog
-from datetime import datetime, timezone
 
 from app.agents.state import MASTERY_THRESHOLD_DEFAULT
 from app.evals import llm_judge
-from app.evals.schemas import EvalRecord, EvalType
 from app.evals.mongo import insert_eval
+from app.evals.schemas import EvalRecord, EvalType
 from app.guardrails import check_quiz_question
 
 log = structlog.get_logger()
 
 
 # ── Per-agent eval functions ──────────────────────────────────────────────────
+
 
 def eval_quiz_format(input: dict, output: dict) -> tuple[float, bool, dict]:
     """
@@ -124,8 +127,7 @@ def eval_planner_decision(input: dict, output: dict) -> tuple[float, bool, dict]
 
     # Rule: all mastered
     unmastered = [
-        item for item in curriculum_path
-        if proficiency.get(item.get("subtopic", ""), 500.0) < mastery_threshold
+        item for item in curriculum_path if proficiency.get(item.get("subtopic", ""), 500.0) < mastery_threshold
     ]
     if not unmastered:
         expected = "end"
@@ -182,8 +184,9 @@ def eval_progress_elo(input: dict, output: dict) -> tuple[float, bool, dict]:
             ok = new_elo < old_elo
         else:
             ok = True  # score exactly 0.5: K*(0.5-0.5)=0, no movement expected
-        checks.append({"check": "direction_correct", "score": quiz_score,
-                       "old_elo": old_elo, "new_elo": new_elo, "passed": ok})
+        checks.append(
+            {"check": "direction_correct", "score": quiz_score, "old_elo": old_elo, "new_elo": new_elo, "passed": ok}
+        )
         if ok:
             passed_count += 1
 
@@ -203,6 +206,7 @@ def eval_progress_elo(input: dict, output: dict) -> tuple[float, bool, dict]:
 
 
 # ── Rule-based: supervisor routing ───────────────────────────────────────────
+
 
 def eval_supervisor_routing(input: dict, output: dict) -> tuple[float, bool, dict]:
     """
@@ -240,14 +244,19 @@ def eval_supervisor_routing(input: dict, output: dict) -> tuple[float, bool, dic
             expected, rule = "quiz", "default_quiz"
 
     passed = decision == expected
-    return (1.0 if passed else 0.0), passed, {
-        "rule": rule,
-        "expected": expected,
-        "got": decision,
-    }
+    return (
+        (1.0 if passed else 0.0),
+        passed,
+        {
+            "rule": rule,
+            "expected": expected,
+            "got": decision,
+        },
+    )
 
 
 # ── LLM-judge: doubt answer accuracy ─────────────────────────────────────────
+
 
 async def eval_doubt_accuracy(input: dict, output: dict) -> tuple[float, bool, dict]:
     """
@@ -284,6 +293,7 @@ async def eval_doubt_accuracy(input: dict, output: dict) -> tuple[float, bool, d
 
 # ── LLM-judge: quiz Bloom-level alignment ────────────────────────────────────
 
+
 async def eval_quiz_bloom_alignment(input: dict, output: dict) -> tuple[float, bool, dict]:
     """
     LLM-judge eval: do generated questions actually match the claimed Bloom level?
@@ -307,10 +317,7 @@ async def eval_quiz_bloom_alignment(input: dict, output: dict) -> tuple[float, b
         q_text = q.get("question", "")
         opts = q.get("options", [])
         opts_text = "\n".join(f"  {chr(65 + i)}. {opt}" for i, opt in enumerate(opts))
-        user_prompt = (
-            f"Claimed Bloom taxonomy level: {bloom_level}\n\n"
-            f"Question: {q_text}\nOptions:\n{opts_text}"
-        )
+        user_prompt = f"Claimed Bloom taxonomy level: {bloom_level}\n\nQuestion: {q_text}\nOptions:\n{opts_text}"
         q_scores = await llm_judge.score(user_prompt, ["bloom_alignment", "distractor_quality"])
         per_question.append({"question": q_text[:80], **q_scores})
 
@@ -319,6 +326,7 @@ async def eval_quiz_bloom_alignment(input: dict, output: dict) -> tuple[float, b
 
 
 # ── LLM-judge: curriculum coherence ─────────────────────────────────────────
+
 
 async def eval_curriculum_coherence(input: dict, output: dict) -> tuple[float, bool, dict]:
     """
@@ -357,6 +365,7 @@ async def eval_curriculum_coherence(input: dict, output: dict) -> tuple[float, b
 
 # ── Chat orchestrator evals ───────────────────────────────────────────────────
 
+
 def eval_chat_session(input: dict, output: dict) -> tuple[float, bool, dict]:
     """
     Records a completed assistant turn.
@@ -365,10 +374,14 @@ def eval_chat_session(input: dict, output: dict) -> tuple[float, bool, dict]:
     """
     had_error = bool(output.get("error", False))
     score = 0.0 if had_error else 1.0
-    return score, not had_error, {
-        "delegation_chain": output.get("delegation_chain", []),
-        "response_length": output.get("response_length", 0),
-    }
+    return (
+        score,
+        not had_error,
+        {
+            "delegation_chain": output.get("delegation_chain", []),
+            "response_length": output.get("response_length", 0),
+        },
+    )
 
 
 def eval_chat_guardrail(input: dict, output: dict) -> tuple[float, bool, dict]:

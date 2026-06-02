@@ -14,6 +14,7 @@ Configuration (via env vars):
   CB_WINDOW_S             default 60  (rolling window for failure counting)
   CB_RECOVERY_S           default 30  (half-open probe delay after open)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -21,7 +22,7 @@ import os
 import random
 import time
 from collections import deque
-from typing import Callable, Any, TypeVar
+from typing import Any, Callable, TypeVar
 
 import structlog
 
@@ -92,6 +93,7 @@ async def with_retry(
 
 
 # ── Circuit Breaker ────────────────────────────────────────────────────────────
+
 
 class CircuitBreaker:
     """
@@ -198,9 +200,7 @@ async def resilient_call(
     breaker = get_breaker(name)
 
     if not breaker.allow_request():
-        raise CircuitOpenError(
-            f"Circuit breaker open for '{name}' — dependency unavailable"
-        )
+        raise CircuitOpenError(f"Circuit breaker open for '{name}' — dependency unavailable")
 
     async def _timed(*a, **kw):
         return await asyncio.wait_for(fn(*a, **kw), timeout=timeout_s)

@@ -12,11 +12,13 @@ Routing options returned by the supervisor:
   doubt       → answer a learner question (then waits for human)
   FINISH      → session complete, exit graph
 """
+
 import json
 import re
+
 import structlog
 
-from app.agents.state import AgentState, MASTERY_THRESHOLD_DEFAULT
+from app.agents.state import MASTERY_THRESHOLD_DEFAULT, AgentState
 from app.tracing import get_tracer
 
 log = structlog.get_logger()
@@ -93,8 +95,7 @@ async def supervisor_node(state: AgentState) -> dict:
         proficiency = state.get("topic_proficiency") or {}
         mastery_threshold = state.get("mastery_threshold") or MASTERY_THRESHOLD_DEFAULT
         all_mastered = curriculum and all(
-            proficiency.get(item["subtopic"], 0) >= mastery_threshold
-            for item in curriculum
+            proficiency.get(item["subtopic"], 0) >= mastery_threshold for item in curriculum
         )
         if all_mastered:
             log.info("supervisor_all_mastered")
@@ -139,10 +140,7 @@ async def supervisor_node(state: AgentState) -> dict:
             # Negative mood → soften Bloom level to "remember" on the same topic
             progress_delta = state.get("progress_delta") or {}
             current_topic = update.get("current_topic") or state.get("current_topic", "")
-            if (
-                progress_delta.get("mood") == "NEGATIVE"
-                and progress_delta.get("topic") == current_topic
-            ):
+            if progress_delta.get("mood") == "NEGATIVE" and progress_delta.get("topic") == current_topic:
                 update["bloom_level"] = "remember"
                 log.info("supervisor_bloom_softened", topic=current_topic)
 

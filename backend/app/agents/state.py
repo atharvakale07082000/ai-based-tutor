@@ -1,7 +1,8 @@
 from typing import Annotated
-from typing_extensions import TypedDict
+
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
+from typing_extensions import TypedDict
 
 # Single source of truth — imported by all agents instead of repeating 700.0 literals.
 MASTERY_THRESHOLD_DEFAULT: float = 700.0
@@ -29,15 +30,15 @@ class AgentState(TypedDict):
     # ── Supervisor (multi-agent) fields ───────────────────────────────────────
     # Each agent appends a structured brief here; supervisor reads them to decide.
     agent_reports: Annotated[list[dict], _append_reports]
-    supervisor_decision: str   # last routing decision made by LLM supervisor
-    iteration_count: int       # incremented by supervisor on each loop
-    max_iterations: int        # hard cap (default 8)
+    supervisor_decision: str  # last routing decision made by LLM supervisor
+    iteration_count: int  # incremented by supervisor on each loop
+    max_iterations: int  # hard cap (default 8)
     session_complete: bool
-    mastery_threshold: float   # Elo threshold for mastery (default 700)
+    mastery_threshold: float  # Elo threshold for mastery (default 700)
 
     # ── Cross-agent signals ────────────────────────────────────────────────────
     # Written by progress_agent and doubt_agent; read by quiz_agent and supervisor.
-    learner_mood: str        # "POSITIVE" | "NEUTRAL" | "NEGATIVE"
+    learner_mood: str  # "POSITIVE" | "NEUTRAL" | "NEGATIVE"
     learner_mood_score: float  # 0.0–1.0 confidence from analyze_sentiment
 
     # Written by quiz_agent (via score_difficulty); read by supervisor summary.

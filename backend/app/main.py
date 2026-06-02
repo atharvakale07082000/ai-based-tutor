@@ -2,21 +2,34 @@ import asyncio
 import concurrent.futures
 import time
 import uuid
-
-import structlog
-import socketio
 from contextlib import asynccontextmanager
+
+import socketio
+import structlog
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from structlog.contextvars import bind_contextvars, clear_contextvars
 
 from app.config import settings
-from app.logging_config import configure_logging
-from app.otel import get_otel_tracer, current_trace_id
 from app.db.mongo import ensure_indexes, get_client
+from app.logging_config import configure_logging
+from app.otel import current_trace_id, get_otel_tracer
 from app.routers import (
-    auth, learner, curriculum, content, quiz, doubts,
-    progress, hf, admin, session, evals, courses, assistant, feed, leaderboard,
+    admin,
+    assistant,
+    auth,
+    content,
+    courses,
+    curriculum,
+    doubts,
+    evals,
+    feed,
+    hf,
+    leaderboard,
+    learner,
+    progress,
+    quiz,
+    session,
 )
 from app.routers.v2 import chat as chat_v2
 from app.websocket import sio
@@ -45,9 +58,7 @@ async def lifespan(app: FastAPI):
     get_otel_tracer()
 
     loop = asyncio.get_event_loop()
-    executor = concurrent.futures.ThreadPoolExecutor(
-        max_workers=64, thread_name_prefix="ai-tutor"
-    )
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=64, thread_name_prefix="ai-tutor")
     loop.set_default_executor(executor)
     log.info("thread_pool_set", max_workers=64)
 
@@ -77,6 +88,7 @@ app.add_middleware(
 
 
 # ── Request correlation middleware ────────────────────────────────────────────
+
 
 @app.middleware("http")
 async def correlation_middleware(request: Request, call_next) -> Response:
@@ -112,37 +124,40 @@ async def correlation_middleware(request: Request, call_next) -> Response:
 
 # ── Routers ───────────────────────────────────────────────────────────────────
 
-app.include_router(auth.router,        prefix="/api/v1/auth",        tags=["auth"])
-app.include_router(learner.router,     prefix="/api/v1/learner",     tags=["learner"])
-app.include_router(curriculum.router,  prefix="/api/v1/curriculum",  tags=["curriculum"])
-app.include_router(content.router,     prefix="/api/v1/content",     tags=["content"])
-app.include_router(quiz.router,        prefix="/api/v1/quiz",        tags=["quiz"])
-app.include_router(doubts.router,      prefix="/api/v1/doubts",      tags=["doubts"])
-app.include_router(progress.router,    prefix="/api/v1/progress",    tags=["progress"])
-app.include_router(hf.router,          prefix="/api/v1/hf",          tags=["hf"])
-app.include_router(admin.router,       prefix="/api/v1/admin",       tags=["admin"])
-app.include_router(session.router,     prefix="/api/v1/session",     tags=["session"])
-app.include_router(evals.router,       prefix="/api/v1/evals",       tags=["evals"])
-app.include_router(courses.router,     prefix="/api/v1/courses",     tags=["courses"])
-app.include_router(assistant.router,   prefix="/api/v1/assistant",   tags=["assistant"])
-app.include_router(feed.router,        prefix="/api/v1/feed",        tags=["feed"])
+app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
+app.include_router(learner.router, prefix="/api/v1/learner", tags=["learner"])
+app.include_router(curriculum.router, prefix="/api/v1/curriculum", tags=["curriculum"])
+app.include_router(content.router, prefix="/api/v1/content", tags=["content"])
+app.include_router(quiz.router, prefix="/api/v1/quiz", tags=["quiz"])
+app.include_router(doubts.router, prefix="/api/v1/doubts", tags=["doubts"])
+app.include_router(progress.router, prefix="/api/v1/progress", tags=["progress"])
+app.include_router(hf.router, prefix="/api/v1/hf", tags=["hf"])
+app.include_router(admin.router, prefix="/api/v1/admin", tags=["admin"])
+app.include_router(session.router, prefix="/api/v1/session", tags=["session"])
+app.include_router(evals.router, prefix="/api/v1/evals", tags=["evals"])
+app.include_router(courses.router, prefix="/api/v1/courses", tags=["courses"])
+app.include_router(assistant.router, prefix="/api/v1/assistant", tags=["assistant"])
+app.include_router(feed.router, prefix="/api/v1/feed", tags=["feed"])
 app.include_router(leaderboard.router, prefix="/api/v1/leaderboard", tags=["leaderboard"])
-app.include_router(chat_v2.router,     prefix="/api/v2",             tags=["v2"])
+app.include_router(chat_v2.router, prefix="/api/v2", tags=["v2"])
 
 
 # ── Health endpoints ──────────────────────────────────────────────────────────
+
 
 @app.get("/.well-known/agent-card.json", tags=["ops"], include_in_schema=False)
 async def agent_card():
     """Serve the A2A Agent Card for discovery."""
     import json
     import pathlib
+
     card_path = pathlib.Path(__file__).parent.parent / ".well-known" / "agent-card.json"
     card = json.loads(card_path.read_text())
     # Inject runtime base URL
-    base_url = f"http://0.0.0.0:8000"
+    base_url = "http://0.0.0.0:8000"
     card["url"] = base_url
     from fastapi.responses import JSONResponse
+
     return JSONResponse(content=card)
 
 
@@ -179,6 +194,7 @@ async def ready():
         healthy = False
 
     from fastapi.responses import JSONResponse
+
     status_code = 200 if healthy else 503
     return JSONResponse(
         status_code=status_code,

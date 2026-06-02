@@ -20,6 +20,7 @@ Context variables (task_id, session_id, correlation_id, agent) are
 injected via structlog.contextvars and survive across async awaits
 within the same request thanks to Python's contextvars module.
 """
+
 from __future__ import annotations
 
 import logging
@@ -48,7 +49,8 @@ def configure_logging(log_level: str = "INFO", json_logs: bool = True) -> None:
         renderer = structlog.dev.ConsoleRenderer(colors=True)
 
     structlog.configure(
-        processors=shared_processors + [
+        processors=shared_processors
+        + [
             structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
         ],
         logger_factory=structlog.stdlib.LoggerFactory(),

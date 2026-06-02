@@ -8,10 +8,11 @@ POST /feed/{item_id}/snooze   → snooze item for N hours
 POST /feed/{item_id}/schedule → schedule item for a specific datetime
 DELETE /feed/{item_id}/interaction → clear snooze/schedule for an item
 """
+
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -19,7 +20,10 @@ from pydantic import BaseModel, field_validator
 
 from app.auth.jwt import get_current_user_id
 from app.db.mongo import (
-    col_trending_topics, col_feed_items, col_feed_interactions, col_learners,
+    col_feed_interactions,
+    col_feed_items,
+    col_learners,
+    col_trending_topics,
 )
 
 router = APIRouter()
@@ -29,6 +33,7 @@ PROJ = {"_id": 0}
 
 
 # ── Pydantic models ────────────────────────────────────────────────────────────
+
 
 class SnoozeRequest(BaseModel):
     hours: int = 24
@@ -45,14 +50,13 @@ class ScheduleRequest(BaseModel):
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
 def _get_interaction(user_id: str, item_id: str) -> dict | None:
-    return col_feed_interactions().find_one(
-        {"user_id": user_id, "item_id": item_id}, PROJ
-    )
+    return col_feed_interactions().find_one({"user_id": user_id, "item_id": item_id}, PROJ)
 
 
 def _is_snoozed(interaction: dict | None) -> bool:
@@ -68,6 +72,7 @@ def _is_snoozed(interaction: dict | None) -> bool:
 
 
 # ── GET /feed ──────────────────────────────────────────────────────────────────
+
 
 @router.get("")
 async def list_feed(
@@ -108,10 +113,7 @@ async def list_feed(
     # Annotate each item with user interaction state
     item_ids = [i["id"] for i in items]
     interactions = {
-        i["item_id"]: i
-        for i in col_feed_interactions().find(
-            {"user_id": user_id, "item_id": {"$in": item_ids}}, PROJ
-        )
+        i["item_id"]: i for i in col_feed_interactions().find({"user_id": user_id, "item_id": {"$in": item_ids}}, PROJ)
     }
 
     for item in items:
@@ -129,6 +131,7 @@ async def list_feed(
 
 # ── GET /feed/trending ─────────────────────────────────────────────────────────
 
+
 @router.get("/trending")
 async def list_trending(
     limit: int = Query(24, ge=1, le=48),
@@ -141,11 +144,7 @@ async def list_trending(
         return {"topics": _fallback_trending(), "discovered_at": _now_iso(), "fresh": False}
 
     batch_time = latest["discovered_at"]
-    topics = list(
-        col_trending_topics().find(
-            {"discovered_at": batch_time}, PROJ
-        ).limit(limit)
-    )
+    topics = list(col_trending_topics().find({"discovered_at": batch_time}, PROJ).limit(limit))
 
     # Annotate with learner proficiency if available
     learner = col_learners().find_one({"user_id": user_id}, PROJ)
@@ -160,11 +159,13 @@ async def list_trending(
 
 # ── POST /feed/run-discovery ───────────────────────────────────────────────────
 
+
 @router.post("/run-discovery")
 async def run_discovery(user_id: str = Depends(get_current_user_id)):
     """Manually trigger trend discovery (stores results to DB)."""
     try:
         from app.hf.trend_discovery import discover_trends
+
         result = await discover_trends()
 
         # Persist topics
@@ -192,6 +193,7 @@ async def run_discovery(user_id: str = Depends(get_current_user_id)):
 
 
 # ── POST /feed/{item_id}/snooze ────────────────────────────────────────────────
+
 
 @router.post("/{item_id}/snooze")
 async def snooze_item(
@@ -223,6 +225,7 @@ async def snooze_item(
 
 
 # ── POST /feed/{item_id}/schedule ─────────────────────────────────────────────
+
 
 @router.post("/{item_id}/schedule")
 async def schedule_item(
@@ -261,6 +264,7 @@ async def schedule_item(
 
 # ── DELETE /feed/{item_id}/interaction ────────────────────────────────────────
 
+
 @router.delete("/{item_id}/interaction")
 async def clear_interaction(
     item_id: str,
@@ -273,21 +277,23 @@ async def clear_interaction(
 
 # ── GET /feed/scheduled ───────────────────────────────────────────────────────
 
+
 @router.get("/scheduled")
 async def list_scheduled(user_id: str = Depends(get_current_user_id)):
     """Return all items the learner has scheduled for future study."""
     now_iso = _now_iso()
-    interactions = list(col_feed_interactions().find(
-        {"user_id": user_id, "action": "schedule", "scheduled_for": {"$gt": now_iso}},
-        PROJ,
-    ).sort("scheduled_for", 1))
+    interactions = list(
+        col_feed_interactions()
+        .find(
+            {"user_id": user_id, "action": "schedule", "scheduled_for": {"$gt": now_iso}},
+            PROJ,
+        )
+        .sort("scheduled_for", 1)
+    )
 
     # Join with feed items
     item_ids = [i["item_id"] for i in interactions]
-    items_by_id = {
-        i["id"]: i
-        for i in col_feed_items().find({"id": {"$in": item_ids}}, PROJ)
-    }
+    items_by_id = {i["id"]: i for i in col_feed_items().find({"id": {"$in": item_ids}}, PROJ)}
 
     result = []
     for ix in interactions:
@@ -299,69 +305,124 @@ async def list_scheduled(user_id: str = Depends(get_current_user_id)):
 
 # ── Fallback seed data ─────────────────────────────────────────────────────────
 
+
 def _seed_feed() -> list[dict]:
     now_iso = _now_iso()
     expires_iso = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
     return [
         {
-            "id": str(uuid.uuid4()), "title": "Apache Kafka for Real-Time Data Pipelines",
+            "id": str(uuid.uuid4()),
+            "title": "Apache Kafka for Real-Time Data Pipelines",
             "summary": "Learn how Kafka enables fault-tolerant, scalable streaming data pipelines used in production at Netflix, Uber, and LinkedIn.",
-            "url": "https://kafka.apache.org/documentation/", "source": "kafka.apache.org",
-            "domain": "Data Engineering", "subtopic": "Apache Kafka Streams",
-            "content_type": "article", "is_trending": True, "is_ai_recommended": True,
-            "estimated_minutes": 15, "difficulty": 0.55, "discovered_at": now_iso, "expires_at": expires_iso,
+            "url": "https://kafka.apache.org/documentation/",
+            "source": "kafka.apache.org",
+            "domain": "Data Engineering",
+            "subtopic": "Apache Kafka Streams",
+            "content_type": "article",
+            "is_trending": True,
+            "is_ai_recommended": True,
+            "estimated_minutes": 15,
+            "difficulty": 0.55,
+            "discovered_at": now_iso,
+            "expires_at": expires_iso,
         },
         {
-            "id": str(uuid.uuid4()), "title": "GitOps with ArgoCD — From Zero to Production",
+            "id": str(uuid.uuid4()),
+            "title": "GitOps with ArgoCD — From Zero to Production",
             "summary": "Declarative continuous delivery for Kubernetes using ArgoCD and Git as the single source of truth.",
-            "url": "https://argo-cd.readthedocs.io/en/stable/", "source": "readthedocs.io",
-            "domain": "DevOps", "subtopic": "GitOps with ArgoCD",
-            "content_type": "article", "is_trending": True, "is_ai_recommended": True,
-            "estimated_minutes": 20, "difficulty": 0.6, "discovered_at": now_iso, "expires_at": expires_iso,
+            "url": "https://argo-cd.readthedocs.io/en/stable/",
+            "source": "readthedocs.io",
+            "domain": "DevOps",
+            "subtopic": "GitOps with ArgoCD",
+            "content_type": "article",
+            "is_trending": True,
+            "is_ai_recommended": True,
+            "estimated_minutes": 20,
+            "difficulty": 0.6,
+            "discovered_at": now_iso,
+            "expires_at": expires_iso,
         },
         {
-            "id": str(uuid.uuid4()), "title": "RAG with LangChain and Pinecone",
+            "id": str(uuid.uuid4()),
+            "title": "RAG with LangChain and Pinecone",
             "summary": "Build a production-grade Retrieval Augmented Generation pipeline with LangChain, OpenAI embeddings, and Pinecone vector DB.",
-            "url": "https://python.langchain.com/docs/tutorials/rag/", "source": "langchain.com",
-            "domain": "AI Engineering", "subtopic": "RAG with Vector Databases",
-            "content_type": "article", "is_trending": True, "is_ai_recommended": True,
-            "estimated_minutes": 25, "difficulty": 0.65, "discovered_at": now_iso, "expires_at": expires_iso,
+            "url": "https://python.langchain.com/docs/tutorials/rag/",
+            "source": "langchain.com",
+            "domain": "AI Engineering",
+            "subtopic": "RAG with Vector Databases",
+            "content_type": "article",
+            "is_trending": True,
+            "is_ai_recommended": True,
+            "estimated_minutes": 25,
+            "difficulty": 0.65,
+            "discovered_at": now_iso,
+            "expires_at": expires_iso,
         },
         {
-            "id": str(uuid.uuid4()), "title": "dbt Fundamentals — Analytics Engineering",
+            "id": str(uuid.uuid4()),
+            "title": "dbt Fundamentals — Analytics Engineering",
             "summary": "Transform raw data in your warehouse using dbt. Learn models, tests, and documentation for modern analytics engineering.",
-            "url": "https://courses.getdbt.com/courses/fundamentals", "source": "getdbt.com",
-            "domain": "Data Engineering", "subtopic": "dbt (Data Build Tool)",
-            "content_type": "course", "is_trending": True, "is_ai_recommended": True,
-            "estimated_minutes": 40, "difficulty": 0.4, "discovered_at": now_iso, "expires_at": expires_iso,
+            "url": "https://courses.getdbt.com/courses/fundamentals",
+            "source": "getdbt.com",
+            "domain": "Data Engineering",
+            "subtopic": "dbt (Data Build Tool)",
+            "content_type": "course",
+            "is_trending": True,
+            "is_ai_recommended": True,
+            "estimated_minutes": 40,
+            "difficulty": 0.4,
+            "discovered_at": now_iso,
+            "expires_at": expires_iso,
         },
         {
-            "id": str(uuid.uuid4()), "title": "Zero Trust Security Architecture",
+            "id": str(uuid.uuid4()),
+            "title": "Zero Trust Security Architecture",
             "summary": "Why perimeter security is dead and how Zero Trust — verify explicitly, use least privilege, assume breach — changes everything.",
-            "url": "https://www.nist.gov/publications/zero-trust-architecture", "source": "nist.gov",
-            "domain": "Cybersecurity", "subtopic": "Zero Trust Architecture",
-            "content_type": "article", "is_trending": True, "is_ai_recommended": False,
-            "estimated_minutes": 18, "difficulty": 0.5, "discovered_at": now_iso, "expires_at": expires_iso,
+            "url": "https://www.nist.gov/publications/zero-trust-architecture",
+            "source": "nist.gov",
+            "domain": "Cybersecurity",
+            "subtopic": "Zero Trust Architecture",
+            "content_type": "article",
+            "is_trending": True,
+            "is_ai_recommended": False,
+            "estimated_minutes": 18,
+            "difficulty": 0.5,
+            "discovered_at": now_iso,
+            "expires_at": expires_iso,
         },
         {
-            "id": str(uuid.uuid4()), "title": "Polars vs Pandas: 10x Faster DataFrames",
+            "id": str(uuid.uuid4()),
+            "title": "Polars vs Pandas: 10x Faster DataFrames",
             "summary": "Polars is a blazingly fast dataframes library written in Rust. This benchmark shows when to use it over pandas.",
-            "url": "https://pola.rs/", "source": "pola.rs",
-            "domain": "Data Science", "subtopic": "Polars DataFrames",
-            "content_type": "article", "is_trending": True, "is_ai_recommended": True,
-            "estimated_minutes": 12, "difficulty": 0.35, "discovered_at": now_iso, "expires_at": expires_iso,
+            "url": "https://pola.rs/",
+            "source": "pola.rs",
+            "domain": "Data Science",
+            "subtopic": "Polars DataFrames",
+            "content_type": "article",
+            "is_trending": True,
+            "is_ai_recommended": True,
+            "estimated_minutes": 12,
+            "difficulty": 0.35,
+            "discovered_at": now_iso,
+            "expires_at": expires_iso,
         },
     ]
 
 
 def _fallback_trending() -> list[dict]:
-    from app.hf.trend_discovery import _fallback_topics
     import uuid as _uuid
+
+    from app.hf.trend_discovery import _fallback_topics
+
     now_iso = _now_iso()
     return [
         {
-            "id": str(_uuid.uuid4()), "domain": t["domain"], "subtopic": t["subtopic"],
-            "description": t["description"], "is_trending": True, "discovered_at": now_iso,
+            "id": str(_uuid.uuid4()),
+            "domain": t["domain"],
+            "subtopic": t["subtopic"],
+            "description": t["description"],
+            "is_trending": True,
+            "discovered_at": now_iso,
         }
         for t in _fallback_topics()
     ]

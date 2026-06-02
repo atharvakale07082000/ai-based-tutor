@@ -7,16 +7,18 @@ End-to-end API tests covering the full user journey:
 All HF / LLM calls are mocked at the agent-module level so the suite
 runs offline against an in-memory SQLite database.
 """
+
 from __future__ import annotations
-import asyncio
-import pytest
-import pytest_asyncio
+
 from contextlib import contextmanager
 from unittest.mock import AsyncMock, patch
-from httpx import AsyncClient, ASGITransport
 
+import pytest
+import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
 
 # ── Mock helpers ──────────────────────────────────────────────────────────────
+
 
 def _make_question(bloom_level: str = "apply", topic: str = "Python") -> dict:
     return {
@@ -49,6 +51,7 @@ async def _mock_tool(name: str, **kwargs) -> dict:
 async def _mock_stream(*args, **kwargs):
     async def _gen():
         yield "Python list comprehensions let you build lists concisely."
+
     return _gen()
 
 
@@ -59,29 +62,33 @@ async def _mock_get_or_generate(topic: str, bloom_level: str = "apply", count: i
 @contextmanager
 def mock_all_agents():
     """Patch call_tool in every agent module + HF streaming responses."""
-    with patch("app.agents.curriculum_agent.call_tool", side_effect=_mock_tool), \
-         patch("app.agents.quiz_agent.call_tool",        side_effect=_mock_tool), \
-         patch("app.agents.progress_agent.call_tool",    side_effect=_mock_tool), \
-         patch("app.agents.doubt_agent.call_tool",       side_effect=_mock_tool), \
-         patch("app.agents.planner_agent.call_tool",     side_effect=_mock_tool), \
-         patch("app.agents.doubt_agent.stream_doubt_response", side_effect=_mock_stream), \
-         patch("app.routers.doubts.stream_doubt_response",     side_effect=_mock_stream), \
-         patch("app.routers.quiz.get_or_generate_quiz_questions", side_effect=_mock_get_or_generate), \
-         patch("app.hf.quiz_questions.get_or_generate_quiz_questions", side_effect=_mock_get_or_generate):
+    with (
+        patch("app.agents.curriculum_agent.call_tool", side_effect=_mock_tool),
+        patch("app.agents.quiz_agent.call_tool", side_effect=_mock_tool),
+        patch("app.agents.progress_agent.call_tool", side_effect=_mock_tool),
+        patch("app.agents.doubt_agent.call_tool", side_effect=_mock_tool),
+        patch("app.agents.planner_agent.call_tool", side_effect=_mock_tool),
+        patch("app.agents.doubt_agent.stream_doubt_response", side_effect=_mock_stream),
+        patch("app.routers.doubts.stream_doubt_response", side_effect=_mock_stream),
+        patch("app.routers.quiz.get_or_generate_quiz_questions", side_effect=_mock_get_or_generate),
+        patch("app.hf.quiz_questions.get_or_generate_quiz_questions", side_effect=_mock_get_or_generate),
+    ):
         yield
 
 
 # ── Shared state across tests ─────────────────────────────────────────────────
 
-_STATE: dict = {}   # populated by first login test, reused by later tests
+_STATE: dict = {}  # populated by first login test, reused by later tests
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
+
 
 @pytest_asyncio.fixture
 async def client():
     """Fresh ASGI client (MongoDB-backed app, no table creation needed)."""
     from app.main import app
+
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c
 
@@ -106,8 +113,8 @@ async def authed(client):
 # 1. AUTH FLOW
 # ─────────────────────────────────────────────────────────────────────────────
 
-class TestE2E_Auth:
 
+class TestE2E_Auth:
     @pytest.mark.asyncio
     async def test_E2E_A01_health(self, client):
         resp = await client.get("/health")
@@ -179,8 +186,8 @@ class TestE2E_Auth:
 # 2. LEARNER PROFILE
 # ─────────────────────────────────────────────────────────────────────────────
 
-class TestE2E_LearnerProfile:
 
+class TestE2E_LearnerProfile:
     @pytest.mark.asyncio
     async def test_E2E_LP01_get_profile(self, authed):
         resp = await authed.get("/api/v1/learner/profile")
@@ -215,6 +222,7 @@ class TestE2E_LearnerProfile:
 # ─────────────────────────────────────────────────────────────────────────────
 # 3. SESSION — Multi-agent workflow
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestE2E_Session:
     """
@@ -308,8 +316,8 @@ class TestE2E_Session:
 # 4. QUIZ — Direct quiz generation and submission
 # ─────────────────────────────────────────────────────────────────────────────
 
-class TestE2E_Quiz:
 
+class TestE2E_Quiz:
     @pytest.mark.asyncio
     async def test_E2E_Q01_generate_quiz(self, authed):
         """POST /quiz/generate — quiz_agent produces questions via orchestrator."""
@@ -397,6 +405,7 @@ class TestE2E_Quiz:
 # 5. DOUBTS — Q&A with guardrails
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestE2E_Doubts:
     """
     /api/v1/doubts/stream returns Server-Sent Events (text/event-stream).
@@ -449,8 +458,8 @@ class TestE2E_Doubts:
 # 6. EVALS — Trigger, query, summarize
 # ─────────────────────────────────────────────────────────────────────────────
 
-class TestE2E_Evals:
 
+class TestE2E_Evals:
     @pytest.mark.asyncio
     async def test_E2E_EV01_run_quiz_format_eval(self, authed):
         """POST /evals/run — quiz_format eval returns correct score."""
@@ -574,8 +583,14 @@ class TestE2E_Evals:
         """GET /evals/summary — aggregated pass rates."""
         with patch("app.routers.evals.aggregate_summary", new_callable=AsyncMock) as mock_s:
             mock_s.return_value = [
-                {"eval_type": "quiz_format", "agent": "quiz_agent",
-                 "total": 5, "passed": 5, "avg_score": 1.0, "pass_rate": 1.0},
+                {
+                    "eval_type": "quiz_format",
+                    "agent": "quiz_agent",
+                    "total": 5,
+                    "passed": 5,
+                    "avg_score": 1.0,
+                    "pass_rate": 1.0,
+                },
             ]
             resp = await authed.get("/api/v1/evals/summary")
         assert resp.status_code == 200
@@ -606,8 +621,8 @@ class TestE2E_Evals:
         results = resp.json()["results"]
         assert len(results) == 2
         assert results[0]["session_id"] == "sess-001"
-        assert results[0]["score"] == 1.0   # all questions valid
-        assert results[1]["score"] == 0.0   # no questions → fails
+        assert results[0]["score"] == 1.0  # all questions valid
+        assert results[1]["score"] == 0.0  # no questions → fails
 
     @pytest.mark.asyncio
     async def test_E2E_EV09_evals_require_auth(self, client):
@@ -618,6 +633,7 @@ class TestE2E_Evals:
 # ─────────────────────────────────────────────────────────────────────────────
 # 7. PROGRESS HISTORY
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestE2E_Progress:
     """GET /api/v1/progress — returns topic proficiency + history."""

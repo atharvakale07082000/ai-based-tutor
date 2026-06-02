@@ -8,8 +8,9 @@ Security:
   preventing cross-learner data leakage via WebSocket subscriptions.
 - cors_allowed_origins is restricted to settings.cors_origins (not "*").
 """
-import structlog
+
 import socketio
+import structlog
 
 from app.config import settings
 
@@ -30,6 +31,7 @@ def _extract_user_id_from_token(token: str) -> str | None:
     """Decode JWT and return the subject (user_id), or None if invalid."""
     try:
         from app.auth.jwt import decode_token
+
         payload = decode_token(token)
         return payload.get("sub")
     except Exception:
@@ -93,6 +95,7 @@ async def join_room(sid: str, data: dict):
     # Verify the authenticated user owns this learner profile
     try:
         from app.db.mongo import col_learners
+
         learner = col_learners().find_one(
             {"id": learner_id, "user_id": user_id},
             {"_id": 0, "id": 1},
@@ -115,6 +118,7 @@ async def join_room(sid: str, data: dict):
 
 
 # ── Emit helpers (exact event names matching frontend WS_EVENTS) ─────────────
+
 
 async def emit_agent_status(data: dict):
     """Broadcast agent status to all connected clients."""

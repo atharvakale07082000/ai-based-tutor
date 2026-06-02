@@ -21,10 +21,12 @@ Environment variables:
     OTEL_SERVICE_NAME              defaults to "ai-tutor"
     OTEL_ENABLED                   set to "false" to force no-op mode
 """
+
 from __future__ import annotations
 
 import os
 import uuid
+
 import structlog
 
 log = structlog.get_logger()
@@ -43,10 +45,10 @@ def _build_tracer():
 
     try:
         from opentelemetry import trace
-        from opentelemetry.sdk.trace import TracerProvider
-        from opentelemetry.sdk.resources import Resource
-        from opentelemetry.sdk.trace.export import BatchSpanProcessor
         from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+        from opentelemetry.sdk.resources import Resource
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
         resource = Resource.create({"service.name": service_name})
         provider = TracerProvider(resource=resource)
@@ -103,6 +105,7 @@ def current_trace_id() -> str:
     """Return the active OTEL trace ID, or a fresh UUID if no span is active."""
     try:
         from opentelemetry import trace
+
         ctx = trace.get_current_span().get_span_context()
         if ctx and ctx.is_valid:
             return format(ctx.trace_id, "032x")

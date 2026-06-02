@@ -4,12 +4,14 @@ Semantic Content Recommendation Agent — HuggingFace all-MiniLM-L6-v2.
 Scores each content item against a learner's profile using cosine similarity
 of sentence embeddings, then returns ranked items with `is_ai_recommended` flag.
 """
+
 from __future__ import annotations
 
 import asyncio
+
 import structlog
 
-from app.hf.embeddings import get_embeddings, cosine_similarity
+from app.hf.embeddings import cosine_similarity, get_embeddings
 from app.hf.utils import BoundedCache
 
 log = structlog.get_logger()
@@ -75,7 +77,9 @@ async def rank_content_for_learner(
 
         # Embed all items concurrently (cap at 20 for latency)
         items_to_score = content_items[:20]
-        item_texts = [f"{item.get('title', '')} {item.get('topic', '')} {item.get('subtopic', '')}" for item in items_to_score]
+        item_texts = [
+            f"{item.get('title', '')} {item.get('topic', '')} {item.get('subtopic', '')}" for item in items_to_score
+        ]
 
         embeddings = await asyncio.gather(*[_cached_embed(t) for t in item_texts])
 
@@ -97,7 +101,11 @@ async def rank_content_for_learner(
         for i, item in enumerate(items_to_score):
             updated = dict(item)
             updated["is_ai_recommended"] = i in top_indices
-            updated["_relevance_score"] = float(round(scored[next(j for j, (idx, _) in enumerate(scored) if idx == i)][1], 4)) if i < len(scored) else 0.0
+            updated["_relevance_score"] = (
+                float(round(scored[next(j for j, (idx, _) in enumerate(scored) if idx == i)][1], 4))
+                if i < len(scored)
+                else 0.0
+            )
             result.append(updated)
 
         # Append remaining items (beyond 20) unchanged

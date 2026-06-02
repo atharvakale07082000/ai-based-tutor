@@ -3,6 +3,7 @@ Pure-logic tool implementations.
 
 No I/O, no external calls — just CPU-bound functions wrapped as async handlers.
 """
+
 from __future__ import annotations
 
 import structlog
@@ -14,12 +15,14 @@ log = structlog.get_logger()
 
 # ── Handlers ──────────────────────────────────────────────────────────────────
 
+
 async def _calculate_elo(
     current_elo: float,
     score: float,
     expected_score: float = 0.5,
 ) -> dict:
     from app.agents.progress_agent import calculate_elo_update
+
     new_elo = calculate_elo_update(current_elo, score, expected_score)
     log.info(
         "calculate_elo_done",
@@ -36,6 +39,7 @@ async def _calculate_elo(
 
 async def _check_guardrail(text: str) -> dict:
     from app.guardrails import check_input
+
     result = check_input(text)
     return {
         "passed": result.passed,

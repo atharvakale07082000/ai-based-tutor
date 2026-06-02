@@ -6,9 +6,11 @@ logic is re-implemented here.  The `generate_explanation` tool is the one
 exception: it calls chat_completion directly because no single-shot (non-streaming)
 explanation wrapper exists yet.
 """
+
 from __future__ import annotations
 
 import asyncio
+
 import structlog
 
 from app.tools.schemas import Tool
@@ -18,30 +20,36 @@ log = structlog.get_logger()
 
 # ── Handlers ──────────────────────────────────────────────────────────────────
 
+
 async def _classify_topic(text: str, labels: list[str] | None = None) -> dict:
     from app.hf.topic_classifier import classify_topic
+
     return await classify_topic(text, candidate_labels=labels)
 
 
 async def _analyze_sentiment(text: str) -> dict:
     from app.hf.sentiment import analyze_sentiment
+
     return await analyze_sentiment(text)
 
 
 async def _score_difficulty(text: str) -> dict:
     from app.hf.difficulty_scorer import score_difficulty
+
     score = await score_difficulty(text)
     return {"score": score}
 
 
 async def _generate_quiz(topic: str, bloom_level: str, count: int = 5) -> dict:
     from app.hf.quiz_generator import generate_quiz_questions
+
     questions = await generate_quiz_questions(topic, bloom_level, count)
     return {"questions": questions}
 
 
 async def _get_embeddings(text: str) -> dict:
     from app.hf.embeddings import get_embeddings
+
     vector = await get_embeddings(text)
     return {"embedding": vector}
 

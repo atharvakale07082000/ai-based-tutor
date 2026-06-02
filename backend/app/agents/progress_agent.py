@@ -1,6 +1,6 @@
 import structlog
 
-from app.agents.state import AgentState, MASTERY_THRESHOLD_DEFAULT
+from app.agents.state import MASTERY_THRESHOLD_DEFAULT, AgentState
 from app.agents.tools import call_tool
 from app.tracing import get_tracer
 
@@ -75,9 +75,7 @@ async def progress_agent_node(state: AgentState) -> dict:
             # Mark delta as processed so supervisor knows Elo is up to date
             updated_delta["elo_processed"] = True
 
-            span.update(
-                output={"old_elo": current_elo, "new_elo": new_elo, "mood": updated_delta.get("mood")}
-            )
+            span.update(output={"old_elo": current_elo, "new_elo": new_elo, "mood": updated_delta.get("mood")})
             log.info("progress_agent_done", old_elo=current_elo, new_elo=new_elo)
             return {
                 "topic_proficiency": proficiency,

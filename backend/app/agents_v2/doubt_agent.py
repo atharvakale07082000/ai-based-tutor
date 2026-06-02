@@ -3,6 +3,7 @@ DoubtAgent — answers learner questions clearly and accurately, first
 checking safety guardrails. Overrides stream_final_answer to use the
 high-quality DOUBT_SOLVER streaming path instead of the generic Qwen call.
 """
+
 from __future__ import annotations
 
 from typing import AsyncIterator
@@ -17,9 +18,7 @@ log = structlog.get_logger()
 
 class DoubtAgent(BaseAgent):
     name = "DoubtAgent"
-    role_description = (
-        "You answer learner questions clearly and accurately, first checking safety guardrails."
-    )
+    role_description = "You answer learner questions clearly and accurately, first checking safety guardrails."
     tool_names = ["check_guardrail", "get_proficiency", "generate_explanation"]
 
     async def stream_final_answer(

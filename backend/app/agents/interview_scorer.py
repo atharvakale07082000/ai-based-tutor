@@ -4,13 +4,15 @@ against module knowledge and produces a comprehensive scoring matrix + final sco
 
 Graph: analyze_answers → build_scoring_matrix → compute_final_score → END
 """
+
 from __future__ import annotations
+
 import json
 import re
 from typing import TypedDict
 
 import structlog
-from langgraph.graph import StateGraph, END
+from langgraph.graph import END, StateGraph
 
 from app.hf.client import get_hf_client
 from app.hf.models import HF_MODELS
@@ -32,12 +34,14 @@ def _chat(prompt: str, max_tokens: int = 1200, temperature: float = 0.1) -> str:
             temperature=temperature,
         )
         from app.hf.client import record_auth_success
+
         record_auth_success(provider)
         return (resp.choices[0].message.content or "").strip()
     except Exception as e:
         err = str(e)
         if "401" in err or "403" in err:
             from app.hf.client import record_auth_failure
+
             record_auth_failure(provider)
         log.error("interview_scorer_llm_error", error=err[:200])
         raise
@@ -46,16 +50,17 @@ def _chat(prompt: str, max_tokens: int = 1200, temperature: float = 0.1) -> str:
 class ScoringState(TypedDict):
     module_title: str
     module_topics: list[str]
-    questions: list[dict]       # [{id, text, expected_depth}]
+    questions: list[dict]  # [{id, text, expected_depth}]
     transcriptions: list[dict]  # [{question_id, answer_text}]
-    analyses: list[dict]        # set by analyze_answers node
+    analyses: list[dict]  # set by analyze_answers node
     scoring_matrix: list[dict]  # set by build_scoring_matrix node
-    final_score: float          # 0-10, set by compute_final_score node
+    final_score: float  # 0-10, set by compute_final_score node
     summary: str
     passed: bool
 
 
 # ─── Node 1: Analyze Answers ──────────────────────────────────────────────────
+
 
 def _node_analyze_answers(state: ScoringState) -> dict:
     """Cross-check each transcription against expected knowledge for each question."""
@@ -65,15 +70,15 @@ def _node_analyze_answers(state: ScoringState) -> dict:
         q = q_map.get(t.get("question_id"))
         if q:
             pairs.append(
-                f'[Q{q["id"]}] {q["text"]}\n'
-                f'Expected depth: {q.get("expected_depth", "conceptual")}\n'
+                f"[Q{q['id']}] {q['text']}\n"
+                f"Expected depth: {q.get('expected_depth', 'conceptual')}\n"
                 f'Candidate answer: "{t.get("answer_text", "").strip() or "[No answer provided]"}"'
             )
 
     qa_block = "\n\n".join(pairs) if pairs else "No Q&A pairs available."
 
-    prompt = f"""You are a senior technical interviewer assessing answers for the module: "{state['module_title']}"
-Key topics: {", ".join(state['module_topics'][:8])}
+    prompt = f"""You are a senior technical interviewer assessing answers for the module: "{state["module_title"]}"
+Key topics: {", ".join(state["module_topics"][:8])}
 
 Analyze each candidate answer below for factual correctness and conceptual depth.
 Return ONLY a JSON array (one entry per question):
@@ -92,7 +97,7 @@ Return ONLY a JSON array (one entry per question):
 Return ONLY the JSON array."""
 
     text = _chat(prompt, 900, 0.1)
-    match = re.search(r'\[[\s\S]*\]', text)
+    match = re.search(r"\[[\s\S]*\]", text)
     try:
         analyses = json.loads(match.group(0)) if match else []
     except Exception:
@@ -103,6 +108,7 @@ Return ONLY the JSON array."""
 
 
 # ─── Node 2: Build Scoring Matrix ─────────────────────────────────────────────
+
 
 def _node_build_scoring_matrix(state: ScoringState) -> dict:
     """Assign numeric scores 0-10 to each answer based on the analysis."""
@@ -122,7 +128,7 @@ def _node_build_scoring_matrix(state: ScoringState) -> dict:
 
     analyses_text = json.dumps(state["analyses"], indent=2)
 
-    prompt = f"""Based on this analysis of interview answers for "{state['module_title']}":
+    prompt = f"""Based on this analysis of interview answers for "{state["module_title"]}":
 
 {analyses_text}
 
@@ -145,7 +151,7 @@ Return ONLY a JSON array:
 Return ONLY the JSON array."""
 
     text = _chat(prompt, 900, 0.1)
-    match = re.search(r'\[[\s\S]*\]', text)
+    match = re.search(r"\[[\s\S]*\]", text)
     try:
         matrix = json.loads(match.group(0)) if match else []
     except Exception:
@@ -157,6 +163,7 @@ Return ONLY the JSON array."""
 
 # ─── Node 3: Compute Final Score ──────────────────────────────────────────────
 
+
 def _node_compute_final_score(state: ScoringState) -> dict:
     """Compute final score out of 10 and generate a holistic summary."""
     matrix = state["scoring_matrix"]
@@ -166,7 +173,7 @@ def _node_compute_final_score(state: ScoringState) -> dict:
     scores = [int(entry.get("score", 0)) for entry in matrix]
     avg = sum(scores) / len(scores)
 
-    prompt = f"""Interview performance summary for module "{state['module_title']}":
+    prompt = f"""Interview performance summary for module "{state["module_title"]}":
 
 Scoring matrix:
 {json.dumps(matrix, indent=2)}
@@ -186,6 +193,7 @@ Be specific and constructive. Return ONLY the 2 sentences."""
 
 
 # ─── Graph assembly ───────────────────────────────────────────────────────────
+
 
 def _build_graph():
     g = StateGraph(ScoringState)
@@ -209,17 +217,19 @@ def run_scoring_agent(
     transcriptions: list[dict],
 ) -> dict:
     """Synchronous entry point — call via asyncio.to_thread in async contexts."""
-    result = _graph.invoke({
-        "module_title": module_title,
-        "module_topics": module_topics,
-        "questions": questions,
-        "transcriptions": transcriptions,
-        "analyses": [],
-        "scoring_matrix": [],
-        "final_score": 0.0,
-        "summary": "",
-        "passed": False,
-    })
+    result = _graph.invoke(
+        {
+            "module_title": module_title,
+            "module_topics": module_topics,
+            "questions": questions,
+            "transcriptions": transcriptions,
+            "analyses": [],
+            "scoring_matrix": [],
+            "final_score": 0.0,
+            "summary": "",
+            "passed": False,
+        }
+    )
     return {
         "scoring_matrix": result["scoring_matrix"],
         "final_score": result["final_score"],

@@ -2,20 +2,22 @@
 Course Planner Agent — searches the web and generates a structured 0-to-pro
 learning plan stored in MongoDB. Also handles AI interview evaluation.
 """
+
 from __future__ import annotations
+
 import asyncio
 import json
-import uuid
 import re
+import uuid
 from datetime import datetime, timezone
-from typing import TypedDict, Optional
+from typing import Optional, TypedDict
 
 import structlog
 from ddgs import DDGS
 
+from app.db.mongo import col_course_plans, col_interviews
 from app.hf.client import get_hf_client
 from app.hf.models import HF_MODELS
-from app.db.mongo import col_course_plans, col_interviews
 
 log = structlog.get_logger()
 
@@ -36,14 +38,13 @@ def _chat(prompt: str, max_tokens: int = 2000, temperature: float = 0.2) -> str:
 
 # ─── MongoDB helpers ──────────────────────────────────────────────────────────
 
+
 async def get_plan(plan_id: str) -> dict | None:
     return col_course_plans().find_one({"plan_id": plan_id}, PROJ)
 
 
 async def list_plans(user_id: str) -> list[dict]:
-    return list(
-        col_course_plans().find({"user_id": user_id}, PROJ).sort("created_at", -1)
-    )
+    return list(col_course_plans().find({"user_id": user_id}, PROJ).sort("created_at", -1))
 
 
 def _save_plan_sync(plan: dict) -> None:
@@ -57,10 +58,12 @@ async def _save_plan(plan: dict) -> None:
 def _update_module_interview_sync(plan_id: str, module_id: str, status: str, score: float) -> None:
     col_course_plans().update_one(
         {"plan_id": plan_id, "modules.id": module_id},
-        {"$set": {
-            "modules.$.interview_status": status,
-            "modules.$.interview_score": score,
-        }},
+        {
+            "$set": {
+                "modules.$.interview_status": status,
+                "modules.$.interview_score": score,
+            }
+        },
     )
 
 
@@ -82,6 +85,7 @@ async def get_module_interview(plan_id: str, module_id: str, user_id: str) -> di
 
 # ─── State ────────────────────────────────────────────────────────────────────
 
+
 class PlannerState(TypedDict):
     goal: str
     user_id: str
@@ -92,6 +96,7 @@ class PlannerState(TypedDict):
 
 
 # ─── Nodes ────────────────────────────────────────────────────────────────────
+
 
 def _search_web(goal: str) -> list[dict]:
     results: list[dict] = []
@@ -104,11 +109,13 @@ def _search_web(goal: str) -> list[dict]:
         with DDGS() as ddgs:
             for q in queries:
                 for r in ddgs.text(q, max_results=5):
-                    results.append({
-                        "title": r.get("title", ""),
-                        "body": r.get("body", "")[:300],
-                        "href": r.get("href", ""),
-                    })
+                    results.append(
+                        {
+                            "title": r.get("title", ""),
+                            "body": r.get("body", "")[:300],
+                            "href": r.get("href", ""),
+                        }
+                    )
     except Exception as e:
         log.warning("ddg_search_error", error=str(e))
     return results[:20]
@@ -150,7 +157,7 @@ Requirements:
 
     raw = await asyncio.wait_for(asyncio.to_thread(_chat, prompt, 3000, 0.2), timeout=90.0)
     raw = raw.strip()
-    match = re.search(r'\{[\s\S]*\}', raw)
+    match = re.search(r"\{[\s\S]*\}", raw)
     text = match.group(0) if match else raw
     try:
         return json.loads(text)
@@ -163,17 +170,19 @@ def _build_plan(goal: str, user_id: str, raw: dict) -> dict:
     plan_id = str(uuid.uuid4())
     modules = []
     for i, m in enumerate(raw.get("modules", [])):
-        modules.append({
-            "id": str(uuid.uuid4()),
-            "title": m.get("title", f"Module {i+1}"),
-            "description": m.get("description", ""),
-            "topics": m.get("topics", []),
-            "duration_days": int(m.get("duration_days", 7)),
-            "resources": m.get("resources", []),
-            "order": i + 1,
-            "interview_status": "pending",
-            "interview_score": None,
-        })
+        modules.append(
+            {
+                "id": str(uuid.uuid4()),
+                "title": m.get("title", f"Module {i + 1}"),
+                "description": m.get("description", ""),
+                "topics": m.get("topics", []),
+                "duration_days": int(m.get("duration_days", 7)),
+                "resources": m.get("resources", []),
+                "order": i + 1,
+                "interview_status": "pending",
+                "interview_score": None,
+            }
+        )
     return {
         "plan_id": plan_id,
         "user_id": user_id,
@@ -189,9 +198,11 @@ def _build_plan(goal: str, user_id: str, raw: dict) -> dict:
 
 # ─── Public API ───────────────────────────────────────────────────────────────
 
+
 async def _pregenerate_quizzes_for_plan(plan: dict) -> None:
     """Background task: pre-generate quiz questions for all module topics."""
     from app.hf.quiz_questions import pregenerate_topic_questions
+
     for module in plan.get("modules", []):
         for topic in module.get("topics", []):
             try:
@@ -210,17 +221,15 @@ async def create_course_plan(goal: str, user_id: str) -> dict:
     # Fire-and-forget: pre-populate quiz bank for all module topics
     task = asyncio.create_task(_pregenerate_quizzes_for_plan(plan))
     task.add_done_callback(
-        lambda t: log.error("quiz_pregenerate_task_failed", error=str(t.exception()))
-        if t.exception() else None
+        lambda t: log.error("quiz_pregenerate_task_failed", error=str(t.exception())) if t.exception() else None
     )
     return plan
 
 
 # ─── Interview ────────────────────────────────────────────────────────────────
 
-async def start_interview(
-    plan_id: str, module_id: str, user_id: str, module_title: str, topics: list[str]
-) -> dict:
+
+async def start_interview(plan_id: str, module_id: str, user_id: str, module_title: str, topics: list[str]) -> dict:
     topics_str = ", ".join(topics[:6])
     prompt = f"""You are a technical interviewer. Create exactly 4 interview questions to assess understanding of "{module_title}".
 
@@ -242,7 +251,7 @@ Requirements:
 
     text = await asyncio.to_thread(_chat, prompt, 800, 0.4)
     text = text.strip()
-    match = re.search(r'\[[\s\S]*\]', text)
+    match = re.search(r"\[[\s\S]*\]", text)
     if match:
         text = match.group(0)
     questions = json.loads(text)
@@ -280,9 +289,9 @@ async def evaluate_answer(interview_id: str, question_id: int, answer_text: str)
 
     prompt = f"""You are evaluating a technical interview answer.
 
-Module: {interview['module_title']}
-Question: {question['text']}
-Expected depth: {question.get('expected_depth', 'conceptual')}
+Module: {interview["module_title"]}
+Question: {question["text"]}
+Expected depth: {question.get("expected_depth", "conceptual")}
 Candidate's answer: "{answer_text}"
 
 Evaluate and return ONLY this JSON:
@@ -297,7 +306,7 @@ Return ONLY the JSON."""
 
     text = await asyncio.to_thread(_chat, prompt, 300, 0.1)
     text = text.strip()
-    match = re.search(r'\{[\s\S]*\}', text)
+    match = re.search(r"\{[\s\S]*\}", text)
     if match:
         text = match.group(0)
     evaluation = json.loads(text)
@@ -323,10 +332,7 @@ async def complete_interview(interview_id: str, plan_id: str, module_id: str) ->
     if not answers:
         raise ValueError("No answers submitted")
 
-    transcriptions = [
-        {"question_id": a.get("question_id"), "answer_text": a.get("answer_text", "")}
-        for a in answers
-    ]
+    transcriptions = [{"question_id": a.get("question_id"), "answer_text": a.get("answer_text", "")} for a in answers]
 
     scoring = await asyncio.to_thread(
         run_scoring_agent,
@@ -342,13 +348,15 @@ async def complete_interview(interview_id: str, plan_id: str, module_id: str) ->
 
     col_interviews().update_one(
         {"interview_id": interview_id},
-        {"$set": {
-            "final_score": final_score,
-            "passed": passed,
-            "scoring_matrix": scoring["scoring_matrix"],
-            "summary": scoring["summary"],
-            "completed_at": completed_at,
-        }},
+        {
+            "$set": {
+                "final_score": final_score,
+                "passed": passed,
+                "scoring_matrix": scoring["scoring_matrix"],
+                "summary": scoring["summary"],
+                "completed_at": completed_at,
+            }
+        },
     )
 
     status = "passed" if passed else "failed"

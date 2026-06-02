@@ -2,6 +2,7 @@
 ProgressAgent — updates Elo proficiency scores after quiz attempts and
 captures learner mood from reflection text.
 """
+
 from __future__ import annotations
 
 from app.agents_v2.base import BaseAgent
@@ -17,7 +18,6 @@ class ProgressAgent(BaseAgent):
     def build_system_prompt(self) -> str:
         base = super().build_system_prompt()
         return (
-            base
-            + "\n\nWhen done, include a side_effect: "
+            base + "\n\nWhen done, include a side_effect: "
             "{kind: 'progress_updated', payload: {topic: str, old_elo: float, new_elo: float, mood: str}}"
         )

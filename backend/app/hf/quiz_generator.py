@@ -2,6 +2,7 @@ import asyncio
 import json
 import re
 import uuid
+
 import structlog
 from tenacity import retry, stop_after_attempt, wait_exponential
 
@@ -29,12 +30,12 @@ Rules:
 """
 
 _USER_TEMPLATE = {
-    "remember":  "Generate a factual recall question about: {topic}.",
+    "remember": "Generate a factual recall question about: {topic}.",
     "understand": "Generate a comprehension/explanation question about: {topic}. Ask the learner to explain or paraphrase the concept.",
-    "apply":     "Generate an application question about: {topic}. Include a real-world scenario in the question stem.",
-    "analyze":   "Generate an analysis question about: {topic}. The learner must identify relationships, causes, or components.",
-    "evaluate":  "Generate an evaluation question about: {topic}. The learner must judge, critique, or justify a design decision.",
-    "create":    "Generate a synthesis question about: {topic}. The learner must propose, design, or construct something.",
+    "apply": "Generate an application question about: {topic}. Include a real-world scenario in the question stem.",
+    "analyze": "Generate an analysis question about: {topic}. The learner must identify relationships, causes, or components.",
+    "evaluate": "Generate an evaluation question about: {topic}. The learner must judge, critique, or justify a design decision.",
+    "create": "Generate a synthesis question about: {topic}. The learner must propose, design, or construct something.",
 }
 
 

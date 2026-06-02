@@ -1,15 +1,12 @@
 import asyncio
+
 import structlog
 
 from app.hf.client import get_hf_client
-from app.hf.models import HF_MODELS
 
 log = structlog.get_logger()
 
-_SYSTEM_PROMPT = (
-    "You are an expert technical educator. "
-    "Generate comprehensive, detailed course content in markdown."
-)
+_SYSTEM_PROMPT = "You are an expert technical educator. Generate comprehensive, detailed course content in markdown."
 
 _USER_TEMPLATE = """\
 Generate detailed course content for the following:
@@ -84,7 +81,6 @@ async def generate_content_body(
     Returns fully formatted markdown with five sections (Introduction, Core Concepts,
     Examples, Practice, Summary). Falls back to a minimal skeleton on any error.
     """
-    model_cfg = HF_MODELS["QUIZ_GENERATOR"]  # same model/provider: Qwen2.5-7B / together
     client = get_hf_client(provider="together")
     model_id = "Qwen/Qwen2.5-7B-Instruct"
 

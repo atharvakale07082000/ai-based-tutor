@@ -1,6 +1,6 @@
 import structlog
 
-from app.agents.state import AgentState, MASTERY_THRESHOLD_DEFAULT
+from app.agents.state import MASTERY_THRESHOLD_DEFAULT, AgentState
 from app.agents.tools import call_tool
 from app.tracing import get_tracer
 
@@ -70,10 +70,7 @@ async def _plan(state: AgentState) -> dict:
         return {"next_action": "curriculum", "iteration_count": iteration_count, "session_complete": False}
 
     # Rule 3: find unmastered topics
-    unmastered = [
-        item for item in curriculum_path
-        if proficiency.get(item["subtopic"], 500.0) < mastery_threshold
-    ]
+    unmastered = [item for item in curriculum_path if proficiency.get(item["subtopic"], 500.0) < mastery_threshold]
 
     if not unmastered:
         log.info("planner_all_topics_mastered", total=len(curriculum_path))
@@ -90,7 +87,7 @@ async def _plan(state: AgentState) -> dict:
         return {
             "next_action": "quiz",
             "current_topic": next_topic,
-            "bloom_level": "remember",   # override to easiest level
+            "bloom_level": "remember",  # override to easiest level
             "iteration_count": iteration_count,
             "session_complete": False,
         }
@@ -100,7 +97,7 @@ async def _plan(state: AgentState) -> dict:
     return {
         "next_action": "quiz",
         "current_topic": next_topic,
-        "bloom_level": "",   # let quiz_agent decide from Elo
+        "bloom_level": "",  # let quiz_agent decide from Elo
         "iteration_count": iteration_count,
         "session_complete": False,
     }

@@ -8,10 +8,10 @@ Computes which topics are due for review based on:
 
 Returns a prioritized list of topics and their urgency scores.
 """
+
 from __future__ import annotations
 
 import asyncio
-import math
 from datetime import datetime, timezone
 from typing import TypedDict
 
@@ -28,7 +28,7 @@ class RepetitionItem(TypedDict):
     elo: float
     days_since_last_quiz: float
     interval_days: float
-    urgency: float          # 0–1, higher = more due for review
+    urgency: float  # 0–1, higher = more due for review
     is_due: bool
 
 
@@ -73,14 +73,16 @@ def compute_due_topics(
         urgency = min(1.0, overdue_ratio)
         is_due = overdue_ratio >= 1.0
 
-        results.append(RepetitionItem(
-            topic=topic,
-            elo=elo,
-            days_since_last_quiz=round(days_elapsed, 1),
-            interval_days=round(interval, 1),
-            urgency=round(urgency, 3),
-            is_due=is_due,
-        ))
+        results.append(
+            RepetitionItem(
+                topic=topic,
+                elo=elo,
+                days_since_last_quiz=round(days_elapsed, 1),
+                interval_days=round(interval, 1),
+                urgency=round(urgency, 3),
+                is_due=is_due,
+            )
+        )
 
     return sorted(results, key=lambda x: x["urgency"], reverse=True)
 

@@ -8,19 +8,18 @@ All LLM and DB calls are mocked so the suite runs offline and fast.
 Each query is retried up to MAX_RETRIES times before being recorded as failed.
 Final summary is printed after each test class.
 """
+
 from __future__ import annotations
 
 import asyncio
 import json
 import time
 from dataclasses import dataclass, field
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 import pytest_asyncio
-from fastapi import FastAPI
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -180,6 +179,7 @@ ALL_QUERIES: dict[str, list[str]] = {
 
 # ── Result dataclass ──────────────────────────────────────────────────────────
 
+
 @dataclass
 class QueryResult:
     query: str
@@ -194,6 +194,7 @@ class QueryResult:
 
 # ── Mock ToolResult ───────────────────────────────────────────────────────────
 
+
 class MockToolResult:
     def __init__(self, name: str, args: dict):
         self.name = name
@@ -206,6 +207,7 @@ class MockToolResult:
 # ── Mock decide_step: 1 action step, then final_answer ───────────────────────
 
 _step_counters: dict[str, int] = {}
+
 
 async def _mock_decide_step(self, messages: list[dict]) -> dict:
     key = id(self)
@@ -250,6 +252,7 @@ async def _mock_stream_final_answer(self, final_answer: str, messages: list[dict
 
 
 # ── SSE stream parser ─────────────────────────────────────────────────────────
+
 
 async def _parse_sse_stream(response) -> list[dict]:
     """Parse all SSE events from an httpx streaming response."""
@@ -305,6 +308,7 @@ def _validate_events(events: list[dict]) -> tuple[bool, str]:
 
 
 # ── Core streaming function ───────────────────────────────────────────────────
+
 
 async def stream_v2_query(
     client: AsyncClient,
@@ -377,13 +381,14 @@ async def run_with_retry(
 
 # ── Summary printer ───────────────────────────────────────────────────────────
 
+
 def _print_summary(results: list[QueryResult], agent_name: str) -> None:
     passed = [r for r in results if r.passed]
     failed = [r for r in results if not r.passed]
     avg_latency = sum(r.latency_ms for r in results) / max(len(results), 1)
     avg_attempts = sum(r.attempts for r in results) / max(len(results), 1)
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Agent: {agent_name.upper()} | Total: {len(results)} | Passed: {len(passed)} | Failed: {len(failed)}")
     print(f"Avg latency: {avg_latency:.0f}ms | Avg attempts: {avg_attempts:.2f}")
 
@@ -393,10 +398,11 @@ def _print_summary(results: list[QueryResult], agent_name: str) -> None:
             print(f"  [{r.attempts} attempts] {r.query[:60]!r}")
             print(f"    Error: {r.error}")
             print(f"    Routed to: {r.routed_to!r}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
+
 
 @pytest_asyncio.fixture
 async def v2_client():
@@ -408,9 +414,9 @@ async def v2_client():
     - BaseAgent.stream_final_answer mocked to yield tokens
     - col_learners mocked to return an empty learner doc
     """
-    from app.main import app
-    from app.auth.jwt import get_current_user_id
     from app.agents_v2.base import BaseAgent
+    from app.auth.jwt import get_current_user_id
+    from app.main import app
     from app.tools import tool_registry
 
     # Override auth
@@ -443,6 +449,7 @@ async def v2_client():
 
 # ── Test classes ──────────────────────────────────────────────────────────────
 
+
 class TestQuizAgentStress:
     @pytest.mark.asyncio
     async def test_quiz_agent_25_queries(self, v2_client):
@@ -454,9 +461,8 @@ class TestQuizAgentStress:
         _print_summary(results, "quiz")
 
         failed = [r for r in results if not r.passed]
-        assert not failed, (
-            f"{len(failed)}/{len(results)} quiz queries failed:\n"
-            + "\n".join(f"  {r.query!r}: {r.error}" for r in failed)
+        assert not failed, f"{len(failed)}/{len(results)} quiz queries failed:\n" + "\n".join(
+            f"  {r.query!r}: {r.error}" for r in failed
         )
 
 
@@ -471,9 +477,8 @@ class TestCurriculumAgentStress:
         _print_summary(results, "curriculum")
 
         failed = [r for r in results if not r.passed]
-        assert not failed, (
-            f"{len(failed)}/{len(results)} curriculum queries failed:\n"
-            + "\n".join(f"  {r.query!r}: {r.error}" for r in failed)
+        assert not failed, f"{len(failed)}/{len(results)} curriculum queries failed:\n" + "\n".join(
+            f"  {r.query!r}: {r.error}" for r in failed
         )
 
 
@@ -488,9 +493,8 @@ class TestProgressAgentStress:
         _print_summary(results, "progress")
 
         failed = [r for r in results if not r.passed]
-        assert not failed, (
-            f"{len(failed)}/{len(results)} progress queries failed:\n"
-            + "\n".join(f"  {r.query!r}: {r.error}" for r in failed)
+        assert not failed, f"{len(failed)}/{len(results)} progress queries failed:\n" + "\n".join(
+            f"  {r.query!r}: {r.error}" for r in failed
         )
 
 
@@ -503,9 +507,21 @@ class TestDoubtAgentStress:
         # Patch that too so it yields tokens without a real LLM.
         async def _mock_doubt_stream(*args, **kwargs):
             async def _gen():
-                tokens = ["Great", " question", ".", " Recursion", " means", " a", " function", " calls", " itself", "."]
+                tokens = [
+                    "Great",
+                    " question",
+                    ".",
+                    " Recursion",
+                    " means",
+                    " a",
+                    " function",
+                    " calls",
+                    " itself",
+                    ".",
+                ]
                 for t in tokens:
                     yield t
+
             return _gen()
 
         with patch("app.agents_v2.doubt_agent.stream_doubt_response", side_effect=_mock_doubt_stream):
@@ -516,9 +532,8 @@ class TestDoubtAgentStress:
         _print_summary(results, "doubt")
 
         failed = [r for r in results if not r.passed]
-        assert not failed, (
-            f"{len(failed)}/{len(results)} doubt queries failed:\n"
-            + "\n".join(f"  {r.query!r}: {r.error}" for r in failed)
+        assert not failed, f"{len(failed)}/{len(results)} doubt queries failed:\n" + "\n".join(
+            f"  {r.query!r}: {r.error}" for r in failed
         )
 
 
@@ -533,9 +548,8 @@ class TestAssistantAgentStress:
         _print_summary(results, "assistant")
 
         failed = [r for r in results if not r.passed]
-        assert not failed, (
-            f"{len(failed)}/{len(results)} assistant queries failed:\n"
-            + "\n".join(f"  {r.query!r}: {r.error}" for r in failed)
+        assert not failed, f"{len(failed)}/{len(results)} assistant queries failed:\n" + "\n".join(
+            f"  {r.query!r}: {r.error}" for r in failed
         )
 
 
@@ -553,6 +567,7 @@ class TestFullSuite125Queries:
             async def _gen():
                 for t in ["Full", " suite", " doubt", " answer", "."]:
                     yield t
+
             return _gen()
 
         with patch("app.agents_v2.doubt_agent.stream_doubt_response", side_effect=_mock_doubt_stream):
@@ -579,7 +594,7 @@ class TestFullSuite125Queries:
             else:
                 by_agent[ag]["fail"] += 1
 
-        print(f"\n{'#'*60}")
+        print(f"\n{'#' * 60}")
         print(f"FULL SUITE: {total} queries | Passed: {len(passed)} | Failed: {len(failed)}")
         print(f"Avg latency: {avg_latency:.0f}ms | Queries retried: {len(retried)}")
         print("\nPer-agent breakdown:")
@@ -592,18 +607,15 @@ class TestFullSuite125Queries:
             for r in failed:
                 print(f"  [{r.expected_agent}] [{r.attempts} attempts] {r.query[:55]!r}")
                 print(f"    Error: {r.error}")
-        print(f"{'#'*60}\n")
+        print(f"{'#' * 60}\n")
 
-        assert not failed, (
-            f"{len(failed)}/{total} queries failed across all agents.\n"
-            + "\n".join(
-                f"  [{r.expected_agent}] {r.query!r}: {r.error}"
-                for r in failed
-            )
+        assert not failed, f"{len(failed)}/{total} queries failed across all agents.\n" + "\n".join(
+            f"  [{r.expected_agent}] {r.query!r}: {r.error}" for r in failed
         )
 
 
 # ── Routing accuracy analysis (bonus, non-blocking) ───────────────────────────
+
 
 class TestRoutingAccuracy:
     """
@@ -632,6 +644,7 @@ class TestRoutingAccuracy:
         async def _mock_doubt_stream(*args, **kwargs):
             async def _gen():
                 yield "answer"
+
             return _gen()
 
         with patch("app.agents_v2.doubt_agent.stream_doubt_response", side_effect=_mock_doubt_stream):
@@ -681,6 +694,7 @@ class TestSSEEventStructure:
         async def _mock_doubt_stream(*args, **kwargs):
             async def _gen():
                 yield "Explanation here."
+
             return _gen()
 
         with patch("app.agents_v2.doubt_agent.stream_doubt_response", side_effect=_mock_doubt_stream):

@@ -1,4 +1,4 @@
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
 from app.config import settings
@@ -21,5 +21,6 @@ async def get_db() -> AsyncSession:
 
 async def create_all_tables():
     async with engine.begin() as conn:
-        from app.models import user, learner, quiz, curriculum, doubts, content  # noqa: F401
+        from app.models import content, curriculum, doubts, learner, quiz, user  # noqa: F401
+
         await conn.run_sync(Base.metadata.create_all)

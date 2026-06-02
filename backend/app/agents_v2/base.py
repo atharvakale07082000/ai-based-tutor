@@ -8,6 +8,7 @@ Each agent subclass declares:
 
 Then overrides nothing — the loop is generic.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -117,8 +118,7 @@ class BaseAgent:
             {
                 "role": "system",
                 "content": (
-                    f"You are {self.name}. Deliver this answer clearly and concisely, "
-                    "using markdown formatting."
+                    f"You are {self.name}. Deliver this answer clearly and concisely, using markdown formatting."
                 ),
             },
             {"role": "user", "content": final_answer},
@@ -228,14 +228,18 @@ class BaseAgent:
                 }
 
                 # Append assistant message (thought + action) and observation to messages
-                messages.append({
-                    "role": "assistant",
-                    "content": json.dumps({"thought": thought, "action": action}),
-                })
-                messages.append({
-                    "role": "user",
-                    "content": f"Observation from {tool_name}: {json.dumps(result_payload, default=str)}",
-                })
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": json.dumps({"thought": thought, "action": action}),
+                    }
+                )
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": f"Observation from {tool_name}: {json.dumps(result_payload, default=str)}",
+                    }
+                )
 
             elif "final_answer" in step_result:
                 final_answer = step_result["final_answer"]
@@ -256,11 +260,15 @@ class BaseAgent:
 
             else:
                 # Unexpected response shape — treat as final answer with error
-                log.warning("base_agent_unexpected_step_shape", agent=self.name, step=step_num, keys=list(step_result.keys()))
-                messages.append({
-                    "role": "assistant",
-                    "content": json.dumps(step_result),
-                })
+                log.warning(
+                    "base_agent_unexpected_step_shape", agent=self.name, step=step_num, keys=list(step_result.keys())
+                )
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": json.dumps(step_result),
+                    }
+                )
 
         # Exhausted max_steps without a final_answer
         yield {"type": "error", "message": "Agent reached max steps without completing."}

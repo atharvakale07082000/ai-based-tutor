@@ -18,10 +18,13 @@ Every test name encodes the agents involved:
   XA-14  progress NEGATIVE mood → supervisor → quiz gets softened bloom (3-agent chain)
   XA-15  full cold-start orchestrator: supervisor→curriculum→supervisor→quiz→END
 """
+
 from __future__ import annotations
-import pytest
+
 from contextlib import contextmanager
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch
+
+import pytest
 
 # ── Shared helpers ─────────────────────────────────────────────────────────────
 
@@ -100,17 +103,20 @@ async def _default_tool(name: str, **kwargs) -> dict:
 @contextmanager
 def mock_tools(side_effect=None):
     _se = side_effect or _default_tool
-    with patch("app.agents.curriculum_agent.call_tool", side_effect=_se), \
-         patch("app.agents.quiz_agent.call_tool",        side_effect=_se), \
-         patch("app.agents.progress_agent.call_tool",    side_effect=_se), \
-         patch("app.agents.doubt_agent.call_tool",       side_effect=_se), \
-         patch("app.agents.planner_agent.call_tool",     side_effect=_se):
+    with (
+        patch("app.agents.curriculum_agent.call_tool", side_effect=_se),
+        patch("app.agents.quiz_agent.call_tool", side_effect=_se),
+        patch("app.agents.progress_agent.call_tool", side_effect=_se),
+        patch("app.agents.doubt_agent.call_tool", side_effect=_se),
+        patch("app.agents.planner_agent.call_tool", side_effect=_se),
+    ):
         yield
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # XA-01  progress_agent → learner_mood → quiz_agent  (bloom softened)
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 class TestXA01_ProgressMoodToQuiz:
     """
@@ -127,6 +133,7 @@ class TestXA01_ProgressMoodToQuiz:
 
         with mock_tools(_negative):
             from app.agents.progress_agent import progress_agent_node
+
             state = _base_state(
                 current_topic="Async Programming",
                 topic_proficiency={"Async Programming": 400.0},
@@ -140,6 +147,7 @@ class TestXA01_ProgressMoodToQuiz:
     @pytest.mark.asyncio
     async def test_quiz_bloom_softened_from_progress_mood(self):
         """Full tieline: progress sets mood NEGATIVE → quiz drops bloom by 1."""
+
         async def _negative(name, **kw):
             if name == "analyze_sentiment":
                 return {"label": "NEGATIVE", "score": 0.88}
@@ -148,6 +156,7 @@ class TestXA01_ProgressMoodToQuiz:
         # Step 1: progress_agent sets NEGATIVE mood
         with mock_tools(_negative):
             from app.agents.progress_agent import progress_agent_node
+
             prog_state = _base_state(
                 current_topic="Control Flow & Loops",
                 topic_proficiency={"Control Flow & Loops": 480.0},  # Elo=480 → "apply"
@@ -161,6 +170,7 @@ class TestXA01_ProgressMoodToQuiz:
         # Step 2: quiz_agent inherits state with NEGATIVE mood
         with mock_tools(_negative):
             from app.agents.quiz_agent import quiz_agent_node
+
             quiz_state = _base_state(
                 current_topic="Control Flow & Loops",
                 topic_proficiency={"Control Flow & Loops": 480.0},
@@ -182,6 +192,7 @@ class TestXA01_ProgressMoodToQuiz:
 # XA-02  doubt_agent → learner_mood → quiz_agent  (bloom softened)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestXA02_DoubtMoodToQuiz:
     """doubt_agent captures NEGATIVE mood from learner's question tone → quiz softens."""
 
@@ -197,11 +208,15 @@ class TestXA02_DoubtMoodToQuiz:
         async def _mock_stream(*args, **kwargs):
             async def _gen():
                 yield "Here is the explanation."
+
             return _gen()
 
-        with mock_tools(_negative_tool), \
-             patch("app.agents.doubt_agent.stream_doubt_response", side_effect=_mock_stream):
+        with (
+            mock_tools(_negative_tool),
+            patch("app.agents.doubt_agent.stream_doubt_response", side_effect=_mock_stream),
+        ):
             from app.agents.doubt_agent import doubt_agent_node
+
             state = _base_state(
                 current_topic="Recursion",
                 messages=[HumanMessage(content="I hate recursion, explain it please.")],
@@ -221,6 +236,7 @@ class TestXA02_DoubtMoodToQuiz:
 
         with mock_tools():
             from app.agents.quiz_agent import quiz_agent_node
+
             state = _base_state(
                 current_topic="Recursion",
                 topic_proficiency={"Recursion": elo},
@@ -237,6 +253,7 @@ class TestXA02_DoubtMoodToQuiz:
 # XA-03  quiz_agent → topic_difficulty → supervisor state summary
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestXA03_QuizDifficultyToSupervisor:
     """quiz_agent writes topic_difficulty to state; supervisor includes it in the LLM prompt."""
 
@@ -249,6 +266,7 @@ class TestXA03_QuizDifficultyToSupervisor:
 
         with mock_tools(_hard_topic):
             from app.agents.quiz_agent import quiz_agent_node
+
             state = _base_state(
                 current_topic="Advanced Concurrency Patterns",
                 topic_proficiency={"Advanced Concurrency Patterns": 600.0},
@@ -261,6 +279,7 @@ class TestXA03_QuizDifficultyToSupervisor:
     @pytest.mark.asyncio
     async def test_supervisor_state_summary_includes_difficulty(self):
         from app.agents.supervisor import _build_state_summary
+
         state = _base_state(
             topic_difficulty=0.82,
             learner_mood="NEUTRAL",
@@ -276,6 +295,7 @@ class TestXA03_QuizDifficultyToSupervisor:
 # XA-04  progress_agent → Elo crosses mastery → supervisor routes FINISH
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestXA04_ProgressMasteryToFinish:
     """After progress pushes Elo >= 700, supervisor should end the session."""
 
@@ -283,10 +303,11 @@ class TestXA04_ProgressMasteryToFinish:
     async def test_elo_crosses_mastery_then_supervisor_finishes(self):
         with mock_tools():
             from app.agents.progress_agent import progress_agent_node
+
             prog_state = _base_state(
                 current_topic="Variables & Data Types",
                 topic_proficiency={"Variables & Data Types": 685.0},  # just below mastery
-                progress_delta={"score": 1.0},                        # perfect score → +16 Elo
+                progress_delta={"score": 1.0},  # perfect score → +16 Elo
             )
             prog_result = await progress_agent_node(prog_state)
 
@@ -295,6 +316,7 @@ class TestXA04_ProgressMasteryToFinish:
 
         # Supervisor sees all topics mastered → FINISH
         from app.agents.supervisor import supervisor_node
+
         sup_state = _base_state(
             curriculum_path=[{"subtopic": "Variables & Data Types", "domain": "Python Programming"}],
             topic_proficiency={"Variables & Data Types": new_elo},
@@ -312,6 +334,7 @@ class TestXA04_ProgressMasteryToFinish:
 # XA-05  curriculum_agent → current_topic → quiz_agent
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestXA05_CurriculumTopicToQuiz:
     """curriculum_agent builds the path; quiz_agent uses the first unmastered topic."""
 
@@ -325,12 +348,13 @@ class TestXA05_CurriculumTopicToQuiz:
         # Curriculum with known proficiency gap
         proficiency = {
             "Supervised Learning": 650.0,
-            "Neural Networks": 300.0,   # weakest — should be first
+            "Neural Networks": 300.0,  # weakest — should be first
             "Model Evaluation": 500.0,
         }
 
         with mock_tools(_classify_ml):
             from app.agents.curriculum_agent import curriculum_agent_node
+
             curr_state = _base_state(
                 learner_profile={"goal_vector": ["build ML models"]},
                 topic_proficiency=proficiency,
@@ -352,6 +376,7 @@ class TestXA05_CurriculumTopicToQuiz:
         )
         with mock_tools(_classify_ml):
             from app.agents.quiz_agent import quiz_agent_node
+
             quiz_state = _base_state(
                 current_topic=first_unmastered,
                 topic_proficiency=proficiency,
@@ -370,6 +395,7 @@ class TestXA05_CurriculumTopicToQuiz:
 # XA-06  progress POSITIVE mood → quiz bloom NOT softened
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestXA06_PositiveMoodNoSoftening:
     """POSITIVE mood must NOT drop the bloom level — only NEGATIVE does."""
 
@@ -383,6 +409,7 @@ class TestXA06_PositiveMoodNoSoftening:
         # Step 1: progress writes POSITIVE mood
         with mock_tools(_positive):
             from app.agents.progress_agent import progress_agent_node
+
             prog_state = _base_state(
                 current_topic="Functions & Closures",
                 topic_proficiency={"Functions & Closures": 510.0},  # "apply"
@@ -398,6 +425,7 @@ class TestXA06_PositiveMoodNoSoftening:
 
         with mock_tools(_positive):
             from app.agents.quiz_agent import quiz_agent_node
+
             quiz_state = _base_state(
                 current_topic="Functions & Closures",
                 topic_proficiency={"Functions & Closures": elo},
@@ -406,14 +434,14 @@ class TestXA06_PositiveMoodNoSoftening:
             quiz_result = await quiz_agent_node(quiz_state)
 
         assert quiz_result["bloom_level"] == expected_bloom, (
-            f"POSITIVE mood must not soften bloom — expected '{expected_bloom}', "
-            f"got '{quiz_result['bloom_level']}'"
+            f"POSITIVE mood must not soften bloom — expected '{expected_bloom}', got '{quiz_result['bloom_level']}'"
         )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # XA-07  doubt_agent → bloom_level derived from topic proficiency
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 class TestXA07_DoubtBloomFromProficiency:
     """doubt_agent derives explanation depth from learner's proficiency in detected domain."""
@@ -426,8 +454,10 @@ class TestXA07_DoubtBloomFromProficiency:
 
         async def _mock_stream(*args, bloom_level="", **kwargs):
             bloom_calls.append(bloom_level)
+
             async def _gen():
                 yield "Gradient descent minimizes the loss function."
+
             return _gen()
 
         async def _classify_dl(name, **kw):
@@ -441,9 +471,9 @@ class TestXA07_DoubtBloomFromProficiency:
         proficiency = {"Deep Learning": 650.0}
         expected_bloom = get_bloom_level(650.0)  # "analyze"
 
-        with mock_tools(_classify_dl), \
-             patch("app.agents.doubt_agent.stream_doubt_response", side_effect=_mock_stream):
+        with mock_tools(_classify_dl), patch("app.agents.doubt_agent.stream_doubt_response", side_effect=_mock_stream):
             from app.agents.doubt_agent import doubt_agent_node
+
             state = _base_state(
                 current_topic="Deep Learning",
                 topic_proficiency=proficiency,
@@ -453,8 +483,7 @@ class TestXA07_DoubtBloomFromProficiency:
 
         assert bloom_calls, "stream_doubt_response should have been called"
         assert bloom_calls[0] == expected_bloom, (
-            f"Expected bloom '{expected_bloom}' from proficiency 650, "
-            f"but stream received '{bloom_calls[0]}'"
+            f"Expected bloom '{expected_bloom}' from proficiency 650, but stream received '{bloom_calls[0]}'"
         )
 
 
@@ -462,12 +491,14 @@ class TestXA07_DoubtBloomFromProficiency:
 # XA-08  supervisor routes to progress when score is unprocessed
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestXA08_SupervisorUnprocessedScore:
     """Supervisor must route to progress when progress_delta has score but elo_processed=False."""
 
     @pytest.mark.asyncio
     async def test_supervisor_routes_progress_on_pending_score(self):
         from app.agents.supervisor import supervisor_node
+
         state = _base_state(
             curriculum_path=[{"subtopic": "OOP", "domain": "Python Programming"}],
             topic_proficiency={"OOP": 500.0},
@@ -484,6 +515,7 @@ class TestXA08_SupervisorUnprocessedScore:
     async def test_supervisor_skips_progress_when_already_processed(self):
         """Once elo_processed=True, supervisor no longer routes to progress."""
         from app.agents.supervisor import supervisor_node
+
         state = _base_state(
             curriculum_path=[{"subtopic": "OOP", "domain": "Python Programming"}],
             topic_proficiency={"OOP": 500.0},
@@ -500,6 +532,7 @@ class TestXA08_SupervisorUnprocessedScore:
 # XA-09  supervisor → curriculum (cold start) → supervisor → quiz  (2-hop)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestXA09_SupervisorColdStartTwoHop:
     """
     Cold start: no curriculum.
@@ -513,9 +546,9 @@ class TestXA09_SupervisorColdStartTwoHop:
                 return ("quiz", "curriculum built, quiz next")
             return ("curriculum", "no curriculum yet")
 
-        with mock_tools(), \
-             patch("app.agents.supervisor._llm_decide", side_effect=_mock_llm):
+        with mock_tools(), patch("app.agents.supervisor._llm_decide", side_effect=_mock_llm):
             from app.agents.orchestrator import orchestrator
+
             state = _base_state(
                 task_type="start",
                 learner_profile={"goal_vector": ["learn Python functions"]},
@@ -535,6 +568,7 @@ class TestXA09_SupervisorColdStartTwoHop:
 # XA-10  supervisor → progress → supervisor → quiz  (score processing chain)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestXA10_SupervisorProgressQuizChain:
     """Unprocessed score → supervisor routes to progress → Elo updated → supervisor routes to quiz."""
 
@@ -542,7 +576,7 @@ class TestXA10_SupervisorProgressQuizChain:
     async def test_progress_elo_update_then_quiz(self):
         curriculum = [
             {"domain": "Python", "subtopic": "Variables & Data Types", "priority": 0, "elo": 500.0},
-            {"domain": "Python", "subtopic": "Control Flow & Loops",   "priority": 1, "elo": 500.0},
+            {"domain": "Python", "subtopic": "Control Flow & Loops", "priority": 1, "elo": 500.0},
         ]
 
         async def _mock_llm(state):
@@ -551,9 +585,9 @@ class TestXA10_SupervisorProgressQuizChain:
                 return ("quiz", "Elo updated, advance to quiz")
             return ("progress", "score needs Elo update")
 
-        with mock_tools(), \
-             patch("app.agents.supervisor._llm_decide", side_effect=_mock_llm):
+        with mock_tools(), patch("app.agents.supervisor._llm_decide", side_effect=_mock_llm):
             from app.agents.orchestrator import orchestrator
+
             state = _base_state(
                 task_type="progress",
                 current_topic="Variables & Data Types",
@@ -573,19 +607,21 @@ class TestXA10_SupervisorProgressQuizChain:
 # XA-11  supervisor iteration cap → FINISH (overrides unmastered topics)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestXA11_SupervisorIterationCap:
     """Iteration cap fires even when topics remain unmastered — hard guard, no LLM call."""
 
     @pytest.mark.asyncio
     async def test_iteration_cap_ends_session_before_llm(self):
         from app.agents.supervisor import supervisor_node
+
         curriculum = [{"subtopic": "Async Programming", "domain": "Python Programming"}]
 
         with patch("app.agents.supervisor._llm_decide", new_callable=AsyncMock) as _llm:
             state = _base_state(
                 curriculum_path=curriculum,
                 topic_proficiency={"Async Programming": 400.0},
-                iteration_count=7,   # supervisor adds 1 → 8 = max
+                iteration_count=7,  # supervisor adds 1 → 8 = max
                 max_iterations=8,
             )
             result = await supervisor_node(state)
@@ -598,6 +634,7 @@ class TestXA11_SupervisorIterationCap:
 # ═══════════════════════════════════════════════════════════════════════════════
 # XA-12  NEGATIVE mood + high difficulty → double bloom drop
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 class TestXA12_DoubleBloomDrop:
     """
@@ -612,7 +649,7 @@ class TestXA12_DoubleBloomDrop:
     async def test_two_level_drop_difficulty_plus_mood(self):
         async def _hard_negative(name, **kw):
             if name == "score_difficulty":
-                return {"score": 0.90}           # very hard
+                return {"score": 0.90}  # very hard
             if name == "analyze_sentiment":
                 return {"label": "NEGATIVE", "score": 0.88}
             return await _default_tool(name, **kw)
@@ -622,6 +659,7 @@ class TestXA12_DoubleBloomDrop:
 
         with mock_tools(_hard_negative):
             from app.agents.quiz_agent import quiz_agent_node
+
             state = _base_state(
                 current_topic="Advanced Meta-Programming",
                 topic_proficiency={"Advanced Meta-Programming": elo},
@@ -631,8 +669,7 @@ class TestXA12_DoubleBloomDrop:
 
         # Both drops applied: understand→remember (difficulty), remember→remember (clamped)
         assert result["bloom_level"] == "remember", (
-            f"Expected 'remember' after double drop from '{natural}', "
-            f"got '{result['bloom_level']}'"
+            f"Expected 'remember' after double drop from '{natural}', got '{result['bloom_level']}'"
         )
 
     @pytest.mark.asyncio
@@ -642,6 +679,7 @@ class TestXA12_DoubleBloomDrop:
         Difficulty drop: "understand" (index 1).
         Mood drop: "remember" (index 0).
         """
+
         async def _hard_negative(name, **kw):
             if name == "score_difficulty":
                 return {"score": 0.85}
@@ -655,6 +693,7 @@ class TestXA12_DoubleBloomDrop:
 
         with mock_tools(_hard_negative):
             from app.agents.quiz_agent import quiz_agent_node
+
             state = _base_state(
                 current_topic="System Design",
                 topic_proficiency={"System Design": elo},
@@ -669,6 +708,7 @@ class TestXA12_DoubleBloomDrop:
 # ═══════════════════════════════════════════════════════════════════════════════
 # XA-13  curriculum proficiency gap → correct topic selected for quiz
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 class TestXA13_CurriculumGapToQuizTopic:
     """
@@ -685,13 +725,14 @@ class TestXA13_CurriculumGapToQuizTopic:
             return await _default_tool(name, **kw)
 
         proficiency = {
-            "Variables & Data Types":  750.0,  # mastered
-            "Control Flow & Loops":    250.0,  # weakest — should be first in curriculum
-            "Functions & Closures":    510.0,
+            "Variables & Data Types": 750.0,  # mastered
+            "Control Flow & Loops": 250.0,  # weakest — should be first in curriculum
+            "Functions & Closures": 510.0,
         }
 
         with mock_tools(_classify_py):
             from app.agents.curriculum_agent import curriculum_agent_node
+
             curr_state = _base_state(
                 learner_profile={"goal_vector": ["learn Python"]},
                 topic_proficiency=proficiency,
@@ -706,6 +747,7 @@ class TestXA13_CurriculumGapToQuizTopic:
         # Quiz the weakest topic
         with mock_tools(_classify_py):
             from app.agents.quiz_agent import quiz_agent_node
+
             quiz_state = _base_state(
                 current_topic=weakest["subtopic"],
                 topic_proficiency=proficiency,
@@ -723,6 +765,7 @@ class TestXA13_CurriculumGapToQuizTopic:
 # ═══════════════════════════════════════════════════════════════════════════════
 # XA-14  progress NEGATIVE → supervisor → quiz with softened bloom  (3-agent chain)
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 class TestXA14_ThreeAgentNegativeMoodChain:
     """
@@ -747,9 +790,9 @@ class TestXA14_ThreeAgentNegativeMoodChain:
                 return ("quiz", "Elo done, quiz with negative mood")
             return ("progress", "needs Elo update")
 
-        with mock_tools(_negative_tool), \
-             patch("app.agents.supervisor._llm_decide", side_effect=_mock_llm):
+        with mock_tools(_negative_tool), patch("app.agents.supervisor._llm_decide", side_effect=_mock_llm):
             from app.agents.orchestrator import orchestrator
+
             state = _base_state(
                 task_type="progress",
                 current_topic="Generators & Iterators",
@@ -769,14 +812,13 @@ class TestXA14_ThreeAgentNegativeMoodChain:
         natural_bloom = get_bloom_level(480.0)  # "apply"
         natural_idx = BLOOM_LEVELS.index(natural_bloom)
         final_idx = BLOOM_LEVELS.index(final_bloom)
-        assert final_idx <= natural_idx, (
-            f"Bloom must be softened (≤ '{natural_bloom}'), got '{final_bloom}'"
-        )
+        assert final_idx <= natural_idx, f"Bloom must be softened (≤ '{natural_bloom}'), got '{final_bloom}'"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # XA-15  full cold-start orchestrator: supervisor→curriculum→supervisor→quiz→END
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 class TestXA15_FullOrchestratorColdStart:
     """
@@ -792,9 +834,9 @@ class TestXA15_FullOrchestratorColdStart:
                 return ("quiz", "curriculum ready, start quiz")
             return ("curriculum", "cold start: build curriculum first")
 
-        with mock_tools(), \
-             patch("app.agents.supervisor._llm_decide", side_effect=_mock_llm):
+        with mock_tools(), patch("app.agents.supervisor._llm_decide", side_effect=_mock_llm):
             from app.agents.orchestrator import orchestrator
+
             state = _base_state(
                 task_type="start",
                 learner_profile={"goal_vector": ["master Python closures and decorators"]},

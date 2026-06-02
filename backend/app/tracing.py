@@ -12,18 +12,22 @@ Usage:
 If LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY are not set the tracer is a no-op
 so the rest of the codebase never needs to handle the missing-credentials case.
 """
+
 from __future__ import annotations
+
 import time
 import uuid
-import structlog
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any, Generator
+
+import structlog
 
 log = structlog.get_logger()
 
 
 # ── No-op span / tracer used when Langfuse is not configured ─────────────────
+
 
 @dataclass
 class _NoOpSpan:
@@ -46,6 +50,7 @@ class _NoOpTracer:
 
 
 # ── Real Langfuse tracer ──────────────────────────────────────────────────────
+
 
 class _LangfuseTracer:
     def __init__(self, lf):
@@ -93,6 +98,7 @@ def get_tracer() -> _NoOpTracer | _LangfuseTracer:
     if settings.langfuse_enabled:
         try:
             from langfuse import Langfuse  # type: ignore
+
             lf = Langfuse(
                 public_key=settings.LANGFUSE_PUBLIC_KEY,
                 secret_key=settings.LANGFUSE_SECRET_KEY,

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import asyncio
 
-from huggingface_hub import InferenceClient
 import structlog
+from huggingface_hub import InferenceClient
 
 from app.config import settings
 

@@ -1,12 +1,13 @@
 import uuid
-import structlog
 from datetime import datetime, timezone
+
+import structlog
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from app.db.mongo import col_learners, col_quizzes, col_progress, col_curricula
 from app.agents.orchestrator import orchestrator
 from app.auth.jwt import get_current_user_id
+from app.db.mongo import col_curricula, col_learners, col_progress, col_quizzes
 
 router = APIRouter()
 log = structlog.get_logger()
@@ -100,14 +101,16 @@ async def start_session(user_id: str = Depends(get_current_user_id)):
             {"learner_id": learner["id"], "is_active": True},
             {"$set": {"is_active": False}},
         )
-        col_curricula().insert_one({
-            "id": str(uuid.uuid4()),
-            "learner_id": learner["id"],
-            "version": learner.get("curriculum_version", 1) + 1,
-            "topics": new_path,
-            "generated_at": now,
-            "is_active": True,
-        })
+        col_curricula().insert_one(
+            {
+                "id": str(uuid.uuid4()),
+                "learner_id": learner["id"],
+                "version": learner.get("curriculum_version", 1) + 1,
+                "topics": new_path,
+                "generated_at": now,
+                "is_active": True,
+            }
+        )
         col_learners().update_one(
             {"user_id": user_id},
             {"$set": {"curriculum_version": learner.get("curriculum_version", 1) + 1, "updated_at": now}},
@@ -116,19 +119,21 @@ async def start_session(user_id: str = Depends(get_current_user_id)):
     questions = final.get("quiz_questions", [])
     session_id = str(uuid.uuid4())
     if questions:
-        col_quizzes().insert_one({
-            "id": session_id,
-            "learner_id": learner["id"],
-            "topic": final.get("current_topic", ""),
-            "bloom_level": final.get("bloom_level", "understand"),
-            "questions": questions,
-            "answers": [],
-            "score": None,
-            "weak_topics": [],
-            "sentiment_mood": None,
-            "started_at": now,
-            "completed_at": None,
-        })
+        col_quizzes().insert_one(
+            {
+                "id": session_id,
+                "learner_id": learner["id"],
+                "topic": final.get("current_topic", ""),
+                "bloom_level": final.get("bloom_level", "understand"),
+                "questions": questions,
+                "answers": [],
+                "score": None,
+                "weak_topics": [],
+                "sentiment_mood": None,
+                "started_at": now,
+                "completed_at": None,
+            }
+        )
 
     log.info("session_start_done", session_id=session_id, topic=final.get("current_topic"))
     return SessionStartResponse(
@@ -157,8 +162,7 @@ async def advance_session(
     questions = quiz.get("questions") or []
     answers = body.answers or []
     correct_count = sum(
-        1 for i, q in enumerate(questions)
-        if i < len(answers) and answers[i] == q.get("correct_index", 0)
+        1 for i, q in enumerate(questions) if i < len(answers) and answers[i] == q.get("correct_index", 0)
     )
     score = correct_count / max(len(questions), 1)
 
@@ -187,20 +191,24 @@ async def advance_session(
 
     col_learners().update_one(
         {"user_id": user_id},
-        {"$set": {
-            "topic_proficiency_map": proficiency,
-            "xp": learner.get("xp", 0) + int(score * 100),
-            "updated_at": now,
-        }},
+        {
+            "$set": {
+                "topic_proficiency_map": proficiency,
+                "xp": learner.get("xp", 0) + int(score * 100),
+                "updated_at": now,
+            }
+        },
     )
 
-    col_progress().insert_one({
-        "id": str(uuid.uuid4()),
-        "learner_id": learner["id"],
-        "topic": quiz["topic"],
-        "elo_score": delta.get("new_elo", proficiency.get(quiz["topic"], 500.0)),
-        "recorded_at": now,
-    })
+    col_progress().insert_one(
+        {
+            "id": str(uuid.uuid4()),
+            "learner_id": learner["id"],
+            "topic": quiz["topic"],
+            "elo_score": delta.get("new_elo", proficiency.get(quiz["topic"], 500.0)),
+            "recorded_at": now,
+        }
+    )
 
     col_quizzes().update_one(
         {"id": body.quiz_id},
@@ -210,19 +218,21 @@ async def advance_session(
     next_questions = final.get("quiz_questions", [])
     next_session_id = str(uuid.uuid4())
     if next_questions:
-        col_quizzes().insert_one({
-            "id": next_session_id,
-            "learner_id": learner["id"],
-            "topic": final.get("current_topic", ""),
-            "bloom_level": final.get("bloom_level", "understand"),
-            "questions": next_questions,
-            "answers": [],
-            "score": None,
-            "weak_topics": [],
-            "sentiment_mood": None,
-            "started_at": now,
-            "completed_at": None,
-        })
+        col_quizzes().insert_one(
+            {
+                "id": next_session_id,
+                "learner_id": learner["id"],
+                "topic": final.get("current_topic", ""),
+                "bloom_level": final.get("bloom_level", "understand"),
+                "questions": next_questions,
+                "answers": [],
+                "score": None,
+                "weak_topics": [],
+                "sentiment_mood": None,
+                "started_at": now,
+                "completed_at": None,
+            }
+        )
 
     log.info("session_advance_done", next_topic=final.get("current_topic"), complete=final.get("session_complete"))
     return SessionAdvanceResponse(
