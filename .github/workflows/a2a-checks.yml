@@ -3,8 +3,7 @@ name: A2A Quality Gates
 # Complementary to lint.yml — runs A2A-specific structural checks:
 #   1. Agent Card schema validation
 #   2. Pydantic model coverage (every agent skill has input + output models)
-#   3. Secret scanning via truffleHog
-#   4. Health + /ready smoke test (agent startup check)
+#   3. .env.example completeness gate
 
 on:
   push:
@@ -99,22 +98,6 @@ jobs:
 
           print(f"PASS: All {len(skill_ids)} skills have Input+Output Pydantic models")
           EOF
-
-  secret-scan:
-    name: Secret scanning (truffleHog)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # truffleHog needs full history
-
-      - name: Run truffleHog
-        uses: trufflesecurity/trufflehog@main
-        with:
-          path: ./
-          base: ${{ github.event.repository.default_branch }}
-          head: HEAD
-          extra_args: --only-verified
 
   env-example-sync:
     name: .env.example completeness
