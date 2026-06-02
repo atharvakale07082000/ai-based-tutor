@@ -1,0 +1,12 @@
+line-length = 120
+target-version = "py311"
+
+# Directories to skip for both linting and formatting
+exclude = [".venv", "venv", "migrations", "__pycache__"]
+
+[lint]
+# E = pycodestyle errors, W = pycodestyle warnings
+# F = pyflakes, I = isort
+select = ["E", "F", "W", "I"]
+# E501 (line-too-long) is enforced by pylint instead
+ignore = ["E501"]

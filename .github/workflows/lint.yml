@@ -1,0 +1,57 @@
+name: Lint & Format
+
+# Run on every push and every pull request, regardless of branch
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  lint:
+    name: Python Lint & Format Check
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Check out the repository code
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Set up the target Python version
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # 3. Install linting / formatting tools only (not project deps)
+      - name: Install pylint and ruff
+        run: pip install pylint ruff
+
+      # 4. Verify that all files are formatted according to ruff's style.
+      #    This fails if any file would be changed by `ruff format`.
+      - name: Check formatting with ruff
+        continue-on-error: false
+        run: ruff format --check .
+
+      # 5. Run ruff's lint rules (pycodestyle, pyflakes, isort, …).
+      #    Configuration is read from ruff.toml at the repo root.
+      - name: Lint with ruff
+        continue-on-error: false
+        run: ruff check .
+
+      # 6. Discover every .py file in the repo (skipping virtual envs,
+      #    migrations, and bytecode caches) and pass them all to pylint.
+      #    Configuration is read from .pylintrc at the repo root.
+      - name: Lint with pylint
+        continue-on-error: false
+        run: |
+          FILES=$(find . \
+            -name "*.py" \
+            -not -path "./.venv/*" \
+            -not -path "./venv/*" \
+            -not -path "*/migrations/*" \
+            -not -path "*/__pycache__/*" \
+          )
+          echo "Running pylint on:"
+          echo "$FILES"
+          pylint $FILES

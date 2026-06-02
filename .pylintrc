@@ -1,0 +1,21 @@
+[MASTER]
+# Folders to skip entirely
+ignore=migrations,venv,.venv,__pycache__
+
+# Show a quality score at the end of each run
+score=yes
+
+[MESSAGES CONTROL]
+disable=
+    C0114,  # missing-module-docstring
+    C0115,  # missing-class-docstring
+    C0116,  # missing-function-docstring
+    R0903,  # too-few-public-methods
+    W0212   # protected-access
+
+[FORMAT]
+max-line-length=120
+
+[BASIC]
+# Short variable names that are always acceptable
+good-names=i,j,k,ex,Run,_
