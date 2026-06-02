@@ -5,6 +5,7 @@ Shared production utilities for all HF / LLM agent calls.
   - truncate_history  : caps conversation history before it blows token budget
   - BoundedCache      : thread-safe LRU dict to cache embeddings / results
 """
+
 from __future__ import annotations
 
 import asyncio

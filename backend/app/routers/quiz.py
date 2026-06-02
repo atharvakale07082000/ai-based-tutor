@@ -1,14 +1,21 @@
 import uuid
-import structlog
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
 
-from app.db.mongo import col_learners, col_quizzes, col_progress
-from app.schemas.quiz import QuizGenerateRequest, QuizSessionSchema, QuizQuestion, QuizSubmitRequest, QuizSubmitResult, EloUpdate
+import structlog
+from fastapi import APIRouter, Depends, HTTPException, Query
+
 from app.agents.progress_agent import calculate_elo_update
 from app.auth.jwt import get_current_user_id
-from app.hf.quiz_questions import get_or_generate_quiz_questions, bloom_for_elo
+from app.db.mongo import col_learners, col_progress, col_quizzes
+from app.hf.quiz_questions import bloom_for_elo, get_or_generate_quiz_questions
+from app.schemas.quiz import (
+    EloUpdate,
+    QuizGenerateRequest,
+    QuizQuestion,
+    QuizSessionSchema,
+    QuizSubmitRequest,
+    QuizSubmitResult,
+)
 
 router = APIRouter()
 log = structlog.get_logger()
@@ -38,19 +45,21 @@ async def generate_quiz(
     questions = await get_or_generate_quiz_questions(body.topic, bloom_level, count=5)
 
     quiz_id = str(uuid.uuid4())
-    col_quizzes().insert_one({
-        "id": quiz_id,
-        "learner_id": learner["id"],
-        "topic": body.topic,
-        "bloom_level": bloom_level,
-        "questions": questions,
-        "answers": [],
-        "score": None,
-        "weak_topics": [],
-        "sentiment_mood": None,
-        "started_at": datetime.now(timezone.utc).isoformat(),
-        "completed_at": None,
-    })
+    col_quizzes().insert_one(
+        {
+            "id": quiz_id,
+            "learner_id": learner["id"],
+            "topic": body.topic,
+            "bloom_level": bloom_level,
+            "questions": questions,
+            "answers": [],
+            "score": None,
+            "weak_topics": [],
+            "sentiment_mood": None,
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "completed_at": None,
+        }
+    )
 
     return QuizSessionSchema(
         quiz_id=quiz_id,
@@ -115,28 +124,35 @@ async def submit_quiz(
 
     col_learners().update_one(
         {"user_id": user_id},
-        {"$set": {
-            "topic_proficiency_map": proficiency,
-            "updated_at": now,
-        }, "$inc": {"xp": xp_delta}},
+        {
+            "$set": {
+                "topic_proficiency_map": proficiency,
+                "updated_at": now,
+            },
+            "$inc": {"xp": xp_delta},
+        },
     )
 
-    col_progress().insert_one({
-        "id": str(uuid.uuid4()),
-        "learner_id": learner["id"],
-        "topic": quiz["topic"],
-        "elo_score": new_elo,
-        "recorded_at": now,
-    })
+    col_progress().insert_one(
+        {
+            "id": str(uuid.uuid4()),
+            "learner_id": learner["id"],
+            "topic": quiz["topic"],
+            "elo_score": new_elo,
+            "recorded_at": now,
+        }
+    )
 
     col_quizzes().update_one(
         {"id": quiz_id},
-        {"$set": {
-            "answers": answers,
-            "score": score,
-            "weak_topics": list(set(weak_topics)),
-            "completed_at": now,
-        }},
+        {
+            "$set": {
+                "answers": answers,
+                "score": score,
+                "weak_topics": list(set(weak_topics)),
+                "completed_at": now,
+            }
+        },
     )
 
     log.info("quiz_submitted", quiz_id=quiz_id, score=score, xp_delta=xp_delta)
@@ -156,6 +172,7 @@ async def generate_flashcards(
 ):
     """Generate AI-powered recall flashcards for a topic."""
     from app.hf.flashcard_generator import generate_flashcards as _gen
+
     log.info("flashcards_generate", topic=topic, count=count)
     cards = await _gen(topic, count)
     return {"topic": topic, "cards": cards, "count": len(cards)}

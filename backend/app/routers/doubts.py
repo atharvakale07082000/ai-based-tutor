@@ -1,16 +1,17 @@
-import uuid
 import json
-import structlog
+import uuid
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, UploadFile, File
+
+import structlog
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
-from app.db.mongo import col_learners, col_doubts
-from app.schemas.doubts import DoubtStreamRequest
-from app.hf.doubt_solver import stream_doubt_response
-from app.hf.speech_to_text import transcribe_audio
-from app.hf.image_captioner import caption_image
 from app.auth.jwt import get_current_user_id
+from app.db.mongo import col_doubts, col_learners
+from app.hf.doubt_solver import stream_doubt_response
+from app.hf.image_captioner import caption_image
+from app.hf.speech_to_text import transcribe_audio
+from app.schemas.doubts import DoubtStreamRequest
 
 router = APIRouter()
 log = structlog.get_logger()
@@ -54,15 +55,17 @@ async def stream_doubt(
                         {"$push": {"messages": {"$each": new_msgs}}},
                     )
                 else:
-                    col_doubts().insert_one({
-                        "id": session_id if len(session_id) == 36 else str(uuid.uuid4()),
-                        "learner_id": learner["id"],
-                        "topic_context": body.topic_context or None,
-                        "messages": new_msgs,
-                        "sentiment_mood": None,
-                        "started_at": now,
-                        "ended_at": None,
-                    })
+                    col_doubts().insert_one(
+                        {
+                            "id": session_id if len(session_id) == 36 else str(uuid.uuid4()),
+                            "learner_id": learner["id"],
+                            "topic_context": body.topic_context or None,
+                            "messages": new_msgs,
+                            "sentiment_mood": None,
+                            "started_at": now,
+                            "ended_at": None,
+                        }
+                    )
 
         except Exception as e:
             log.error("doubt_stream_error", error=str(e))
@@ -78,14 +81,17 @@ async def stream_doubt(
 
 _AUDIO_TYPES = {"audio/mpeg", "audio/mp4", "audio/wav", "audio/webm", "audio/ogg", "audio/x-m4a"}
 _IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
-_MAX_AUDIO_BYTES = 10 * 1024 * 1024   # 10 MB
-_MAX_IMAGE_BYTES = 5 * 1024 * 1024    # 5 MB
+_MAX_AUDIO_BYTES = 10 * 1024 * 1024  # 10 MB
+_MAX_IMAGE_BYTES = 5 * 1024 * 1024  # 5 MB
 
 
 @router.post("/transcribe")
 async def transcribe(audio: UploadFile = File(...), user_id: str = Depends(get_current_user_id)):
     if audio.content_type not in _AUDIO_TYPES:
-        raise HTTPException(status_code=415, detail=f"Unsupported audio type: {audio.content_type}. Allowed: mp3, mp4, wav, webm, ogg, m4a.")
+        raise HTTPException(
+            status_code=415,
+            detail=f"Unsupported audio type: {audio.content_type}. Allowed: mp3, mp4, wav, webm, ogg, m4a.",
+        )
     audio_bytes = await audio.read()
     if len(audio_bytes) > _MAX_AUDIO_BYTES:
         raise HTTPException(status_code=413, detail="Audio file exceeds 10 MB limit.")
@@ -96,7 +102,9 @@ async def transcribe(audio: UploadFile = File(...), user_id: str = Depends(get_c
 @router.post("/caption")
 async def caption(image: UploadFile = File(...), user_id: str = Depends(get_current_user_id)):
     if image.content_type not in _IMAGE_TYPES:
-        raise HTTPException(status_code=415, detail=f"Unsupported image type: {image.content_type}. Allowed: jpeg, png, gif, webp.")
+        raise HTTPException(
+            status_code=415, detail=f"Unsupported image type: {image.content_type}. Allowed: jpeg, png, gif, webp."
+        )
     image_bytes = await image.read()
     if len(image_bytes) > _MAX_IMAGE_BYTES:
         raise HTTPException(status_code=413, detail="Image file exceeds 5 MB limit.")
@@ -109,10 +117,7 @@ async def get_sessions(user_id: str = Depends(get_current_user_id)):
     learner = col_learners().find_one({"user_id": user_id}, PROJ)
     if not learner:
         return []
-    sessions = list(
-        col_doubts().find({"learner_id": learner["id"]}, PROJ)
-        .sort("started_at", -1).limit(20)
-    )
+    sessions = list(col_doubts().find({"learner_id": learner["id"]}, PROJ).sort("started_at", -1).limit(20))
     return [
         {
             "id": s["id"],

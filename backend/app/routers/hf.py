@@ -1,11 +1,12 @@
-import time
 import asyncio
+import time
+
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.hf.models import HF_MODELS
-from app.hf.client import get_hf_client
 from app.auth.jwt import get_current_user_id
+from app.hf.client import get_hf_client
+from app.hf.models import HF_MODELS
 
 router = APIRouter()
 log = structlog.get_logger()
@@ -40,10 +41,7 @@ async def _probe_model(model_key: str, model_id: str) -> dict:
 @router.get("/status")
 async def hf_status(user_id: str = Depends(get_current_user_id)):
     """Return cached status for all 8 HF models."""
-    return {
-        key: _model_status.get(key, {"status": "ok", "latency_ms": None, "last_used": None})
-        for key in HF_MODELS
-    }
+    return {key: _model_status.get(key, {"status": "ok", "latency_ms": None, "last_used": None}) for key in HF_MODELS}
 
 
 @router.post("/test/{model_key}")

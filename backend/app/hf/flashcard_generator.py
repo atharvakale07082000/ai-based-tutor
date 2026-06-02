@@ -4,6 +4,7 @@ AI Flashcard Generator — produces concise recall cards for spaced repetition.
 Different from quiz: cards are shorter, term/definition format,
 optimized for active recall rather than multiple-choice evaluation.
 """
+
 from __future__ import annotations
 
 import json
@@ -62,7 +63,7 @@ Topic: {topic}"""
             temperature=0.6,
         )
         text = result.choices[0].message.content.strip()
-        match = re.search(r'\[.*\]', text, re.DOTALL)
+        match = re.search(r"\[.*\]", text, re.DOTALL)
         if match:
             raw = json.loads(match.group())
             return [
@@ -85,21 +86,36 @@ Topic: {topic}"""
 
 def _fallback_cards(topic: str, count: int) -> list[dict]:
     base = [
-        {"front": f"What is the core concept of {topic}?",
-         "back": f"{topic} is a foundational skill in modern technology. Master the basics first.",
-         "hint": "Core principle", "difficulty": 0.2},
-        {"front": f"Name 3 real-world uses of {topic}.",
-         "back": f"{topic} is used in production systems, research, and tooling across the industry.",
-         "hint": "Think practical", "difficulty": 0.4},
-        {"front": f"What are common pitfalls when learning {topic}?",
-         "back": "Skipping fundamentals, not practicing with real data, and ignoring documentation.",
-         "hint": "Avoid shortcuts", "difficulty": 0.5},
-        {"front": f"How does {topic} differ from related alternatives?",
-         "back": "Each tool has trade-offs in performance, ease of use, and ecosystem maturity.",
-         "hint": "Compare trade-offs", "difficulty": 0.6},
-        {"front": f"Describe the key data structure used in {topic}.",
-         "back": "Most domains use hierarchical, tabular, or graph structures depending on the problem.",
-         "hint": "Structure first", "difficulty": 0.55},
+        {
+            "front": f"What is the core concept of {topic}?",
+            "back": f"{topic} is a foundational skill in modern technology. Master the basics first.",
+            "hint": "Core principle",
+            "difficulty": 0.2,
+        },
+        {
+            "front": f"Name 3 real-world uses of {topic}.",
+            "back": f"{topic} is used in production systems, research, and tooling across the industry.",
+            "hint": "Think practical",
+            "difficulty": 0.4,
+        },
+        {
+            "front": f"What are common pitfalls when learning {topic}?",
+            "back": "Skipping fundamentals, not practicing with real data, and ignoring documentation.",
+            "hint": "Avoid shortcuts",
+            "difficulty": 0.5,
+        },
+        {
+            "front": f"How does {topic} differ from related alternatives?",
+            "back": "Each tool has trade-offs in performance, ease of use, and ecosystem maturity.",
+            "hint": "Compare trade-offs",
+            "difficulty": 0.6,
+        },
+        {
+            "front": f"Describe the key data structure used in {topic}.",
+            "back": "Most domains use hierarchical, tabular, or graph structures depending on the problem.",
+            "hint": "Structure first",
+            "difficulty": 0.55,
+        },
     ]
     cards = []
     for i in range(count):

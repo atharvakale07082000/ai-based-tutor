@@ -4,10 +4,13 @@ LLM-as-judge: scores agent outputs against a structured rubric.
 Uses the same HF Together client as the supervisor — no new credentials needed.
 Falls back to 0.5 per criterion on any failure so evals never crash a test run.
 """
+
 from __future__ import annotations
+
 import asyncio
 import json
 import re
+
 import structlog
 
 log = structlog.get_logger()
@@ -38,6 +41,7 @@ async def score(
     fallback = {c: 0.5 for c in criteria}
     try:
         from app.hf.client import get_hf_client
+
         client = get_hf_client("together")
         criteria_lines = "\n".join(f"- {c}" for c in criteria)
         full_prompt = f"{user_prompt}\n\nRate on these criteria (1–5 each):\n{criteria_lines}"
@@ -73,7 +77,7 @@ def _parse_scores(raw: str, criteria: list[str]) -> dict[str, float]:
         data = json.loads(cleaned)
         result: dict[str, float] = {}
         for c in criteria:
-            val = float(data.get(c, 3))        # default to mid-scale if key missing
+            val = float(data.get(c, 3))  # default to mid-scale if key missing
             result[c] = max(0.0, min(1.0, (val - 1) / 4))  # [1–5] → [0.0–1.0]
         return result
     except Exception:

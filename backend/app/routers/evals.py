@@ -1,11 +1,10 @@
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query
-from typing import Literal
+from fastapi import APIRouter, Depends, Query
 
 from app.auth.jwt import get_current_user_id
 from app.evals.evaluator import run_eval
-from app.evals.mongo import query_evals, aggregate_summary
-from app.evals.schemas import EvalRecord, EvalQuery, EvalSummary, EvalType
+from app.evals.mongo import aggregate_summary, query_evals
+from app.evals.schemas import EvalRecord, EvalType
 
 router = APIRouter()
 log = structlog.get_logger()

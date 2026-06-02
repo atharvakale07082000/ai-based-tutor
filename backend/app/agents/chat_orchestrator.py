@@ -12,6 +12,7 @@ Event shapes:
   {"type": "done",       "agent": str}
   {"type": "error",      "message": str}
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -23,12 +24,12 @@ from typing import AsyncIterator
 
 import structlog
 
-from app.hf.client import get_hf_client, record_auth_failure, record_auth_success
-from app.hf.models import HF_MODELS
-from app.hf.utils import truncate_history
-from app.hf.doubt_solver import stream_doubt_response
 from app.db.mongo import col_learners, col_quizzes
 from app.evals.mongo import insert_eval
+from app.hf.client import get_hf_client, record_auth_failure, record_auth_success
+from app.hf.doubt_solver import stream_doubt_response
+from app.hf.models import HF_MODELS
+from app.hf.utils import truncate_history
 
 log = structlog.get_logger()
 
@@ -38,59 +39,88 @@ PROJ = {"_id": 0}
 
 AGENT_REGISTRY = {
     "doubt_solver": {
-        "label": "Doubt-Solver", "emoji": "💡",
+        "label": "Doubt-Solver",
+        "emoji": "💡",
         "scope": "Explains concepts, answers academic questions, resolves learning doubts on any subject.",
         "out_of_scope": "Quiz generation, course planning, navigation, progress stats.",
     },
     "quiz_agent": {
-        "label": "Quiz Agent", "emoji": "📝",
+        "label": "Quiz Agent",
+        "emoji": "📝",
         "scope": "Generates topic quizzes and starts interactive knowledge tests.",
         "out_of_scope": "Explaining concepts in depth, course roadmaps.",
     },
     "course_planner": {
-        "label": "Course Planner", "emoji": "🗺️",
+        "label": "Course Planner",
+        "emoji": "🗺️",
         "scope": "Creates comprehensive 0-to-pro multi-week learning roadmaps for any skill.",
         "out_of_scope": "Answering one-off questions, quiz generation.",
     },
     "curriculum_agent": {
-        "label": "Curriculum Agent", "emoji": "📚",
+        "label": "Curriculum Agent",
+        "emoji": "📚",
         "scope": "Shows or builds the personalised topic learning path for this user.",
         "out_of_scope": "One-off questions, full course plans.",
     },
     "progress_agent": {
-        "label": "Progress Tracker", "emoji": "📊",
+        "label": "Progress Tracker",
+        "emoji": "📊",
         "scope": "Shows learning analytics: Elo scores per topic, quiz history, streak, recommendations.",
         "out_of_scope": "Teaching content, generating quizzes.",
     },
     "navigator": {
-        "label": "Navigator", "emoji": "🧭",
+        "label": "Navigator",
+        "emoji": "🧭",
         "scope": "Navigates the user to any section of the app.",
         "out_of_scope": "Answering questions, generating content.",
     },
     "general": {
-        "label": "Assistant", "emoji": "🤖",
+        "label": "Assistant",
+        "emoji": "🤖",
         "scope": "Platform help, general learning advice, anything that doesn't fit a specialist agent.",
         "out_of_scope": "",
     },
 }
 
 PAGE_MAP = {
-    "dashboard": "/dashboard", "learn": "/learn", "doubts": "/doubts",
-    "doubt": "/doubts", "progress": "/progress", "courses": "/courses",
-    "quiz": "/quiz", "admin": "/admin", "assistant": "/assistant",
+    "dashboard": "/dashboard",
+    "learn": "/learn",
+    "doubts": "/doubts",
+    "doubt": "/doubts",
+    "progress": "/progress",
+    "courses": "/courses",
+    "quiz": "/quiz",
+    "admin": "/admin",
+    "assistant": "/assistant",
 }
 
 GUARDRAIL_TOPICS = [
-    "movies", "gaming", "entertainment", "politics", "religion",
-    "illegal", "violence", "adult", "dating", "betting", "crypto trading",
+    "movies",
+    "gaming",
+    "entertainment",
+    "politics",
+    "religion",
+    "illegal",
+    "violence",
+    "adult",
+    "dating",
+    "betting",
+    "crypto trading",
 ]
 INJECTION_PATTERNS = [
-    "ignore previous", "forget your", "jailbreak", "pretend you are",
-    "you are now", "bypass", "override instructions", "act as",
+    "ignore previous",
+    "forget your",
+    "jailbreak",
+    "pretend you are",
+    "you are now",
+    "bypass",
+    "override instructions",
+    "act as",
 ]
 
 
 # ─── LLM helper ───────────────────────────────────────────────────────────────
+
 
 def _llm_call(prompt: str, max_tokens: int = 512, temperature: float = 0.1) -> str:
     model_cfg = HF_MODELS["DOUBT_SOLVER"]
@@ -116,16 +146,17 @@ def _llm_call(prompt: str, max_tokens: int = 512, temperature: float = 0.1) -> s
 
 # ─── RAG context fetch ────────────────────────────────────────────────────────
 
+
 def _fetch_user_context_sync(user_id: str) -> dict:
     learner = col_learners().find_one({"user_id": user_id}, PROJ)
     if not learner:
         return {}
 
     quizzes = list(
-        col_quizzes().find(
-            {"learner_id": learner["id"], "completed_at": {"$ne": None}},
-            PROJ
-        ).sort("completed_at", -1).limit(5)
+        col_quizzes()
+        .find({"learner_id": learner["id"], "completed_at": {"$ne": None}}, PROJ)
+        .sort("completed_at", -1)
+        .limit(5)
     )
 
     proficiency = learner.get("topic_proficiency_map") or {}
@@ -155,6 +186,7 @@ async def _fetch_user_context(user_id: str) -> dict:
 
 # ─── Intent classification ────────────────────────────────────────────────────
 
+
 async def _classify_intent(message: str, history: list[dict], user_ctx: dict) -> dict:
     msg_lower = message.lower()
     for pat in INJECTION_PATTERNS:
@@ -168,9 +200,7 @@ async def _classify_intent(message: str, history: list[dict], user_ctx: dict) ->
     registry_desc = "\n".join(f'  - "{k}": {v["scope"]}' for k, v in AGENT_REGISTRY.items())
     ctx_str = json.dumps(user_ctx, indent=2) if user_ctx else "{}"
     safe_history = truncate_history(history, max_turns=6, max_chars_per_msg=300)
-    history_str = "\n".join(
-        f'{m["role"].upper()}: {m["content"]}' for m in safe_history
-    ) if safe_history else "None"
+    history_str = "\n".join(f"{m['role'].upper()}: {m['content']}" for m in safe_history) if safe_history else "None"
 
     prompt = f"""You are an intent classifier for an AI learning platform. Classify the user message and select the best agent.
 
@@ -209,13 +239,14 @@ Respond with ONLY this JSON (no markdown):
     except asyncio.TimeoutError:
         log.error("classify_intent_timeout", message=message[:60])
         return {
-            "guardrail_pass": True, "agent": "general",
+            "guardrail_pass": True,
+            "agent": "general",
             "reason": "Intent classification timed out",
             "extracted": {"topic": None, "goal": None},
             "navigate_url": None,
             "delegation": {"secondary_agent": None},
         }
-    match = re.search(r'\{[\s\S]*\}', text)
+    match = re.search(r"\{[\s\S]*\}", text)
     if match:
         text = match.group(0)
     try:
@@ -223,7 +254,8 @@ Respond with ONLY this JSON (no markdown):
     except Exception:
         log.warning("classify_intent_parse_failed", raw=text[:200])
         return {
-            "guardrail_pass": True, "agent": "general",
+            "guardrail_pass": True,
+            "agent": "general",
             "reason": "Could not classify intent precisely",
             "extracted": {"topic": None, "goal": None},
             "navigate_url": None,
@@ -232,6 +264,7 @@ Respond with ONLY this JSON (no markdown):
 
 
 # ─── Agent executors ──────────────────────────────────────────────────────────
+
 
 async def _exec_doubt(message, history, topic, user_ctx):
     context = topic or (user_ctx.get("goal_vector") or ["general learning"])[0]
@@ -246,24 +279,26 @@ async def _exec_doubt(message, history, topic, user_ctx):
 
 def _create_quiz_sync(learner_id: str, topic: str, bloom: str, questions: list) -> str:
     quiz_id = str(uuid.uuid4())
-    col_quizzes().insert_one({
-        "id": quiz_id,
-        "learner_id": learner_id,
-        "topic": topic,
-        "bloom_level": bloom,
-        "questions": questions,
-        "answers": [],
-        "score": None,
-        "weak_topics": [],
-        "sentiment_mood": None,
-        "started_at": datetime.now(timezone.utc).isoformat(),
-        "completed_at": None,
-    })
+    col_quizzes().insert_one(
+        {
+            "id": quiz_id,
+            "learner_id": learner_id,
+            "topic": topic,
+            "bloom_level": bloom,
+            "questions": questions,
+            "answers": [],
+            "score": None,
+            "weak_topics": [],
+            "sentiment_mood": None,
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "completed_at": None,
+        }
+    )
     return quiz_id
 
 
 async def _exec_quiz(topic, user_ctx, user_id):
-    from app.hf.quiz_questions import get_or_generate_quiz_questions, bloom_for_elo
+    from app.hf.quiz_questions import bloom_for_elo, get_or_generate_quiz_questions
 
     resolved_topic = topic or (user_ctx.get("goal_vector") or ["Python Programming"])[0]
     yield {"type": "token", "content": f"Generating a quiz on **{resolved_topic}**…\n\n"}
@@ -280,16 +315,17 @@ async def _exec_quiz(topic, user_ctx, user_id):
 
         questions = await get_or_generate_quiz_questions(resolved_topic, bloom, count=5)
 
-        quiz_id = await asyncio.to_thread(
-            _create_quiz_sync, learner["id"], resolved_topic, bloom, questions
-        )
+        quiz_id = await asyncio.to_thread(_create_quiz_sync, learner["id"], resolved_topic, bloom, questions)
 
         yield {"type": "token", "content": f"Ready! **{len(questions)} questions** at **{bloom}** level.\n"}
         yield {
-            "type": "action", "kind": "quiz_created",
+            "type": "action",
+            "kind": "quiz_created",
             "payload": {
-                "quiz_id": quiz_id, "topic": resolved_topic,
-                "bloom_level": bloom, "question_count": len(questions),
+                "quiz_id": quiz_id,
+                "topic": resolved_topic,
+                "bloom_level": bloom,
+                "question_count": len(questions),
                 "url": f"/quiz/{quiz_id}",
             },
         }
@@ -302,16 +338,25 @@ async def _exec_course_planner(goal, message, user_ctx, user_id):
     from app.agents.course_planner import create_course_plan
 
     resolved_goal = goal or message
-    yield {"type": "token", "content": f"Researching and building a roadmap for **{resolved_goal}**…\n\nThis takes about 30 seconds while I search the web.\n"}
+    yield {
+        "type": "token",
+        "content": f"Researching and building a roadmap for **{resolved_goal}**…\n\nThis takes about 30 seconds while I search the web.\n",
+    }
 
     try:
         plan = await create_course_plan(resolved_goal, user_id)
-        yield {"type": "token", "content": f"\n✅ **{plan['title']}** is ready — {len(plan['modules'])} modules, {plan['total_duration_weeks']} weeks.\n"}
         yield {
-            "type": "action", "kind": "plan_created",
+            "type": "token",
+            "content": f"\n✅ **{plan['title']}** is ready — {len(plan['modules'])} modules, {plan['total_duration_weeks']} weeks.\n",
+        }
+        yield {
+            "type": "action",
+            "kind": "plan_created",
             "payload": {
-                "plan_id": plan["plan_id"], "title": plan["title"],
-                "module_count": len(plan["modules"]), "weeks": plan["total_duration_weeks"],
+                "plan_id": plan["plan_id"],
+                "title": plan["title"],
+                "module_count": len(plan["modules"]),
+                "weeks": plan["total_duration_weeks"],
                 "url": f"/courses/{plan['plan_id']}",
             },
         }
@@ -351,13 +396,18 @@ async def _exec_progress(user_ctx, user_id):
             yield {"type": "token", "content": line}
             await asyncio.sleep(0.02)
 
-        yield {"type": "action", "kind": "navigate", "payload": {"url": "/progress", "label": "View full Progress page"}}
+        yield {
+            "type": "action",
+            "kind": "navigate",
+            "payload": {"url": "/progress", "label": "View full Progress page"},
+        }
     except Exception as e:
         yield {"type": "error", "message": str(e)}
 
 
 async def _exec_curriculum(user_ctx, user_id):
     from app.db.mongo import col_curricula
+
     try:
         learner = col_learners().find_one({"user_id": user_id}, PROJ)
         cp = None
@@ -375,7 +425,7 @@ async def _exec_curriculum(user_ctx, user_id):
                 topic = item.get("subtopic", item.get("topic", "Unknown")) if isinstance(item, dict) else str(item)
                 elo = proficiency.get(topic, 500)
                 status = "✅" if elo >= 700 else "🔄" if elo >= 500 else "📖"
-                yield {"type": "token", "content": f"{status} {i+1}. {topic} ({round(elo)} Elo)\n"}
+                yield {"type": "token", "content": f"{status} {i + 1}. {topic} ({round(elo)} Elo)\n"}
                 await asyncio.sleep(0.02)
         else:
             yield {"type": "token", "content": "No curriculum built yet. Let me generate one based on your goals.\n"}
@@ -399,10 +449,10 @@ async def _exec_navigator(navigate_url, message):
 
 
 async def _exec_general(message, history, user_ctx):
-    ctx_str = f"The learner's name is {user_ctx['learner_name']}. " if user_ctx.get("learner_name") else ""
     try:
         stream = await stream_doubt_response(
-            message, "platform assistance",
+            message,
+            "platform assistance",
             [{"role": m["role"], "content": m["content"]} for m in history[-4:]],
         )
         async for token in stream:
@@ -413,12 +463,21 @@ async def _exec_general(message, history, user_ctx):
 
 # ─── Eval recorder ────────────────────────────────────────────────────────────
 
+
 async def _record_eval(
-    session_id: str, user_id: str, message: str, agent: str,
-    delegation_chain: list, response_length: int, guardrail_blocked: bool, error: bool,
+    session_id: str,
+    user_id: str,
+    message: str,
+    agent: str,
+    delegation_chain: list,
+    response_length: int,
+    guardrail_blocked: bool,
+    error: bool,
 ) -> None:
     """Write a chat turn eval record into the unified agent_evals collection."""
     try:
+        from app.otel import current_trace_id
+
         eval_type = "chat_guardrail" if guardrail_blocked else "chat_session"
         score = 0.0 if (not guardrail_blocked and error) else 1.0
         record = {
@@ -426,7 +485,7 @@ async def _record_eval(
             "agent": agent,
             "learner_id": user_id,
             "session_id": session_id,
-            "trace_id": "",
+            "trace_id": current_trace_id(),
             "input": {"message": message[:500]},
             "output": {
                 "delegation_chain": delegation_chain,
@@ -445,12 +504,14 @@ async def _record_eval(
 
 # ─── Main entry point ─────────────────────────────────────────────────────────
 
+
 async def run_assistant(
     message: str,
     history: list[dict],
     user_id: str,
+    session_id: str | None = None,
 ) -> AsyncIterator[dict]:
-    session_id = str(uuid.uuid4())
+    session_id = session_id or str(uuid.uuid4())
     delegation_chain: list[str] = []
     response_chars = 0
     had_error = False

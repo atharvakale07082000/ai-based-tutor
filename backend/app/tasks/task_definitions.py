@@ -1,5 +1,7 @@
 import asyncio
+
 import structlog
+
 from app.tasks.celery_app import celery_app
 
 log = structlog.get_logger()
@@ -10,6 +12,7 @@ def regenerate_curriculum(self, learner_id: str | None = None):
     log.info("task_regenerate_curriculum_start", learner_id=learner_id)
     try:
         from app.db.mongo import col_learners
+
         query = {"id": learner_id} if learner_id else {}
         learners = list(col_learners().find(query, {"_id": 0}).limit(100))
         log.info("curriculum_regenerated", count=len(learners))
@@ -23,6 +26,7 @@ def process_quiz_results(self, quiz_session_id: str):
     log.info("task_process_quiz_start", quiz_session_id=quiz_session_id)
     try:
         from app.db.mongo import col_quizzes
+
         quiz = col_quizzes().find_one({"id": quiz_session_id}, {"_id": 0})
         if quiz and quiz.get("score") is not None:
             log.info("quiz_results_processed", quiz_id=quiz_session_id, score=quiz["score"])
@@ -41,11 +45,12 @@ def send_progress_digest(self, learner_id: str | None = None):
     log.info("task_send_progress_digest_start", learner_id=learner_id)
 
     import os
-    SMTP_HOST     = os.environ.get("SMTP_HOST", "smtp.gmail.com")
-    SMTP_PORT     = int(os.environ.get("SMTP_PORT", "587"))
-    SMTP_USER     = os.environ.get("SMTP_USER", "")
+
+    SMTP_HOST = os.environ.get("SMTP_HOST", "smtp.gmail.com")
+    SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
+    SMTP_USER = os.environ.get("SMTP_USER", "")
     SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
-    FROM_ADDRESS  = os.environ.get("SMTP_FROM", f"Atelier AI Tutor <{SMTP_USER}>")
+    FROM_ADDRESS = os.environ.get("SMTP_FROM", f"Atelier AI Tutor <{SMTP_USER}>")
 
     if not SMTP_USER or not SMTP_PASSWORD:
         log.warning("smtp_not_configured_skipping_digest")
@@ -55,7 +60,8 @@ def send_progress_digest(self, learner_id: str | None = None):
         import smtplib
         from email.mime.multipart import MIMEMultipart
         from email.mime.text import MIMEText
-        from app.db.mongo import col_learners, col_users, col_quizzes, col_trending_topics
+
+        from app.db.mongo import col_learners, col_quizzes, col_trending_topics, col_users
 
         query = {"id": learner_id} if learner_id else {}
         learners = list(col_learners().find(query, {"_id": 0}).limit(500))
@@ -64,10 +70,14 @@ def send_progress_digest(self, learner_id: str | None = None):
         latest_trend = col_trending_topics().find_one({}, {"_id": 0, "discovered_at": 1}, sort=[("discovered_at", -1)])
         trending = []
         if latest_trend:
-            trending = list(col_trending_topics().find(
-                {"discovered_at": latest_trend["discovered_at"]},
-                {"_id": 0, "domain": 1, "subtopic": 1},
-            ).limit(5))
+            trending = list(
+                col_trending_topics()
+                .find(
+                    {"discovered_at": latest_trend["discovered_at"]},
+                    {"_id": 0, "domain": 1, "subtopic": 1},
+                )
+                .limit(5)
+            )
 
         with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as smtp:
             smtp.ehlo()
@@ -86,23 +96,33 @@ def send_progress_digest(self, learner_id: str | None = None):
                 streak = learner.get("streak", 0)
                 proficiency = learner.get("topic_proficiency_map") or {}
                 mastered = [t for t, e in proficiency.items() if e >= 700]
-                quizzes = list(col_quizzes().find(
-                    {"learner_id": learner["id"], "completed_at": {"$ne": None}},
-                    {"_id": 0, "score": 1},
-                ).sort("completed_at", -1).limit(5))
+                quizzes = list(
+                    col_quizzes()
+                    .find(
+                        {"learner_id": learner["id"], "completed_at": {"$ne": None}},
+                        {"_id": 0, "score": 1},
+                    )
+                    .sort("completed_at", -1)
+                    .limit(5)
+                )
                 avg_score = round(sum(q.get("score", 0) for q in quizzes) / max(len(quizzes), 1) * 100)
 
-                trending_rows = "".join(f"""
+                trending_rows = "".join(
+                    f"""
                     <tr>
                       <td style="padding:10px 0;border-bottom:1px solid #EDE8DF;">
-                        <span style="font-size:13px;font-weight:600;color:#1A1209;">{t['subtopic']}</span>
+                        <span style="font-size:13px;font-weight:600;color:#1A1209;">{t["subtopic"]}</span>
                       </td>
                       <td style="padding:10px 0;border-bottom:1px solid #EDE8DF;text-align:right;">
-                        <span style="font-size:11px;color:#888;background:#F4F0E8;padding:2px 8px;border-radius:20px;">{t['domain']}</span>
+                        <span style="font-size:11px;color:#888;background:#F4F0E8;padding:2px 8px;border-radius:20px;">{t["domain"]}</span>
                       </td>
-                    </tr>""" for t in trending)
+                    </tr>"""
+                    for t in trending
+                )
 
-                mastered_rows = "".join(f"""
+                mastered_rows = (
+                    "".join(
+                        f"""
                     <tr>
                       <td style="padding:8px 0;border-bottom:1px solid #EDE8DF;">
                         <table cellpadding="0" cellspacing="0" style="width:100%"><tr>
@@ -113,27 +133,35 @@ def send_progress_digest(self, learner_id: str | None = None):
                           <td style="text-align:right;font-size:11px;color:#3D7A5E;font-weight:600;">Mastered</td>
                         </tr></table>
                       </td>
-                    </tr>""" for t in mastered[:5]) or """
+                    </tr>"""
+                        for t in mastered[:5]
+                    )
+                    or """
                     <tr><td style="padding:12px 0;font-size:13px;color:#888;font-style:italic;">
                       Keep going — mastery unlocks at Elo 700.
                     </td></tr>"""
+                )
 
                 # Elo progress bar (capped at 1000)
                 top_topics = sorted(proficiency.items(), key=lambda x: x[1], reverse=True)[:4]
-                progress_rows = "".join(f"""
+                progress_rows = "".join(
+                    f"""
                     <tr><td style="padding:6px 0;">
                       <table cellpadding="0" cellspacing="0" style="width:100%"><tr>
                         <td style="font-size:12px;color:#444;width:160px;white-space:nowrap;overflow:hidden;">{topic[:22]}</td>
                         <td style="padding:0 10px;">
                           <div style="height:5px;background:#EDE8DF;border-radius:3px;overflow:hidden;">
-                            <div style="width:{min(int(elo/10), 100)}%;height:100%;background:{'#2C2416' if elo>=700 else '#A8895A'};border-radius:3px;"></div>
+                            <div style="width:{min(int(elo / 10), 100)}%;height:100%;background:{"#2C2416" if elo >= 700 else "#A8895A"};border-radius:3px;"></div>
                           </div>
                         </td>
                         <td style="font-size:11px;color:#888;text-align:right;white-space:nowrap;">{int(elo)} elo</td>
                       </tr></table>
-                    </td></tr>""" for topic, elo in top_topics)
+                    </td></tr>"""
+                    for topic, elo in top_topics
+                )
 
                 from datetime import datetime as _dt
+
                 week_label = _dt.now().strftime("%B %d, %Y")
 
                 html = f"""<!DOCTYPE html>
@@ -253,8 +281,8 @@ def discover_trending_topics(self):
     """
     log.info("task_discover_trending_topics_start")
     try:
+        from app.db.mongo import col_feed_items, col_trending_topics
         from app.hf.trend_discovery import discover_trends
-        from app.db.mongo import col_trending_topics, col_feed_items
 
         result = asyncio.run(discover_trends())
 

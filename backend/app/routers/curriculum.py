@@ -1,11 +1,12 @@
 import uuid
-import structlog
 from datetime import datetime, timezone
+
+import structlog
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.db.mongo import col_learners, col_curricula
 from app.agents.orchestrator import orchestrator
 from app.auth.jwt import get_current_user_id
+from app.db.mongo import col_curricula, col_learners
 
 router = APIRouter()
 log = structlog.get_logger()
@@ -62,14 +63,16 @@ async def generate_curriculum(user_id: str = Depends(get_current_user_id)):
     )
 
     new_version = learner.get("curriculum_version", 1) + 1
-    col_curricula().insert_one({
-        "id": str(uuid.uuid4()),
-        "learner_id": learner["id"],
-        "version": new_version,
-        "topics": curriculum_path,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-        "is_active": True,
-    })
+    col_curricula().insert_one(
+        {
+            "id": str(uuid.uuid4()),
+            "learner_id": learner["id"],
+            "version": new_version,
+            "topics": curriculum_path,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "is_active": True,
+        }
+    )
     col_learners().update_one(
         {"user_id": user_id},
         {"$set": {"curriculum_version": new_version, "updated_at": datetime.now(timezone.utc).isoformat()}},
@@ -85,6 +88,7 @@ async def get_curriculum_graph(user_id: str = Depends(get_current_user_id)):
     Used for the Progress page dependency visualization.
     """
     from app.prompts.loader import get_curriculum_config
+
     cfg = get_curriculum_config()
     topic_graph: dict[str, list[str]] = cfg.get("topic_graph", {})
     prerequisites: dict[str, list[str]] = cfg.get("prerequisites", {})
@@ -96,18 +100,16 @@ async def get_curriculum_graph(user_id: str = Depends(get_current_user_id)):
     for domain, subtopics in topic_graph.items():
         for st in subtopics:
             elo = proficiency.get(st)
-            nodes.append({
-                "id": st,
-                "domain": domain,
-                "elo": elo,
-                "mastered": elo is not None and elo >= 700,
-                "started": elo is not None,
-            })
+            nodes.append(
+                {
+                    "id": st,
+                    "domain": domain,
+                    "elo": elo,
+                    "mastered": elo is not None and elo >= 700,
+                    "started": elo is not None,
+                }
+            )
 
-    edges = [
-        {"from": prereq, "to": topic}
-        for topic, prereqs in prerequisites.items()
-        for prereq in prereqs
-    ]
+    edges = [{"from": prereq, "to": topic} for topic, prereqs in prerequisites.items() for prereq in prereqs]
 
     return {"nodes": nodes, "edges": edges}

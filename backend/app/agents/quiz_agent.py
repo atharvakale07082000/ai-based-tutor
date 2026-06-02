@@ -87,7 +87,9 @@ async def quiz_agent_node(state: AgentState) -> dict:
                     f"at Bloom '{bloom_level}' (Elo {int(elo)}). Awaiting human submission."
                 ),
             }
-            span.update(output={"question_count": len(questions), "bloom_level": bloom_level, "difficulty": difficulty_score})
+            span.update(
+                output={"question_count": len(questions), "bloom_level": bloom_level, "difficulty": difficulty_score}
+            )
             log.info("quiz_agent_done", question_count=len(questions))
             return {
                 "quiz_questions": questions,
@@ -100,4 +102,8 @@ async def quiz_agent_node(state: AgentState) -> dict:
         except Exception as e:
             log.error("quiz_agent_error", error=str(e))
             span.update(output={"error": str(e)})
-            return {"quiz_questions": [], "error": str(e), "agent_reports": [{"agent": "quiz", "summary": f"Failed: {e}"}]}
+            return {
+                "quiz_questions": [],
+                "error": str(e),
+                "agent_reports": [{"agent": "quiz", "summary": f"Failed: {e}"}],
+            }

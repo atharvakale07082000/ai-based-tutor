@@ -2,9 +2,11 @@
 Loads YAML prompt files from the prompts/ directory.
 Returned dicts are deep-copied on each call so callers can mutate them freely.
 """
+
 import copy
-from pathlib import Path
 from functools import lru_cache
+from pathlib import Path
+
 import yaml
 
 _PROMPTS_DIR = Path(__file__).parent

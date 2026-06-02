@@ -8,6 +8,7 @@ Each agent subclass declares:
 
 Then overrides nothing — the loop is generic.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -57,37 +58,32 @@ class BaseAgent:
 
     async def decide_step(self, messages: list[dict]) -> dict:
         """Non-streaming call to Qwen2.5-7B-Instruct via Together. Returns parsed JSON dict."""
+        from app.hf.client import hf_chat_completion_with_resilience
+        from app.resilience import CircuitOpenError
+
         model_cfg = HF_MODELS["DOUBT_SOLVER"]
         provider = model_cfg["provider"]
         model_id = model_cfg["model_id"]
 
         try:
-            client = get_hf_client(provider=provider)
-
             async with _HF_SEMAPHORE:
-                response = await asyncio.wait_for(
-                    asyncio.to_thread(
-                        client.chat_completion,
-                        model=model_id,
-                        messages=messages,
-                        max_tokens=300,
-                        temperature=0.1,
-                    ),
-                    timeout=20.0,
+                raw = await hf_chat_completion_with_resilience(
+                    provider=provider,
+                    model_id=model_id,
+                    messages=messages,
+                    max_tokens=300,
+                    temperature=0.1,
+                    timeout_s=20.0,
                 )
-            record_auth_success(provider)
-            raw = response.choices[0].message.content.strip()
 
-            # Strip markdown fences if present
             cleaned = re.sub(r"```(?:json)?", "", raw).strip().rstrip("`").strip()
-            result = json.loads(cleaned)
-            return result
+            return json.loads(cleaned)
 
-        except asyncio.TimeoutError:
-            log.error("base_agent_decide_timeout", agent=self.name)
+        except (asyncio.TimeoutError, CircuitOpenError) as e:
+            log.error("base_agent_decide_timeout", agent=self.name, error=str(e)[:100])
             return {
-                "thought": "Request timed out",
-                "final_answer": "I'm sorry, the reasoning step timed out. Please try again.",
+                "thought": "Request timed out or service unavailable",
+                "final_answer": "I'm sorry, the service is temporarily unavailable. Please try again.",
                 "side_effects": [],
             }
         except json.JSONDecodeError as e:
@@ -122,8 +118,7 @@ class BaseAgent:
             {
                 "role": "system",
                 "content": (
-                    f"You are {self.name}. Deliver this answer clearly and concisely, "
-                    "using markdown formatting."
+                    f"You are {self.name}. Deliver this answer clearly and concisely, using markdown formatting."
                 ),
             },
             {"role": "user", "content": final_answer},
@@ -233,14 +228,18 @@ class BaseAgent:
                 }
 
                 # Append assistant message (thought + action) and observation to messages
-                messages.append({
-                    "role": "assistant",
-                    "content": json.dumps({"thought": thought, "action": action}),
-                })
-                messages.append({
-                    "role": "user",
-                    "content": f"Observation from {tool_name}: {json.dumps(result_payload, default=str)}",
-                })
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": json.dumps({"thought": thought, "action": action}),
+                    }
+                )
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": f"Observation from {tool_name}: {json.dumps(result_payload, default=str)}",
+                    }
+                )
 
             elif "final_answer" in step_result:
                 final_answer = step_result["final_answer"]
@@ -261,11 +260,15 @@ class BaseAgent:
 
             else:
                 # Unexpected response shape — treat as final answer with error
-                log.warning("base_agent_unexpected_step_shape", agent=self.name, step=step_num, keys=list(step_result.keys()))
-                messages.append({
-                    "role": "assistant",
-                    "content": json.dumps(step_result),
-                })
+                log.warning(
+                    "base_agent_unexpected_step_shape", agent=self.name, step=step_num, keys=list(step_result.keys())
+                )
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": json.dumps(step_result),
+                    }
+                )
 
         # Exhausted max_steps without a final_answer
         yield {"type": "error", "message": "Agent reached max steps without completing."}

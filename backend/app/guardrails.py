@@ -6,9 +6,12 @@ Design principles:
 - Layered: structural checks first, semantic last
 - Non-blocking: returns GuardrailResult so callers decide how to handle failures
 """
+
 from __future__ import annotations
-from dataclasses import dataclass, field
+
 import re
+from dataclasses import dataclass
+
 import structlog
 
 from app.prompts.loader import get_guardrails_config
@@ -38,6 +41,7 @@ def _blocked_patterns() -> list[str]:
 
 
 # ── Input guardrails ──────────────────────────────────────────────────────────
+
 
 def check_input(text: str, *, context: str = "") -> GuardrailResult:
     """
@@ -70,6 +74,7 @@ def check_input(text: str, *, context: str = "") -> GuardrailResult:
 
 # ── Output guardrails ─────────────────────────────────────────────────────────
 
+
 def check_output(text: str, *, context: str = "") -> GuardrailResult:
     """Validate LLM output before returning to the caller."""
     cfg = _config()["output"]
@@ -89,6 +94,7 @@ def check_output(text: str, *, context: str = "") -> GuardrailResult:
 
 
 # ── Quiz-specific guardrails ──────────────────────────────────────────────────
+
 
 def check_quiz_question(q: dict, *, bloom_level: str = "") -> GuardrailResult:
     """
@@ -131,6 +137,7 @@ def sanitize_quiz_batch(questions: list[dict], bloom_level: str) -> list[dict]:
 
 
 # ── Topic grounding check ─────────────────────────────────────────────────────
+
 
 def check_topic_grounding(text: str, topic: str) -> GuardrailResult:
     """

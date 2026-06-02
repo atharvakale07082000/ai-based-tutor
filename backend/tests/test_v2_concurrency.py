@@ -8,6 +8,7 @@ Validates that the system handles high concurrency without failures:
 
 All LLM and DB calls are mocked; this tests async infrastructure, not inference.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -18,7 +19,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import pytest_asyncio
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
 
 # ── Shared test query set (varies agent targets) ──────────────────────────────
 
@@ -68,6 +69,7 @@ class ConcurrentResult:
 
 # ── Mock helpers (same as stress test) ───────────────────────────────────────
 
+
 class MockToolResult:
     def __init__(self, name: str, args: dict):
         self.name = name
@@ -106,10 +108,12 @@ async def _mock_stream_final_answer(self, final_answer, messages):
 async def _mock_doubt_stream(*args, **kwargs):
     async def _gen():
         yield "Concurrent doubt answer."
+
     return _gen()
 
 
 # ── Concurrent streaming function ─────────────────────────────────────────────
+
 
 async def _run_single_request(client: AsyncClient, query: str) -> ConcurrentResult:
     start = time.monotonic()
@@ -146,13 +150,17 @@ async def _run_single_request(client: AsyncClient, query: str) -> ConcurrentResu
         if types[-1] not in ("done", "error"):
             return ConcurrentResult(query=query, passed=False, latency_ms=latency_ms, error=f"Last={types[-1]!r}")
         if types[-1] == "error":
-            return ConcurrentResult(query=query, passed=False, latency_ms=latency_ms, error=events[-1].get("message", ""))
+            return ConcurrentResult(
+                query=query, passed=False, latency_ms=latency_ms, error=events[-1].get("message", "")
+            )
         if "token" not in types:
             return ConcurrentResult(query=query, passed=False, latency_ms=latency_ms, error="No token events")
 
         token_count = types.count("token")
         routed_to = events[0].get("agent", "")
-        return ConcurrentResult(query=query, passed=True, latency_ms=latency_ms, routed_to=routed_to, token_count=token_count)
+        return ConcurrentResult(
+            query=query, passed=True, latency_ms=latency_ms, routed_to=routed_to, token_count=token_count
+        )
 
     except Exception as exc:
         latency_ms = int((time.monotonic() - start) * 1000)
@@ -161,11 +169,12 @@ async def _run_single_request(client: AsyncClient, query: str) -> ConcurrentResu
 
 # ── Fixture ───────────────────────────────────────────────────────────────────
 
+
 @pytest_asyncio.fixture
 async def concurrent_v2_client():
-    from app.main import app
-    from app.auth.jwt import get_current_user_id
     from app.agents_v2.base import BaseAgent
+    from app.auth.jwt import get_current_user_id
+    from app.main import app
     from app.tools import tool_registry
 
     app.dependency_overrides[get_current_user_id] = lambda: "test-user-id"
@@ -198,6 +207,7 @@ async def concurrent_v2_client():
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 
+
 class TestConcurrency50Users:
     """50 simultaneous requests — warm-up tier."""
 
@@ -208,9 +218,7 @@ class TestConcurrency50Users:
         queries = [_QUERIES_POOL[i % len(_QUERIES_POOL)] for i in range(n)]
 
         start = time.monotonic()
-        results = await asyncio.gather(
-            *[_run_single_request(concurrent_v2_client, q) for q in queries]
-        )
+        results = await asyncio.gather(*[_run_single_request(concurrent_v2_client, q) for q in queries])
         wall_ms = int((time.monotonic() - start) * 1000)
 
         passed = [r for r in results if r.passed]
@@ -218,8 +226,10 @@ class TestConcurrency50Users:
         avg_latency = sum(r.latency_ms for r in results) / n
         p95_latency = sorted(r.latency_ms for r in results)[int(n * 0.95)]
 
-        print(f"\n[50-user] Passed: {len(passed)}/{n} | Wall: {wall_ms}ms | "
-              f"Avg: {avg_latency:.0f}ms | P95: {p95_latency}ms")
+        print(
+            f"\n[50-user] Passed: {len(passed)}/{n} | Wall: {wall_ms}ms | "
+            f"Avg: {avg_latency:.0f}ms | P95: {p95_latency}ms"
+        )
 
         if failed:
             for r in failed[:5]:
@@ -238,9 +248,7 @@ class TestConcurrency200Users:
         queries = [_QUERIES_POOL[i % len(_QUERIES_POOL)] for i in range(n)]
 
         start = time.monotonic()
-        results = await asyncio.gather(
-            *[_run_single_request(concurrent_v2_client, q) for q in queries]
-        )
+        results = await asyncio.gather(*[_run_single_request(concurrent_v2_client, q) for q in queries])
         wall_ms = int((time.monotonic() - start) * 1000)
 
         passed = [r for r in results if r.passed]
@@ -261,7 +269,7 @@ class TestConcurrency200Users:
         print(f"  Agent distribution: {dict(sorted(agent_counts.items()))}")
 
         if failed:
-            print(f"\n  First 5 failures:")
+            print("\n  First 5 failures:")
             for r in failed[:5]:
                 print(f"    {r.query!r} → {r.error}")
 
@@ -280,9 +288,7 @@ class TestConcurrency200Users:
         queries = [_QUERIES_POOL[i % len(_QUERIES_POOL)] for i in range(n)]
 
         start = time.monotonic()
-        results = await asyncio.gather(
-            *[_run_single_request(concurrent_v2_client, q) for q in queries]
-        )
+        results = await asyncio.gather(*[_run_single_request(concurrent_v2_client, q) for q in queries])
         wall_s = time.monotonic() - start
         throughput = n / wall_s
 
@@ -301,6 +307,7 @@ class TestSemaphoreBehavior:
     async def test_semaphore_allows_40_concurrent(self, concurrent_v2_client):
         """Fire 40 requests simultaneously — all should get semaphore slots immediately."""
         from app.agents_v2.base import _HF_SEMAPHORE
+
         assert _HF_SEMAPHORE._value == 40, f"Semaphore initial value should be 40, got {_HF_SEMAPHORE._value}"
 
     @pytest.mark.asyncio
@@ -310,15 +317,12 @@ class TestSemaphoreBehavior:
         n = 100
         queries = [_QUERIES_POOL[i % len(_QUERIES_POOL)] for i in range(n)]
 
-        results = await asyncio.gather(
-            *[_run_single_request(concurrent_v2_client, q) for q in queries]
-        )
+        results = await asyncio.gather(*[_run_single_request(concurrent_v2_client, q) for q in queries])
 
         failed = [r for r in results if not r.passed]
         passed_count = n - len(failed)
         print(f"\n[Semaphore-100] Passed: {passed_count}/{n}")
 
-        assert len(failed) == 0, (
-            f"{len(failed)}/{n} requests failed under semaphore:\n"
-            + "\n".join(f"  {r.query!r}: {r.error}" for r in failed[:5])
+        assert len(failed) == 0, f"{len(failed)}/{n} requests failed under semaphore:\n" + "\n".join(
+            f"  {r.query!r}: {r.error}" for r in failed[:5]
         )

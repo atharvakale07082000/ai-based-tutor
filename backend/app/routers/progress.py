@@ -1,12 +1,13 @@
 import uuid
+from datetime import date, datetime, timezone
+
 import structlog
-from datetime import datetime, timezone, date
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from app.db.mongo import col_learners, col_progress, col_quizzes, col_doubts, col_study_sessions
 from app.auth.jwt import get_current_user_id
+from app.db.mongo import col_doubts, col_learners, col_progress, col_quizzes, col_study_sessions
 from app.hf.spaced_repetition import compute_due_topics
 
 router = APIRouter()
@@ -18,7 +19,7 @@ PROJ = {"_id": 0}
 class StudySessionRequest(BaseModel):
     minutes: int
     topic: str = "general"
-    activity: str = "study"   # "pomodoro" | "quiz" | "reading" | "study"
+    activity: str = "study"  # "pomodoro" | "quiz" | "reading" | "study"
 
 
 @router.get("")
@@ -27,10 +28,7 @@ async def get_progress(user_id: str = Depends(get_current_user_id)):
     if not learner:
         return {"topic_proficiency": {}, "history": []}
 
-    records = list(
-        col_progress().find({"learner_id": learner["id"]}, PROJ)
-        .sort("recorded_at", 1).limit(100)
-    )
+    records = list(col_progress().find({"learner_id": learner["id"]}, PROJ).sort("recorded_at", 1).limit(100))
     quizzes = list(
         col_quizzes().find(
             {"learner_id": learner["id"], "completed_at": {"$ne": None}},
@@ -56,8 +54,7 @@ async def get_progress(user_id: str = Depends(get_current_user_id)):
         "learner_id": learner["id"],
         "topic_proficiency": learner.get("topic_proficiency_map") or {},
         "history": [
-            {"topic": r["topic"], "elo_score": r["elo_score"], "recorded_at": r.get("recorded_at")}
-            for r in records
+            {"topic": r["topic"], "elo_score": r["elo_score"], "recorded_at": r.get("recorded_at")} for r in records
         ],
         "total_study_minutes": total_study_minutes,
         "quiz_accuracy": quiz_accuracy,
@@ -80,10 +77,12 @@ async def get_due_topics(user_id: str = Depends(get_current_user_id)):
 
     proficiency = learner.get("topic_proficiency_map") or {}
     quizzes = list(
-        col_quizzes().find(
+        col_quizzes()
+        .find(
             {"learner_id": learner["id"], "completed_at": {"$ne": None}},
             {"_id": 0, "topic": 1, "completed_at": 1},
-        ).sort("completed_at", -1)
+        )
+        .sort("completed_at", -1)
     )
 
     last_quiz_dates: dict[str, str] = {}
@@ -110,14 +109,16 @@ async def record_study_session(
 
     now = datetime.now(timezone.utc).isoformat()
 
-    col_study_sessions().insert_one({
-        "id": str(uuid.uuid4()),
-        "learner_id": learner["id"],
-        "topic": body.topic,
-        "minutes": max(1, body.minutes),
-        "activity": body.activity,
-        "recorded_at": now,
-    })
+    col_study_sessions().insert_one(
+        {
+            "id": str(uuid.uuid4()),
+            "learner_id": learner["id"],
+            "topic": body.topic,
+            "minutes": max(1, body.minutes),
+            "activity": body.activity,
+            "recorded_at": now,
+        }
+    )
 
     # Award XP: 5 XP per minute, capped at 50 per session
     xp_earned = min(50, max(1, body.minutes) * 5)
@@ -142,11 +143,11 @@ def _update_xp_and_streak(user_id: str, xp_delta: int, now_iso: str) -> None:
             last_active = date.fromisoformat(last_active_str)
             delta_days = (today - last_active).days
             if delta_days == 0:
-                pass                   # same day, no streak change
+                pass  # same day, no streak change
             elif delta_days == 1:
-                streak += 1            # consecutive day
+                streak += 1  # consecutive day
             else:
-                streak = 1             # streak broken
+                streak = 1  # streak broken
         except ValueError:
             streak = 1
     else:

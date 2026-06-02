@@ -12,11 +12,13 @@ Routing options returned by the supervisor:
   doubt       → answer a learner question (then waits for human)
   FINISH      → session complete, exit graph
 """
+
 import json
 import re
+
 import structlog
 
-from app.agents.state import AgentState, MASTERY_THRESHOLD_DEFAULT
+from app.agents.state import MASTERY_THRESHOLD_DEFAULT, AgentState
 from app.tracing import get_tracer
 
 log = structlog.get_logger()
@@ -93,8 +95,7 @@ async def supervisor_node(state: AgentState) -> dict:
         proficiency = state.get("topic_proficiency") or {}
         mastery_threshold = state.get("mastery_threshold") or MASTERY_THRESHOLD_DEFAULT
         all_mastered = curriculum and all(
-            proficiency.get(item["subtopic"], 0) >= mastery_threshold
-            for item in curriculum
+            proficiency.get(item["subtopic"], 0) >= mastery_threshold for item in curriculum
         )
         if all_mastered:
             log.info("supervisor_all_mastered")
@@ -139,10 +140,7 @@ async def supervisor_node(state: AgentState) -> dict:
             # Negative mood → soften Bloom level to "remember" on the same topic
             progress_delta = state.get("progress_delta") or {}
             current_topic = update.get("current_topic") or state.get("current_topic", "")
-            if (
-                progress_delta.get("mood") == "NEGATIVE"
-                and progress_delta.get("topic") == current_topic
-            ):
+            if progress_delta.get("mood") == "NEGATIVE" and progress_delta.get("topic") == current_topic:
                 update["bloom_level"] = "remember"
                 log.info("supervisor_bloom_softened", topic=current_topic)
 
@@ -152,42 +150,26 @@ async def supervisor_node(state: AgentState) -> dict:
 async def _llm_decide(state: AgentState) -> tuple[str, str]:
     """Ask the LLM which agent to run next. Falls back to rule-based on any failure."""
     try:
-        from app.hf.client import get_hf_client, record_auth_failure, record_auth_success
+        from app.hf.client import hf_chat_completion_with_resilience
 
-        client = get_hf_client("together")
         state_summary = _build_state_summary(state)
         user_msg = f"Current state:\n{state_summary}\n\nWhat should run next?"
 
-        import asyncio
-        response = await asyncio.wait_for(
-            asyncio.to_thread(
-                client.chat_completion,
-                model="Qwen/Qwen2.5-7B-Instruct",
-                messages=[
-                    {"role": "system", "content": _SYSTEM_PROMPT},
-                    {"role": "user", "content": user_msg},
-                ],
-                max_tokens=80,
-                temperature=0.1,
-            ),
-            timeout=20.0,
+        raw = await hf_chat_completion_with_resilience(
+            provider="together",
+            model_id="Qwen/Qwen2.5-7B-Instruct",
+            messages=[
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user", "content": user_msg},
+            ],
+            max_tokens=80,
+            temperature=0.1,
+            timeout_s=20.0,
         )
-        record_auth_success("together")
-        raw = response.choices[0].message.content.strip()
         return _parse_decision(raw)
 
-    except asyncio.TimeoutError:
-        log.warning("supervisor_llm_timeout")
-        return _rule_based_fallback(state)
     except Exception as e:
-        err = str(e)
-        if "401" in err or "403" in err:
-            try:
-                from app.hf.client import record_auth_failure
-                record_auth_failure("together")
-            except Exception:
-                pass
-        log.warning("supervisor_llm_failed", error=err[:200])
+        log.warning("supervisor_llm_failed", error=str(e)[:200])
         return _rule_based_fallback(state)
 
 

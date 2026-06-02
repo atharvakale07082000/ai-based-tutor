@@ -1,22 +1,24 @@
 """Course Planning & AI Interview router."""
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from app.auth.jwt import get_current_user_id
 from app.agents.course_planner import (
+    complete_interview,
     create_course_plan,
+    evaluate_answer,
+    get_interview,
     get_plan,
     list_plans,
     start_interview,
-    evaluate_answer,
-    complete_interview,
-    get_interview,
 )
+from app.auth.jwt import get_current_user_id
 
 router = APIRouter()
 
 
 # ─── Schemas ──────────────────────────────────────────────────────────────────
+
 
 class PlanRequest(BaseModel):
     goal: str
@@ -28,6 +30,7 @@ class AnswerRequest(BaseModel):
 
 
 # ─── Course plan endpoints ────────────────────────────────────────────────────
+
 
 @router.post("/plan")
 async def plan_course(body: PlanRequest, user_id: str = Depends(get_current_user_id)):
@@ -54,6 +57,7 @@ async def get_course_plan(plan_id: str, user_id: str = Depends(get_current_user_
 
 
 # ─── Interview endpoints ──────────────────────────────────────────────────────
+
 
 @router.post("/{plan_id}/modules/{module_id}/interview/start")
 async def start_module_interview(
