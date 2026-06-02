@@ -6,13 +6,14 @@ Flow:
   2. HF LLM classifies + deduplicates raw results into canonical trending topics
   3. Returns TrendResult (topics for curriculum + feed items with URLs)
 """
+
 from __future__ import annotations
 
 import asyncio
 import json
 import re
 import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import TypedDict
 
 import structlog
@@ -26,17 +27,17 @@ log = structlog.get_logger()
 # ── Domain search queries ──────────────────────────────────────────────────────
 
 _DOMAIN_QUERIES: list[tuple[str, str]] = [
-    ("Data Engineering",  "data engineering trends tools 2025"),
-    ("Data Engineering",  "apache kafka spark flink dbt tutorial 2025"),
-    ("DevOps",            "devops platform engineering tools 2025"),
-    ("DevOps",            "kubernetes gitops ci cd best practices 2025"),
-    ("Cloud Computing",   "cloud architecture aws gcp azure trends 2025"),
-    ("Cloud Computing",   "serverless edge computing cloud native 2025"),
-    ("Machine Learning",  "machine learning MLOps LLMOps 2025"),
-    ("Deep Learning",     "deep learning computer vision NLP research 2025"),
-    ("Data Science",      "data science analytics python tools 2025"),
-    ("Cybersecurity",     "cybersecurity zero trust threat detection 2025"),
-    ("AI Engineering",    "AI agents RAG vector database LLM deployment 2025"),
+    ("Data Engineering", "data engineering trends tools 2025"),
+    ("Data Engineering", "apache kafka spark flink dbt tutorial 2025"),
+    ("DevOps", "devops platform engineering tools 2025"),
+    ("DevOps", "kubernetes gitops ci cd best practices 2025"),
+    ("Cloud Computing", "cloud architecture aws gcp azure trends 2025"),
+    ("Cloud Computing", "serverless edge computing cloud native 2025"),
+    ("Machine Learning", "machine learning MLOps LLMOps 2025"),
+    ("Deep Learning", "deep learning computer vision NLP research 2025"),
+    ("Data Science", "data science analytics python tools 2025"),
+    ("Cybersecurity", "cybersecurity zero trust threat detection 2025"),
+    ("AI Engineering", "AI agents RAG vector database LLM deployment 2025"),
     ("Software Engineering", "software architecture microservices system design 2025"),
 ]
 
@@ -60,13 +61,13 @@ class FeedItem(TypedDict):
     source: str
     domain: str
     subtopic: str
-    content_type: str          # "article" | "video" | "course" | "news"
+    content_type: str  # "article" | "video" | "course" | "news"
     is_trending: bool
     is_ai_recommended: bool
     estimated_minutes: int
     difficulty: float
     discovered_at: str
-    expires_at: str            # 24h window
+    expires_at: str  # 24h window
 
 
 class TrendResult(TypedDict):
@@ -102,6 +103,7 @@ def _estimate_minutes(body: str) -> int:
 def _extract_source(url: str) -> str:
     try:
         from urllib.parse import urlparse
+
         host = urlparse(url).netloc
         return host.replace("www.", "").split(".")[0]
     except Exception:
@@ -152,7 +154,7 @@ Rules:
         )
         text = resp.choices[0].message.content.strip()
         # Extract JSON array
-        match = re.search(r'\[.*\]', text, re.DOTALL)
+        match = re.search(r"\[.*\]", text, re.DOTALL)
         if match:
             return json.loads(match.group())
     except Exception as e:
@@ -174,10 +176,7 @@ async def discover_trends() -> TrendResult:
     log.info("trend_discovery_start")
 
     # ── Parallel DDGS searches ─────────────────────────────────────────────────
-    tasks = [
-        asyncio.to_thread(_search_one, query, 5)
-        for _, query in _DOMAIN_QUERIES
-    ]
+    tasks = [asyncio.to_thread(_search_one, query, 5) for _, query in _DOMAIN_QUERIES]
     all_results = await asyncio.gather(*tasks, return_exceptions=True)
 
     # Flatten + tag with domain
@@ -198,22 +197,24 @@ async def discover_trends() -> TrendResult:
             body = r.get("body", "")
             raw_items.append({"domain": domain, "title": title, "body": body, "url": url})
 
-            feed_items.append(FeedItem(
-                id=str(uuid.uuid4()),
-                title=title[:140],
-                summary=body[:300] if body else title,
-                url=url,
-                source=_extract_source(url),
-                domain=domain,
-                subtopic="",          # filled in after distillation
-                content_type=_infer_type(url, title),
-                is_trending=True,
-                is_ai_recommended=True,
-                estimated_minutes=_estimate_minutes(body),
-                difficulty=0.5,
-                discovered_at=now_iso,
-                expires_at=expires_iso,
-            ))
+            feed_items.append(
+                FeedItem(
+                    id=str(uuid.uuid4()),
+                    title=title[:140],
+                    summary=body[:300] if body else title,
+                    url=url,
+                    source=_extract_source(url),
+                    domain=domain,
+                    subtopic="",  # filled in after distillation
+                    content_type=_infer_type(url, title),
+                    is_trending=True,
+                    is_ai_recommended=True,
+                    estimated_minutes=_estimate_minutes(body),
+                    difficulty=0.5,
+                    discovered_at=now_iso,
+                    expires_at=expires_iso,
+                )
+            )
 
     log.info("trend_discovery_raw_count", count=len(raw_items))
 
@@ -251,28 +252,104 @@ async def discover_trends() -> TrendResult:
 def _fallback_topics() -> list[dict]:
     """Hardcoded fallback if LLM call fails."""
     return [
-        {"domain": "Data Engineering",    "subtopic": "Apache Kafka Streams",        "description": "Real-time event streaming with Kafka"},
-        {"domain": "Data Engineering",    "subtopic": "dbt (Data Build Tool)",        "description": "Analytics engineering with dbt"},
-        {"domain": "Data Engineering",    "subtopic": "Apache Iceberg",               "description": "Open table format for huge analytic datasets"},
-        {"domain": "Data Engineering",    "subtopic": "Medallion Architecture",       "description": "Bronze/Silver/Gold data lake patterns"},
-        {"domain": "DevOps",              "subtopic": "Platform Engineering",         "description": "Internal developer platforms and golden paths"},
-        {"domain": "DevOps",              "subtopic": "GitOps with ArgoCD",           "description": "Git-driven Kubernetes deployments"},
-        {"domain": "DevOps",              "subtopic": "OpenTelemetry Observability",  "description": "Unified traces, metrics, logs"},
-        {"domain": "DevOps",              "subtopic": "Helm Chart Development",       "description": "Kubernetes package management"},
-        {"domain": "Cloud Computing",     "subtopic": "Serverless Containers",        "description": "AWS Fargate, Cloud Run, and beyond"},
-        {"domain": "Cloud Computing",     "subtopic": "FinOps & Cloud Cost",          "description": "Managing and optimizing cloud spend"},
-        {"domain": "Cloud Computing",     "subtopic": "Multi-Cloud Networking",       "description": "Connecting workloads across cloud providers"},
-        {"domain": "AI Engineering",      "subtopic": "RAG with Vector Databases",    "description": "Retrieval-augmented generation pipelines"},
-        {"domain": "AI Engineering",      "subtopic": "LLM Evaluation & Benchmarks", "description": "Testing and scoring LLM outputs"},
-        {"domain": "AI Engineering",      "subtopic": "AI Agent Orchestration",       "description": "LangGraph, AutoGen, CrewAI patterns"},
-        {"domain": "AI Engineering",      "subtopic": "Model Quantization",           "description": "Running LLMs on edge devices"},
-        {"domain": "Machine Learning",    "subtopic": "MLflow & Experiment Tracking", "description": "ML lifecycle and model registry"},
-        {"domain": "Machine Learning",    "subtopic": "Feature Stores",               "description": "Feast, Tecton — sharing ML features"},
-        {"domain": "Deep Learning",       "subtopic": "Vision Transformers (ViT)",    "description": "Attention-based vision models"},
-        {"domain": "Deep Learning",       "subtopic": "Multimodal LLMs",              "description": "Vision-language models like GPT-4V"},
-        {"domain": "Data Science",        "subtopic": "Causal Inference",             "description": "DoWhy, causal graphs, counterfactuals"},
-        {"domain": "Data Science",        "subtopic": "Polars DataFrames",            "description": "Blazing-fast Rust-based dataframes"},
-        {"domain": "Cybersecurity",       "subtopic": "Zero Trust Architecture",      "description": "Never trust, always verify access model"},
-        {"domain": "Cybersecurity",       "subtopic": "Prompt Injection Defense",     "description": "Securing LLM-powered applications"},
-        {"domain": "Software Engineering","subtopic": "Event-Driven Architecture",    "description": "CQRS, Event Sourcing, Saga patterns"},
+        {
+            "domain": "Data Engineering",
+            "subtopic": "Apache Kafka Streams",
+            "description": "Real-time event streaming with Kafka",
+        },
+        {
+            "domain": "Data Engineering",
+            "subtopic": "dbt (Data Build Tool)",
+            "description": "Analytics engineering with dbt",
+        },
+        {
+            "domain": "Data Engineering",
+            "subtopic": "Apache Iceberg",
+            "description": "Open table format for huge analytic datasets",
+        },
+        {
+            "domain": "Data Engineering",
+            "subtopic": "Medallion Architecture",
+            "description": "Bronze/Silver/Gold data lake patterns",
+        },
+        {
+            "domain": "DevOps",
+            "subtopic": "Platform Engineering",
+            "description": "Internal developer platforms and golden paths",
+        },
+        {"domain": "DevOps", "subtopic": "GitOps with ArgoCD", "description": "Git-driven Kubernetes deployments"},
+        {"domain": "DevOps", "subtopic": "OpenTelemetry Observability", "description": "Unified traces, metrics, logs"},
+        {"domain": "DevOps", "subtopic": "Helm Chart Development", "description": "Kubernetes package management"},
+        {
+            "domain": "Cloud Computing",
+            "subtopic": "Serverless Containers",
+            "description": "AWS Fargate, Cloud Run, and beyond",
+        },
+        {
+            "domain": "Cloud Computing",
+            "subtopic": "FinOps & Cloud Cost",
+            "description": "Managing and optimizing cloud spend",
+        },
+        {
+            "domain": "Cloud Computing",
+            "subtopic": "Multi-Cloud Networking",
+            "description": "Connecting workloads across cloud providers",
+        },
+        {
+            "domain": "AI Engineering",
+            "subtopic": "RAG with Vector Databases",
+            "description": "Retrieval-augmented generation pipelines",
+        },
+        {
+            "domain": "AI Engineering",
+            "subtopic": "LLM Evaluation & Benchmarks",
+            "description": "Testing and scoring LLM outputs",
+        },
+        {
+            "domain": "AI Engineering",
+            "subtopic": "AI Agent Orchestration",
+            "description": "LangGraph, AutoGen, CrewAI patterns",
+        },
+        {"domain": "AI Engineering", "subtopic": "Model Quantization", "description": "Running LLMs on edge devices"},
+        {
+            "domain": "Machine Learning",
+            "subtopic": "MLflow & Experiment Tracking",
+            "description": "ML lifecycle and model registry",
+        },
+        {
+            "domain": "Machine Learning",
+            "subtopic": "Feature Stores",
+            "description": "Feast, Tecton — sharing ML features",
+        },
+        {
+            "domain": "Deep Learning",
+            "subtopic": "Vision Transformers (ViT)",
+            "description": "Attention-based vision models",
+        },
+        {"domain": "Deep Learning", "subtopic": "Multimodal LLMs", "description": "Vision-language models like GPT-4V"},
+        {
+            "domain": "Data Science",
+            "subtopic": "Causal Inference",
+            "description": "DoWhy, causal graphs, counterfactuals",
+        },
+        {
+            "domain": "Data Science",
+            "subtopic": "Polars DataFrames",
+            "description": "Blazing-fast Rust-based dataframes",
+        },
+        {
+            "domain": "Cybersecurity",
+            "subtopic": "Zero Trust Architecture",
+            "description": "Never trust, always verify access model",
+        },
+        {
+            "domain": "Cybersecurity",
+            "subtopic": "Prompt Injection Defense",
+            "description": "Securing LLM-powered applications",
+        },
+        {
+            "domain": "Software Engineering",
+            "subtopic": "Event-Driven Architecture",
+            "description": "CQRS, Event Sourcing, Saga patterns",
+        },
     ]

@@ -1,4 +1,5 @@
 from typing import Literal
+
 from pydantic import BaseModel, Field
 
 BloomLevel = Literal["remember", "understand", "apply", "analyze", "evaluate", "create"]

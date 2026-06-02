@@ -3,6 +3,7 @@ Anonymous Leaderboard — top learners by XP with current user's rank.
 
 GET /leaderboard — top 10 + caller's rank
 """
+
 from __future__ import annotations
 
 import structlog
@@ -39,18 +40,16 @@ def _anonymize(learner: dict, is_self: bool) -> dict:
 @router.get("")
 async def get_leaderboard(user_id: str = Depends(get_current_user_id)):
     """Return top 10 learners by XP + the caller's rank (even if outside top 10)."""
-    all_learners = list(
-        col_learners().find({}, PROJ).sort("xp", -1)
-    )
+    all_learners = list(col_learners().find({}, PROJ).sort("xp", -1))
 
     top_10 = all_learners[:10]
     caller_rank = next(
-        (i + 1 for i, l in enumerate(all_learners) if l.get("user_id") == user_id),
+        (i + 1 for i, learner in enumerate(all_learners) if learner.get("user_id") == user_id),
         None,
     )
-    caller = next((l for l in all_learners if l.get("user_id") == user_id), None)
+    caller = next((learner for learner in all_learners if learner.get("user_id") == user_id), None)
 
-    board = [_anonymize(l, l.get("user_id") == user_id) for l in top_10]
+    board = [_anonymize(learner, learner.get("user_id") == user_id) for learner in top_10]
     for i, entry in enumerate(board):
         entry["rank"] = i + 1
 

@@ -1,6 +1,6 @@
 import structlog
-from langchain_core.messages import HumanMessage
 
+from app.agents.quiz_agent import get_bloom_level
 from app.agents.state import AgentState
 from app.agents.tools import call_tool
 from app.guardrails import check_input, check_output, check_topic_grounding
@@ -60,8 +60,10 @@ async def doubt_agent_node(state: AgentState) -> dict:
             }
         question = guard.sanitized  # use sanitized (possibly truncated) version
 
-        # ── Topic grounding via classify_topic sub-agent ──────────────────────
-        bloom_level = ""
+        # ── Topic grounding + bloom calibration via classify_topic ──────────────
+        proficiency = state.get("topic_proficiency", {})
+        # Start from current topic's Elo so we have a sensible default
+        bloom_level = get_bloom_level(proficiency.get(context, 500.0))
         try:
             classification = await call_tool("classify_topic", text=question)
             detected_domain = classification["labels"][0] if classification["labels"] else context
@@ -71,6 +73,9 @@ async def doubt_agent_node(state: AgentState) -> dict:
                     expected=context,
                     detected=detected_domain,
                 )
+            # Refine bloom_level using the detected domain's proficiency so the
+            # explanation depth matches what the learner has actually mastered.
+            bloom_level = get_bloom_level(proficiency.get(detected_domain, proficiency.get(context, 500.0)))
         except Exception:
             detected_domain = context
 
@@ -106,9 +111,11 @@ async def doubt_agent_node(state: AgentState) -> dict:
             log.warning("doubt_agent_grounding_warning", topic=context)
 
         # ── Learner sentiment via analyze_sentiment sub-agent ─────────────────
+        learner_mood_score = 0.5
         try:
             sentiment = await call_tool("analyze_sentiment", text=question)
             learner_mood = sentiment.get("label", "NEUTRAL")
+            learner_mood_score = sentiment.get("score", 0.5)
         except Exception:
             learner_mood = "NEUTRAL"
 
@@ -117,6 +124,7 @@ async def doubt_agent_node(state: AgentState) -> dict:
                 "response_len": len(full_response),
                 "topic_grounded": grounding.passed,
                 "learner_mood": learner_mood,
+                "bloom_level": bloom_level,
             }
         )
         report = {
@@ -125,13 +133,17 @@ async def doubt_agent_node(state: AgentState) -> dict:
                 f"Answered question on '{context}'. "
                 f"Response length: {len(full_response)} chars. "
                 f"Learner mood: {learner_mood}. "
+                f"Bloom level: {bloom_level}. "
                 f"Topic grounded: {grounding.passed}."
             ),
         }
-        log.info("doubt_agent_done", response_length=len(full_response), mood=learner_mood)
+        log.info("doubt_agent_done", response_length=len(full_response), mood=learner_mood, bloom=bloom_level)
 
         return {
             "doubt_response": full_response,
+            # Promote mood to first-class state so quiz_agent/supervisor can read it.
+            "learner_mood": learner_mood,
+            "learner_mood_score": learner_mood_score,
             "error": None,
             "agent_reports": [report],
         }

@@ -1,6 +1,6 @@
 import structlog
 
-from app.agents.state import AgentState
+from app.agents.state import MASTERY_THRESHOLD_DEFAULT, AgentState
 from app.agents.tools import call_tool
 from app.tracing import get_tracer
 
@@ -59,8 +59,9 @@ async def progress_agent_node(state: AgentState) -> dict:
                     updated_delta["mood_score"] = sentiment.get("score", 0.5)
                 except Exception:
                     updated_delta["mood"] = "NEUTRAL"
+                    updated_delta["mood_score"] = 0.5
 
-            mastery_threshold = state.get("mastery_threshold", 700.0)
+            mastery_threshold = state.get("mastery_threshold", MASTERY_THRESHOLD_DEFAULT)
             elo_direction = "↑" if new_elo > current_elo else "↓"
             mastered_now = new_elo >= mastery_threshold and current_elo < mastery_threshold
             report = {
@@ -74,13 +75,15 @@ async def progress_agent_node(state: AgentState) -> dict:
             # Mark delta as processed so supervisor knows Elo is up to date
             updated_delta["elo_processed"] = True
 
-            span.update(
-                output={"old_elo": current_elo, "new_elo": new_elo, "mood": updated_delta.get("mood")}
-            )
+            span.update(output={"old_elo": current_elo, "new_elo": new_elo, "mood": updated_delta.get("mood")})
             log.info("progress_agent_done", old_elo=current_elo, new_elo=new_elo)
             return {
                 "topic_proficiency": proficiency,
                 "progress_delta": updated_delta,
+                # Promote mood to first-class state so quiz_agent and supervisor
+                # can read it directly without digging into progress_delta.
+                "learner_mood": updated_delta.get("mood", "NEUTRAL"),
+                "learner_mood_score": updated_delta.get("mood_score", 0.5),
                 "error": None,
                 "agent_reports": [report],
             }

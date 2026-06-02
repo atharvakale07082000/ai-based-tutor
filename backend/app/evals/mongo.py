@@ -1,13 +1,18 @@
 """Eval storage using pymongo (replaces motor)."""
+
 from __future__ import annotations
+
 import asyncio
+
 import structlog
+
 from app.db.mongo import col_evals
 
 log = structlog.get_logger()
 
 
 # ─── Write ────────────────────────────────────────────────────────────────────
+
 
 def _insert_eval_sync(record: dict) -> str:
     result = col_evals().insert_one({**record})
@@ -19,6 +24,7 @@ async def insert_eval(record: dict) -> str:
 
 
 # ─── Read ─────────────────────────────────────────────────────────────────────
+
 
 def _query_evals_sync(
     *,
@@ -50,8 +56,11 @@ async def query_evals(
 ) -> list[dict]:
     return await asyncio.to_thread(
         _query_evals_sync,
-        eval_type=eval_type, agent=agent,
-        learner_id=learner_id, passed=passed, limit=limit,
+        eval_type=eval_type,
+        agent=agent,
+        learner_id=learner_id,
+        passed=passed,
+        limit=limit,
     )
 
 
@@ -63,7 +72,7 @@ def _aggregate_sync(eval_type: str | None, agent: str | None) -> list[dict]:
         match["agent"] = agent
 
     pipeline = [
-        *([ {"$match": match} ] if match else []),
+        *([{"$match": match}] if match else []),
         {
             "$group": {
                 "_id": {"eval_type": "$eval_type", "agent": "$agent"},
@@ -80,9 +89,7 @@ def _aggregate_sync(eval_type: str | None, agent: str | None) -> list[dict]:
                 "total": 1,
                 "passed": 1,
                 "avg_score": {"$round": ["$avg_score", 3]},
-                "pass_rate": {
-                    "$round": [{"$divide": ["$passed", {"$max": ["$total", 1]}]}, 3]
-                },
+                "pass_rate": {"$round": [{"$divide": ["$passed", {"$max": ["$total", 1]}]}, 3]},
             }
         },
         {"$sort": {"eval_type": 1, "agent": 1}},

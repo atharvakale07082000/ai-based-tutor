@@ -24,15 +24,16 @@ def _enrich_with_trending(topic_graph: dict[str, list[str]]) -> dict[str, list[s
     """
     try:
         from app.db.mongo import col_trending_topics
+
         # Get the most recent batch of trending topics
         latest = col_trending_topics().find_one({}, {"_id": 0, "discovered_at": 1}, sort=[("discovered_at", -1)])
         if not latest:
             return topic_graph
 
         batch_time = latest["discovered_at"]
-        trends = list(col_trending_topics().find(
-            {"discovered_at": batch_time}, {"_id": 0, "domain": 1, "subtopic": 1}
-        ).limit(100))
+        trends = list(
+            col_trending_topics().find({"discovered_at": batch_time}, {"_id": 0, "domain": 1, "subtopic": 1}).limit(100)
+        )
 
         enriched = {k: list(v) for k, v in topic_graph.items()}
         for t in trends:
@@ -104,29 +105,33 @@ async def _build_curriculum(state: AgentState) -> dict:
                 log.warning("curriculum_classify_failed", goal=goal[:60], error=str(e))
                 domain = "Python Programming"
 
-            subtopics = topic_graph.get(domain, topic_graph["Python Programming"])
+            subtopics = topic_graph.get(domain) or topic_graph.get("Python Programming", [])
 
             # Sort by proficiency gap — lowest Elo (most room to grow) first
             ordered = sorted(subtopics, key=lambda t: proficiency.get(t, 500.0))
-            curriculum_path.extend([
-                {
-                    "domain": domain,
-                    "subtopic": st,
-                    "priority": idx,
-                    "elo": proficiency.get(st, 500.0),
-                }
-                for idx, st in enumerate(ordered)
-            ])
+            curriculum_path.extend(
+                [
+                    {
+                        "domain": domain,
+                        "subtopic": st,
+                        "priority": idx,
+                        "elo": proficiency.get(st, 500.0),
+                    }
+                    for idx, st in enumerate(ordered)
+                ]
+            )
     else:
         # New learner: bootstrap with top-N default domains
         default_domains = settings["default_domains"]
         n = settings["default_subtopics_per_domain"]
         for domain in default_domains:
             subtopics = topic_graph.get(domain, [])
-            curriculum_path.extend([
-                {"domain": domain, "subtopic": st, "priority": idx, "elo": 500.0}
-                for idx, st in enumerate(subtopics[:n])
-            ])
+            curriculum_path.extend(
+                [
+                    {"domain": domain, "subtopic": st, "priority": idx, "elo": 500.0}
+                    for idx, st in enumerate(subtopics[:n])
+                ]
+            )
 
     # Deduplicate preserving order, cap at max_path_length
     max_len = settings["max_path_length"]

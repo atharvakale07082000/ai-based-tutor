@@ -5,6 +5,7 @@ ToolRegistry manages registration, lookup, timed execution, and LLM-readable
 description of all tools in the system.  A module-level singleton is created
 in __init__.py after all implementations are imported.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -118,11 +119,7 @@ class ToolRegistry:
                     parts.append(f"default={default!r}")
                 param_summary[param_name] = " - ".join(parts)
 
-            block = (
-                f"Tool: {tool.name}\n"
-                f"Description: {tool.description}\n"
-                f"Parameters: {param_summary}"
-            )
+            block = f"Tool: {tool.name}\nDescription: {tool.description}\nParameters: {param_summary}"
             blocks.append(block)
 
         return "\n---\n".join(blocks)

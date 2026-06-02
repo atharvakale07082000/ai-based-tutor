@@ -1,8 +1,8 @@
 import structlog
 from fastapi import APIRouter, Depends, Query
 
-from app.db.mongo import col_learners, col_doubts
 from app.auth.jwt import get_current_user_id
+from app.db.mongo import col_doubts, col_learners
 
 router = APIRouter()
 log = structlog.get_logger()
@@ -30,10 +30,7 @@ async def get_learners(
             {"email": {"$regex": search, "$options": "i"}},
         ]
 
-    learners = list(
-        col_learners().find(query, PROJ)
-        .skip((page - 1) * limit).limit(limit)
-    )
+    learners = list(col_learners().find(query, PROJ).skip((page - 1) * limit).limit(limit))
 
     items = []
     for learner in learners:
@@ -47,15 +44,17 @@ async def get_learners(
         )
         mood = mood_doc["sentiment_mood"] if mood_doc else None
 
-        items.append({
-            "id": learner["id"],
-            "name": learner.get("name", ""),
-            "email": learner.get("email", ""),
-            "avg_proficiency": avg_proficiency,
-            "last_active": learner.get("updated_at", ""),
-            "mood": mood,
-            "topic_proficiency": proficiency,
-        })
+        items.append(
+            {
+                "id": learner["id"],
+                "name": learner.get("name", ""),
+                "email": learner.get("email", ""),
+                "avg_proficiency": avg_proficiency,
+                "last_active": learner.get("updated_at", ""),
+                "mood": mood,
+                "topic_proficiency": proficiency,
+            }
+        )
 
     return {"items": items, "total": len(items)}
 
@@ -82,14 +81,17 @@ async def trigger_digest(
     user_doc = col_users().find_one({"email": email}, {"_id": 0, "id": 1})
     if not user_doc:
         from fastapi import HTTPException
+
         raise HTTPException(status_code=404, detail=f"No user found with email {email}")
 
     learner = col_learners().find_one({"user_id": user_doc["id"]}, {"_id": 0, "id": 1})
     if not learner:
         from fastapi import HTTPException
+
         raise HTTPException(status_code=404, detail="Learner profile not found for that user")
 
     from app.tasks.task_definitions import send_progress_digest
+
     send_progress_digest.delay(learner_id=learner["id"])
     log.info("digest_triggered_manually", email=email, learner_id=learner["id"])
     return {"ok": True, "message": f"Digest queued for {email}"}

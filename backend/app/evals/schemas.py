@@ -1,19 +1,30 @@
 """
 Pydantic schemas for eval records stored in MongoDB.
 """
+
 from __future__ import annotations
+
 from datetime import datetime, timezone
 from typing import Literal
+
 from pydantic import BaseModel, Field
 
-
 EvalType = Literal[
+    # ── Structural / rule-based ──────────────────────────────────────────────
     "quiz_format",
     "doubt_relevance",
     "curriculum_ordering",
     "planner_decision",
     "guardrail_triggered",
     "progress_elo",
+    "supervisor_routing",
+    # ── LLM-as-judge ─────────────────────────────────────────────────────────
+    "doubt_accuracy",
+    "quiz_bloom_alignment",
+    "curriculum_coherence",
+    # ── Chat orchestrator ─────────────────────────────────────────────────────
+    "chat_session",  # full assistant turn: routing + response + delegation
+    "chat_guardrail",  # turn blocked by input guardrail before any agent ran
 ]
 
 

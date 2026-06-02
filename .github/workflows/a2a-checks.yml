@@ -1,0 +1,166 @@
+name: A2A Quality Gates
+
+# Complementary to lint.yml — runs A2A-specific structural checks:
+#   1. Agent Card schema validation
+#   2. Pydantic model coverage (every agent skill has input + output models)
+#   3. Secret scanning via truffleHog
+#   4. Health + /ready smoke test (agent startup check)
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  agent-card-validation:
+    name: Agent Card schema validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install jsonschema
+        run: pip install jsonschema
+
+      # Validate the Agent Card is valid JSON and contains required fields
+      - name: Validate agent-card.json structure
+        run: |
+          python - <<'EOF'
+          import json
+          import sys
+
+          REQUIRED_TOP = {"schema_version", "name", "description", "url", "version", "skills", "health"}
+          REQUIRED_SKILL = {"id", "name", "description", "input_modes", "output_modes", "endpoint"}
+
+          with open("backend/.well-known/agent-card.json") as f:
+              card = json.load(f)
+
+          missing = REQUIRED_TOP - card.keys()
+          if missing:
+              print(f"FAIL: Agent Card missing top-level fields: {missing}")
+              sys.exit(1)
+
+          for skill in card["skills"]:
+              missing = REQUIRED_SKILL - skill.keys()
+              if missing:
+                  print(f"FAIL: Skill '{skill.get('id')}' missing fields: {missing}")
+                  sys.exit(1)
+
+          print(f"PASS: Agent Card valid — {len(card['skills'])} skills declared")
+          EOF
+
+  pydantic-coverage:
+    name: Agent I/O schema coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install pydantic
+        run: pip install pydantic pydantic-settings
+
+      # Every agent skill listed in the Agent Card must have a Pydantic model
+      # in app/schemas/agents.py
+      - name: Check Pydantic model coverage
+        run: |
+          python - <<'EOF'
+          import ast
+          import json
+          import sys
+          import pathlib
+
+          card = json.loads(pathlib.Path("backend/.well-known/agent-card.json").read_text())
+          skill_ids = [s["id"] for s in card["skills"]]
+
+          schemas_src = pathlib.Path("backend/app/schemas/agents.py").read_text()
+          tree = ast.parse(schemas_src)
+          defined_classes = {n.name for n in ast.walk(tree) if isinstance(n, ast.ClassDef)}
+
+          missing = []
+          for skill in skill_ids:
+              cap = skill.capitalize()
+              for suffix in ("Input", "Output"):
+                  expected = f"{cap}{suffix}"
+                  if expected not in defined_classes:
+                      missing.append(expected)
+
+          if missing:
+              print(f"FAIL: Missing Pydantic models: {missing}")
+              sys.exit(1)
+
+          print(f"PASS: All {len(skill_ids)} skills have Input+Output Pydantic models")
+          EOF
+
+  secret-scan:
+    name: Secret scanning (truffleHog)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # truffleHog needs full history
+
+      - name: Run truffleHog
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: --only-verified
+
+  env-example-sync:
+    name: .env.example completeness
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Every Settings field in config.py must appear in .env.example
+      - name: Check .env.example covers all config fields
+        run: |
+          python - <<'EOF'
+          import ast
+          import pathlib
+          import re
+          import sys
+
+          config_src = pathlib.Path("backend/app/config.py").read_text()
+          tree = ast.parse(config_src)
+
+          # Find all annotated fields in the Settings class
+          settings_fields = set()
+          for node in ast.walk(tree):
+              if isinstance(node, ast.ClassDef) and node.name == "Settings":
+                  for item in node.body:
+                      if isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name):
+                          name = item.target.id
+                          # Skip private / computed fields
+                          if not name.startswith("_") and name.upper() == name:
+                              settings_fields.add(name)
+
+          example = pathlib.Path("backend/.env.example").read_text()
+          # Keys defined in the example file (KEY=... lines)
+          example_keys = {
+              m.group(1)
+              for m in re.finditer(r"^([A-Z][A-Z0-9_]+)=", example, re.MULTILINE)
+          }
+
+          missing = settings_fields - example_keys
+          if missing:
+              print(f"FAIL: .env.example is missing: {sorted(missing)}")
+              sys.exit(1)
+
+          print(f"PASS: .env.example covers all {len(settings_fields)} Settings fields")
+          EOF

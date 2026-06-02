@@ -1,4 +1,5 @@
 import asyncio
+
 import structlog
 
 from app.hf.client import get_hf_client

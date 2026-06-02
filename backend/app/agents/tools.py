@@ -11,9 +11,12 @@ Usage inside an agent node:
     result = await call_tool("classify_topic", text="learn python")
     domain = result["labels"][0]
 """
+
 from __future__ import annotations
-import structlog
+
 from typing import Any
+
+import structlog
 
 from app.tracing import get_tracer
 
@@ -22,21 +25,25 @@ log = structlog.get_logger()
 
 # ── Individual tool implementations ──────────────────────────────────────────
 
+
 async def _tool_classify_topic(text: str, labels: list[str] | None = None) -> dict:
     """Delegate to topic-classifier HF agent."""
     from app.hf.topic_classifier import classify_topic
+
     return await classify_topic(text, labels)
 
 
 async def _tool_analyze_sentiment(text: str) -> dict:
     """Delegate to sentiment-analysis HF agent."""
     from app.hf.sentiment import analyze_sentiment
+
     return await analyze_sentiment(text)
 
 
 async def _tool_score_difficulty(text: str) -> dict:
     """Delegate to difficulty-scorer HF agent. Returns {'score': float}."""
     from app.hf.difficulty_scorer import score_difficulty
+
     score = await score_difficulty(text)
     return {"score": score}
 
@@ -44,6 +51,7 @@ async def _tool_score_difficulty(text: str) -> dict:
 async def _tool_generate_quiz(topic: str, bloom_level: str, count: int = 5) -> dict:
     """Delegate to quiz-generator HF agent."""
     from app.hf.quiz_generator import generate_quiz_questions
+
     questions = await generate_quiz_questions(topic, bloom_level, count)
     return {"questions": questions}
 
@@ -51,6 +59,7 @@ async def _tool_generate_quiz(topic: str, bloom_level: str, count: int = 5) -> d
 async def _tool_get_embeddings(text: str) -> dict:
     """Delegate to embedding HF agent for semantic similarity tasks."""
     from app.hf.embeddings import get_embeddings
+
     vector = await get_embeddings(text)
     return {"embedding": vector}
 

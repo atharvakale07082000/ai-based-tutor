@@ -1,11 +1,12 @@
 import asyncio
 from typing import AsyncIterator
+
 import structlog
 
 from app.hf.client import get_hf_client, record_auth_failure, record_auth_success
 from app.hf.models import HF_MODELS
 from app.hf.utils import truncate_history
-from app.prompts.loader import get_system_prompt, get_doubt_limits
+from app.prompts.loader import get_doubt_limits, get_system_prompt
 
 log = structlog.get_logger()
 

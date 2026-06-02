@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-from huggingface_hub import InferenceClient
+import asyncio
+
 import structlog
+from huggingface_hub import InferenceClient
 
 from app.config import settings
 
@@ -45,7 +47,6 @@ def record_auth_failure(provider: str) -> None:
     """Call this when a 401/403 is received from a provider."""
     _auth_failures[provider] = _auth_failures.get(provider, 0) + 1
     if _auth_failures[provider] >= _AUTH_FAILURE_THRESHOLD:
-        # Force re-creation on next call
         _clients.pop(provider, None)
         log.error("hf_circuit_opened", provider=provider)
 
@@ -60,3 +61,47 @@ def reset_clients() -> None:
     """Clear the client cache — useful after token rotation or in tests."""
     _clients.clear()
     _auth_failures.clear()
+
+
+async def hf_chat_completion_with_resilience(
+    provider: str,
+    model_id: str,
+    messages: list[dict],
+    max_tokens: int = 512,
+    temperature: float = 0.1,
+    timeout_s: float = 30.0,
+) -> str:
+    """
+    Non-streaming HF chat completion wrapped with retry + circuit breaker.
+
+    Returns the response text string.  Raises on permanent failure after
+    exhausting retries or when the circuit breaker is open.
+    """
+    from app.resilience import resilient_call
+
+    async def _call():
+        client = get_hf_client(provider)
+        response = await asyncio.wait_for(
+            asyncio.to_thread(
+                client.chat_completion,
+                model=model_id,
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+            ),
+            timeout=timeout_s,
+        )
+        record_auth_success(provider)
+        return (response.choices[0].message.content or "").strip()
+
+    try:
+        return await resilient_call(
+            f"hf:{provider}",
+            _call,
+            timeout_s=timeout_s + 5,  # outer timeout > inner to let retries fire
+        )
+    except Exception as exc:
+        err = str(exc)
+        if "401" in err or "403" in err:
+            record_auth_failure(provider)
+        raise

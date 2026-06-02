@@ -1,10 +1,11 @@
-import structlog
 from datetime import datetime, timezone
+
+import structlog
 from fastapi import APIRouter, Depends, HTTPException
 
+from app.auth.jwt import get_current_user_id
 from app.db.mongo import col_learners
 from app.schemas.learner import LearnerProfileSchema, LearnerProfileUpdate, OnboardRequest, OnboardResponse
-from app.auth.jwt import get_current_user_id
 
 router = APIRouter()
 log = structlog.get_logger()
@@ -76,9 +77,9 @@ async def onboard(
 ):
     """Save onboarding preferences: name, goals, hours/week, difficulty pacing."""
     difficulty_to_cadence = {
-        "gentle":     {"sessions_per_week": max(1, body.hoursPerWeek // 2), "pace": "gentle"},
-        "balanced":   {"sessions_per_week": max(2, body.hoursPerWeek // 2), "pace": "balanced"},
-        "aggressive": {"sessions_per_week": max(3, body.hoursPerWeek),      "pace": "aggressive"},
+        "gentle": {"sessions_per_week": max(1, body.hoursPerWeek // 2), "pace": "gentle"},
+        "balanced": {"sessions_per_week": max(2, body.hoursPerWeek // 2), "pace": "balanced"},
+        "aggressive": {"sessions_per_week": max(3, body.hoursPerWeek), "pace": "aggressive"},
     }
     updates = {
         "name": body.name.strip(),

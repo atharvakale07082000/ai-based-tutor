@@ -1,0 +1,71 @@
+{
+  "schema_version": "0.1",
+  "name": "AI Tutor Platform",
+  "description": "Multi-agent AI tutoring platform: adaptive curriculum, quiz generation, doubt resolution, and progress tracking via LangGraph + Hugging Face.",
+  "url": "${API_BASE_URL:-http://localhost:8000}",
+  "version": "1.0.0",
+  "provider": {
+    "organization": "AI Tutor",
+    "contact_email": "support@example.com"
+  },
+  "capabilities": {
+    "streaming": true,
+    "push_notifications": false,
+    "state_transition_history": false
+  },
+  "authentication": {
+    "schemes": ["Bearer"],
+    "description": "JWT issued by POST /api/v1/auth/login. Include as Authorization: Bearer <token>."
+  },
+  "skills": [
+    {
+      "id": "curriculum",
+      "name": "Curriculum Builder",
+      "description": "Builds a personalized learning path for a learner based on goals and Elo proficiency gaps.",
+      "tags": ["curriculum", "learning-path", "adaptive"],
+      "input_modes": ["text"],
+      "output_modes": ["structured-data"],
+      "endpoint": "/api/v1/curriculum"
+    },
+    {
+      "id": "quiz",
+      "name": "Quiz Generator",
+      "description": "Generates Bloom-taxonomy-calibrated quiz questions for a topic at the learner's current proficiency level.",
+      "tags": ["quiz", "assessment", "bloom"],
+      "input_modes": ["text"],
+      "output_modes": ["structured-data"],
+      "endpoint": "/api/v1/quiz"
+    },
+    {
+      "id": "doubt",
+      "name": "Doubt Solver",
+      "description": "Answers learner questions with context-aware streaming explanations calibrated to Bloom level.",
+      "tags": ["doubt", "explanation", "streaming"],
+      "input_modes": ["text"],
+      "output_modes": ["text/event-stream"],
+      "endpoint": "/api/v2/chat"
+    },
+    {
+      "id": "progress",
+      "name": "Progress Tracker",
+      "description": "Updates Elo proficiency scores after quiz attempts and tracks learner mood.",
+      "tags": ["progress", "elo", "analytics"],
+      "input_modes": ["structured-data"],
+      "output_modes": ["structured-data"],
+      "endpoint": "/api/v1/progress"
+    },
+    {
+      "id": "assistant",
+      "name": "AI Assistant",
+      "description": "Agentic RAG assistant that routes to specialist sub-agents: curriculum, quiz, progress, doubt, navigator.",
+      "tags": ["assistant", "rag", "routing", "streaming"],
+      "input_modes": ["text"],
+      "output_modes": ["text/event-stream"],
+      "endpoint": "/api/v2/chat"
+    }
+  ],
+  "health": {
+    "liveness": "/health",
+    "readiness": "/ready"
+  }
+}

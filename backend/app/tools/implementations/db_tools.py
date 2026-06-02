@@ -4,6 +4,7 @@ Database tool implementations.
 All handlers are async.  MongoDB collection accessors are imported lazily
 inside each handler to avoid connection setup at module import time.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -18,8 +19,10 @@ log = structlog.get_logger()
 
 # ── Handlers ──────────────────────────────────────────────────────────────────
 
+
 async def _get_proficiency(learner_id: str) -> dict:
     from app.db.mongo import col_learners
+
     doc = col_learners().find_one({"id": learner_id}, {"_id": 0})
     if not doc:
         log.warning("get_proficiency_not_found", learner_id=learner_id)
@@ -33,6 +36,7 @@ async def _get_proficiency(learner_id: str) -> dict:
 
 async def _get_topic_graph() -> dict:
     from app.prompts.loader import get_curriculum_config
+
     cfg = get_curriculum_config()
     return {
         "topic_graph": cfg.get("topic_graph", {}),
@@ -47,6 +51,7 @@ async def _save_quiz(
     questions: list,
 ) -> dict:
     from app.db.mongo import col_quizzes
+
     quiz_id = str(uuid.uuid4())
     doc = {
         "id": quiz_id,
@@ -70,6 +75,7 @@ async def _save_progress(
     mood: str = "NEUTRAL",
 ) -> dict:
     from app.db.mongo import col_learners, col_progress
+
     xp_delta = min(50, int(score * 50))
     now = datetime.now(timezone.utc).isoformat()
 
@@ -84,16 +90,18 @@ async def _save_progress(
     )
 
     # Insert a progress record
-    col_progress().insert_one({
-        "learner_id": learner_id,
-        "topic": topic,
-        "old_elo": old_elo,
-        "new_elo": new_elo,
-        "score": score,
-        "mood": mood,
-        "xp_delta": xp_delta,
-        "recorded_at": now,
-    })
+    col_progress().insert_one(
+        {
+            "learner_id": learner_id,
+            "topic": topic,
+            "old_elo": old_elo,
+            "new_elo": new_elo,
+            "score": score,
+            "mood": mood,
+            "xp_delta": xp_delta,
+            "recorded_at": now,
+        }
+    )
 
     log.info(
         "save_progress_done",

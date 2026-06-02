@@ -1,12 +1,11 @@
 import structlog
 
-from app.agents.state import AgentState
+from app.agents.state import MASTERY_THRESHOLD_DEFAULT, AgentState
 from app.agents.tools import call_tool
 from app.tracing import get_tracer
 
 log = structlog.get_logger()
 
-MASTERY_DEFAULT = 700.0
 MAX_ITER_DEFAULT = 10
 
 
@@ -42,7 +41,7 @@ async def _plan(state: AgentState) -> dict:
     proficiency = state.get("topic_proficiency", {})
     iteration_count = state.get("iteration_count", 0) + 1
     max_iterations = state.get("max_iterations", MAX_ITER_DEFAULT)
-    mastery_threshold = state.get("mastery_threshold", MASTERY_DEFAULT)
+    mastery_threshold = state.get("mastery_threshold", MASTERY_THRESHOLD_DEFAULT)
     progress_delta = state.get("progress_delta", {})
 
     log.info(
@@ -71,10 +70,7 @@ async def _plan(state: AgentState) -> dict:
         return {"next_action": "curriculum", "iteration_count": iteration_count, "session_complete": False}
 
     # Rule 3: find unmastered topics
-    unmastered = [
-        item for item in curriculum_path
-        if proficiency.get(item["subtopic"], 500.0) < mastery_threshold
-    ]
+    unmastered = [item for item in curriculum_path if proficiency.get(item["subtopic"], 500.0) < mastery_threshold]
 
     if not unmastered:
         log.info("planner_all_topics_mastered", total=len(curriculum_path))
@@ -91,7 +87,7 @@ async def _plan(state: AgentState) -> dict:
         return {
             "next_action": "quiz",
             "current_topic": next_topic,
-            "bloom_level": "remember",   # override to easiest level
+            "bloom_level": "remember",  # override to easiest level
             "iteration_count": iteration_count,
             "session_complete": False,
         }
@@ -101,7 +97,7 @@ async def _plan(state: AgentState) -> dict:
     return {
         "next_action": "quiz",
         "current_topic": next_topic,
-        "bloom_level": "",   # let quiz_agent decide from Elo
+        "bloom_level": "",  # let quiz_agent decide from Elo
         "iteration_count": iteration_count,
         "session_complete": False,
     }

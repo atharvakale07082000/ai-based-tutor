@@ -1,6 +1,5 @@
-import pytest
 import pytest_asyncio
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
 
 
 def pytest_configure(config):
@@ -10,6 +9,7 @@ def pytest_configure(config):
 @pytest_asyncio.fixture
 async def client():
     from app.main import app
+
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c
 
@@ -18,5 +18,6 @@ async def client():
 async def client_with_db_override():
     """Alias for client — MongoDB has no FastAPI DB dependency to override."""
     from app.main import app
+
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c
