@@ -6,12 +6,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    # Database
-    DATABASE_URL: str = "sqlite+aiosqlite:///./ai_tutor.db"
-    DATABASE_SYNC_URL: str = "sqlite:///./ai_tutor.db"
-
-    # Redis
-    REDIS_URL: str = "redis://localhost:6379/0"
+    # App
+    APP_ENV: str = "development"
+    LOG_LEVEL: str = "INFO"
+    JSON_LOGS: bool = True
 
     # JWT
     SECRET_KEY: str = "change-this-secret-in-production"
@@ -22,13 +20,17 @@ class Settings(BaseSettings):
     # Hugging Face
     HF_TOKEN: str = ""
 
-    # Celery
+    # MongoDB — primary datastore + evals storage
+    MONGO_URL: str = "mongodb://localhost:27017"
+    MONGO_DATABASE: str = "ai_tutor_evals"
+    MONGO_COLLECTION_EVALS: str = "agent_evals"
+
+    # Redis (Celery broker + result backend)
+    REDIS_URL: str = "redis://localhost:6379/0"
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
 
-    # App
-    APP_ENV: str = "development"
-    # Stored as plain string; parsed into list via cors_origins property
+    # CORS — comma-separated list or JSON array
     CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
 
     @property
@@ -43,21 +45,43 @@ class Settings(BaseSettings):
     LANGFUSE_SECRET_KEY: str = ""
     LANGFUSE_HOST: str = "https://cloud.langfuse.com"
 
-    # MongoDB — for evals storage (env keys: MONGO_URL, MONGO_DATABASE, MONGO_COLLECTION_EVALS)
-    MONGO_URL: str = "mongodb://localhost:27017"
-    MONGO_DATABASE: str = "ai_tutor_evals"
-    MONGO_COLLECTION_EVALS: str = "agent_evals"
+    # OpenTelemetry — leave empty to disable OTLP export
+    OTEL_EXPORTER_OTLP_ENDPOINT: str = ""
+    OTEL_SERVICE_NAME: str = "ai-tutor"
+    OTEL_ENABLED: str = "true"
+
+    # Resilience tunables (see app/resilience.py)
+    RETRY_MAX_ATTEMPTS: int = 3
+    RETRY_BASE_DELAY_S: float = 1.0
+    RETRY_MAX_DELAY_S: float = 16.0
+    CB_FAILURE_THRESHOLD: int = 5
+    CB_WINDOW_S: float = 60.0
+    CB_RECOVERY_S: float = 30.0
 
     @property
     def langfuse_enabled(self) -> bool:
         return bool(self.LANGFUSE_PUBLIC_KEY and self.LANGFUSE_SECRET_KEY)
 
+    @property
+    def is_production(self) -> bool:
+        return self.APP_ENV == "production"
+
 
 settings = Settings()
 
-# Startup safety checks
-if "change-this" in settings.SECRET_KEY and settings.APP_ENV == "production":
+# ── Startup safety checks ─────────────────────────────────────────────────────
+
+if "change-this" in settings.SECRET_KEY and settings.is_production:
     raise RuntimeError("SECRET_KEY must be changed before deploying to production")
 
-if not settings.HF_TOKEN and settings.APP_ENV == "production":
-    warnings.warn("HF_TOKEN is not set — all AI inference calls will fail in production", stacklevel=1)
+if not settings.HF_TOKEN and settings.is_production:
+    warnings.warn(
+        "HF_TOKEN is not set — all AI inference calls will fail in production",
+        stacklevel=1,
+    )
+
+if settings.MONGO_URL == "mongodb://localhost:27017" and settings.is_production:
+    warnings.warn(
+        "MONGO_URL points to localhost in production — set it to your Atlas URI",
+        stacklevel=1,
+    )

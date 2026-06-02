@@ -419,6 +419,7 @@ async def _record_eval(
 ) -> None:
     """Write a chat turn eval record into the unified agent_evals collection."""
     try:
+        from app.otel import current_trace_id
         eval_type = "chat_guardrail" if guardrail_blocked else "chat_session"
         score = 0.0 if (not guardrail_blocked and error) else 1.0
         record = {
@@ -426,7 +427,7 @@ async def _record_eval(
             "agent": agent,
             "learner_id": user_id,
             "session_id": session_id,
-            "trace_id": "",
+            "trace_id": current_trace_id(),
             "input": {"message": message[:500]},
             "output": {
                 "delegation_chain": delegation_chain,
@@ -449,8 +450,9 @@ async def run_assistant(
     message: str,
     history: list[dict],
     user_id: str,
+    session_id: str | None = None,
 ) -> AsyncIterator[dict]:
-    session_id = str(uuid.uuid4())
+    session_id = session_id or str(uuid.uuid4())
     delegation_chain: list[str] = []
     response_chars = 0
     had_error = False

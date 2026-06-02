@@ -26,7 +26,7 @@ class AgentRouter:
         "doubt":      {"explain", "what is", "how does", "why", "confused", "understand", "clarify", "difference between"},
     }
 
-    async def route(self, query: str, context: dict = {}) -> tuple[str, str]:
+    async def route(self, query: str, context: dict | None = None) -> tuple[str, str]:
         """
         Returns (agent_name, reason).
 
