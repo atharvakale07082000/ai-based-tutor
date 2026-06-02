@@ -135,6 +135,23 @@ class ProgressOutput(BaseModel):
     agent_reports: list[dict] = []
 
 
+# ── Assistant agent ───────────────────────────────────────────────────────────
+
+
+class AssistantInput(BaseModel):
+    message: str = Field(min_length=1, max_length=2000)
+    history: list[dict] = Field(default=[], max_length=20)
+    context: dict = {}
+
+
+class AssistantOutput(BaseModel):
+    agent: str
+    response: str = ""
+    delegation_chain: list[str] = []
+    guardrail_blocked: bool = False
+    error: str | None = None
+
+
 # ── V2 Chat request/response ──────────────────────────────────────────────────
 
 
