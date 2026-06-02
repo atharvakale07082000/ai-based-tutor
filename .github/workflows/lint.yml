@@ -17,41 +17,49 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Set up the target Python version
-      - name: Set up Python 3.11
+      # 2. Set up Python — must match pyproject.toml requires-python (>=3.13)
+      - name: Set up Python 3.13
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.13"
 
-      # 3. Install linting / formatting tools only (not project deps)
-      - name: Install pylint and ruff
-        run: pip install pylint ruff
+      # 3. Install uv (fast Python package manager used by this project)
+      - name: Install uv
+        run: pip install uv --quiet
 
-      # 4. Verify that all files are formatted according to ruff's style.
-      #    This fails if any file would be changed by `ruff format`.
+      # 4. Install project + all dependencies so pylint can resolve imports.
+      #    uv reads backend/pyproject.toml and backend/uv.lock.
+      - name: Install project dependencies
+        working-directory: backend
+        run: uv sync --frozen
+
+      # 5. Install ruff separately (it is a dev tool, not in pyproject.toml)
+      - name: Install ruff
+        run: pip install ruff --quiet
+
+      # 6. Verify formatting — fails if any file would be changed by ruff format.
       - name: Check formatting with ruff
         continue-on-error: false
         run: ruff format --check .
 
-      # 5. Run ruff's lint rules (pycodestyle, pyflakes, isort, …).
-      #    Configuration is read from ruff.toml at the repo root.
+      # 7. Run ruff lint rules (pycodestyle, pyflakes, isort).
+      #    Config is read from ruff.toml at the repo root.
       - name: Lint with ruff
         continue-on-error: false
         run: ruff check .
 
-      # 6. Discover every .py file in the repo (skipping virtual envs,
-      #    migrations, and bytecode caches) and pass them all to pylint.
-      #    Configuration is read from .pylintrc at the repo root.
+      # 8. Run pylint on app source only (tests/ uses intentional patterns
+      #    that differ from application code conventions, and are already
+      #    covered by ruff).  Uses the project venv so all imports resolve.
+      #    Config is read from .pylintrc at the repo root.
       - name: Lint with pylint
         continue-on-error: false
+        working-directory: backend
         run: |
-          FILES=$(find . \
-            -name "*.py" \
-            -not -path "./.venv/*" \
-            -not -path "./venv/*" \
-            -not -path "*/migrations/*" \
+          FILES=$(find app -name "*.py" \
             -not -path "*/__pycache__/*" \
+            -not -path "*/migrations/*" \
           )
-          echo "Running pylint on:"
+          echo "Running pylint on app/ source:"
           echo "$FILES"
-          pylint $FILES
+          uv run pylint $FILES

@@ -52,15 +52,6 @@ async def v2_chat(
     request: Request,
     user_id: str = Depends(get_current_user_id),
 ):
-    stripped = body.message.strip()
-    if not stripped:
-        raise HTTPException(status_code=422, detail="Message cannot be blank.")
-
-    session_id = request.headers.get("X-Session-Id") or uuid.uuid4().hex
-    correlation_id = request.headers.get("X-Correlation-Id") or uuid.uuid4().hex
-
-    bind_contextvars(session_id=session_id, user_id=user_id, agent="v2_chat")
-
     """
     Agentic SSE endpoint.
 
@@ -71,6 +62,14 @@ async def v2_chat(
     Error events sent to the client use generic messages; full details
     are in server-side structured logs (never exposed to the caller).
     """
+    stripped = body.message.strip()
+    if not stripped:
+        raise HTTPException(status_code=422, detail="Message cannot be blank.")
+
+    session_id = request.headers.get("X-Session-Id") or uuid.uuid4().hex
+    correlation_id = request.headers.get("X-Correlation-Id") or uuid.uuid4().hex
+
+    bind_contextvars(session_id=session_id, user_id=user_id, agent="v2_chat")
 
     async def event_stream():
         start = time.perf_counter()

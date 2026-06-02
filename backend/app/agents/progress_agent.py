@@ -63,7 +63,7 @@ async def progress_agent_node(state: AgentState) -> dict:
 
             mastery_threshold = state.get("mastery_threshold", MASTERY_THRESHOLD_DEFAULT)
             elo_direction = "↑" if new_elo > current_elo else "↓"
-            mastered_now = new_elo >= mastery_threshold and current_elo < mastery_threshold
+            mastered_now = current_elo < mastery_threshold <= new_elo
             report = {
                 "agent": "progress",
                 "summary": (

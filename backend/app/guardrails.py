@@ -112,7 +112,7 @@ def check_quiz_question(q: dict, *, bloom_level: str = "") -> GuardrailResult:
     if not isinstance(q["options"], list) or len(q["options"]) < cfg["min_option_count"]:
         return GuardrailResult(passed=False, reason="insufficient_options")
 
-    if not (valid_range[0] <= q["correct_index"] <= valid_range[1]):
+    if not valid_range[0] <= q["correct_index"] <= valid_range[1]:
         return GuardrailResult(passed=False, reason="invalid_correct_index")
 
     if not q["question"] or len(q["question"]) < cfg["min_question_length"]:

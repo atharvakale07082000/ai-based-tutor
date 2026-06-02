@@ -410,14 +410,12 @@ def _seed_feed() -> list[dict]:
 
 
 def _fallback_trending() -> list[dict]:
-    import uuid as _uuid
-
     from app.hf.trend_discovery import _fallback_topics
 
     now_iso = _now_iso()
     return [
         {
-            "id": str(_uuid.uuid4()),
+            "id": str(uuid.uuid4()),
             "domain": t["domain"],
             "subtopic": t["subtopic"],
             "description": t["description"],

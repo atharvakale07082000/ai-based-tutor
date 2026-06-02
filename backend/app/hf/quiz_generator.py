@@ -72,7 +72,7 @@ def _parse_response(text: str, topic: str, bloom_level: str) -> dict | None:
     bad = {"option a", "option b", "option c", "option d", "concept a", "concept b", "a)", "b)"}
     if any(o.lower() in bad or len(o) < 3 for o in options):
         return None
-    if not (0 <= correct_index <= 3):
+    if not 0 <= correct_index <= 3:
         correct_index = 0
 
     return {
