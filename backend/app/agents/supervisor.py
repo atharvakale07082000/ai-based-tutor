@@ -16,7 +16,7 @@ import json
 import re
 import structlog
 
-from app.agents.state import AgentState
+from app.agents.state import AgentState, MASTERY_THRESHOLD_DEFAULT
 from app.tracing import get_tracer
 
 log = structlog.get_logger()
@@ -49,7 +49,7 @@ Reply with ONLY a JSON object: {"next": "<agent_name>", "reason": "<one sentence
 def _build_state_summary(state: AgentState) -> str:
     curriculum = state.get("curriculum_path") or []
     proficiency = state.get("topic_proficiency") or {}
-    mastery_threshold = state.get("mastery_threshold") or 700.0
+    mastery_threshold = state.get("mastery_threshold") or MASTERY_THRESHOLD_DEFAULT
     mastered = sum(1 for item in curriculum if proficiency.get(item["subtopic"], 0) >= mastery_threshold)
     reports = state.get("agent_reports") or []
 
@@ -62,7 +62,9 @@ task_type: {state.get("task_type", "?")}
 iteration: {state.get("iteration_count", 0)} / {state.get("max_iterations", 8)}
 curriculum_topics: {len(curriculum)} total, {mastered} mastered
 current_topic: {state.get("current_topic", "none")}
+topic_difficulty: {state.get("topic_difficulty", "unknown")}
 quiz_questions_ready: {bool(state.get("quiz_questions"))}
+learner_mood: {state.get("learner_mood", "NEUTRAL")} (score {state.get("learner_mood_score", 0.5):.2f})
 progress_delta: {json.dumps(state.get("progress_delta") or {})}
 session_complete: {state.get("session_complete", False)}
 recent_agent_reports:{last_reports_text or " none yet"}
@@ -89,7 +91,7 @@ async def supervisor_node(state: AgentState) -> dict:
 
         curriculum = state.get("curriculum_path") or []
         proficiency = state.get("topic_proficiency") or {}
-        mastery_threshold = state.get("mastery_threshold") or 700.0
+        mastery_threshold = state.get("mastery_threshold") or MASTERY_THRESHOLD_DEFAULT
         all_mastered = curriculum and all(
             proficiency.get(item["subtopic"], 0) >= mastery_threshold
             for item in curriculum
@@ -129,7 +131,7 @@ async def supervisor_node(state: AgentState) -> dict:
             if not state.get("current_topic"):
                 curriculum = state.get("curriculum_path") or []
                 proficiency = state.get("topic_proficiency") or {}
-                mastery_threshold = state.get("mastery_threshold") or 700.0
+                mastery_threshold = state.get("mastery_threshold") or MASTERY_THRESHOLD_DEFAULT
                 unmastered = [i for i in curriculum if proficiency.get(i["subtopic"], 0) < mastery_threshold]
                 if unmastered:
                     update["current_topic"] = unmastered[0]["subtopic"]
@@ -193,7 +195,7 @@ def _parse_decision(raw: str) -> tuple[str, str]:
     """Extract {next, reason} from LLM output. Tolerates markdown fences."""
     try:
         # Strip markdown code fences if present
-        cleaned = re.sub(r"```(?:json)?", "", raw).strip().rstrip("```").strip()
+        cleaned = re.sub(r"```(?:json)?", "", raw).strip().removesuffix("```").strip()
         data = json.loads(cleaned)
         decision = str(data.get("next", "FINISH")).strip()
         reason = str(data.get("reason", ""))
@@ -229,7 +231,7 @@ def _rule_based_fallback(state: AgentState) -> tuple[str, str]:
     task = state.get("task_type", "")
     curriculum = state.get("curriculum_path") or []
     proficiency = state.get("topic_proficiency") or {}
-    mastery_threshold = state.get("mastery_threshold") or 700.0
+    mastery_threshold = state.get("mastery_threshold") or MASTERY_THRESHOLD_DEFAULT
     progress_delta = state.get("progress_delta") or {}
 
     if not curriculum:

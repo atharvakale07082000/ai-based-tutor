@@ -104,7 +104,7 @@ async def _build_curriculum(state: AgentState) -> dict:
                 log.warning("curriculum_classify_failed", goal=goal[:60], error=str(e))
                 domain = "Python Programming"
 
-            subtopics = topic_graph.get(domain, topic_graph["Python Programming"])
+            subtopics = topic_graph.get(domain) or topic_graph.get("Python Programming", [])
 
             # Sort by proficiency gap — lowest Elo (most room to grow) first
             ordered = sorted(subtopics, key=lambda t: proficiency.get(t, 500.0))

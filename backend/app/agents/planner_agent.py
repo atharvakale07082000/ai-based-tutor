@@ -1,12 +1,11 @@
 import structlog
 
-from app.agents.state import AgentState
+from app.agents.state import AgentState, MASTERY_THRESHOLD_DEFAULT
 from app.agents.tools import call_tool
 from app.tracing import get_tracer
 
 log = structlog.get_logger()
 
-MASTERY_DEFAULT = 700.0
 MAX_ITER_DEFAULT = 10
 
 
@@ -42,7 +41,7 @@ async def _plan(state: AgentState) -> dict:
     proficiency = state.get("topic_proficiency", {})
     iteration_count = state.get("iteration_count", 0) + 1
     max_iterations = state.get("max_iterations", MAX_ITER_DEFAULT)
-    mastery_threshold = state.get("mastery_threshold", MASTERY_DEFAULT)
+    mastery_threshold = state.get("mastery_threshold", MASTERY_THRESHOLD_DEFAULT)
     progress_delta = state.get("progress_delta", {})
 
     log.info(

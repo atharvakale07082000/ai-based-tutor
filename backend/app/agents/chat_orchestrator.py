@@ -27,7 +27,8 @@ from app.hf.client import get_hf_client, record_auth_failure, record_auth_succes
 from app.hf.models import HF_MODELS
 from app.hf.utils import truncate_history
 from app.hf.doubt_solver import stream_doubt_response
-from app.db.mongo import col_learners, col_quizzes, col_chat_evals
+from app.db.mongo import col_learners, col_quizzes
+from app.evals.mongo import insert_eval
 
 log = structlog.get_logger()
 
@@ -412,24 +413,32 @@ async def _exec_general(message, history, user_ctx):
 
 # ─── Eval recorder ────────────────────────────────────────────────────────────
 
-def _record_eval_sync(record: dict) -> None:
-    col_chat_evals().insert_one({**record})
-
-
 async def _record_eval(
-    session_id, user_id, message, agent,
-    delegation_chain, response_length, guardrail_blocked, error,
+    session_id: str, user_id: str, message: str, agent: str,
+    delegation_chain: list, response_length: int, guardrail_blocked: bool, error: bool,
 ) -> None:
+    """Write a chat turn eval record into the unified agent_evals collection."""
     try:
+        eval_type = "chat_guardrail" if guardrail_blocked else "chat_session"
+        score = 0.0 if (not guardrail_blocked and error) else 1.0
         record = {
-            "session_id": session_id, "user_id": user_id,
-            "message": message[:500], "agent": agent,
-            "delegation_chain": delegation_chain,
-            "response_length": response_length,
-            "guardrail_blocked": guardrail_blocked, "error": error,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "eval_type": eval_type,
+            "agent": agent,
+            "learner_id": user_id,
+            "session_id": session_id,
+            "trace_id": "",
+            "input": {"message": message[:500]},
+            "output": {
+                "delegation_chain": delegation_chain,
+                "response_length": response_length,
+                "guardrail_blocked": guardrail_blocked,
+            },
+            "score": score,
+            "passed": score == 1.0,
+            "details": {"delegation_chain": delegation_chain},
+            "timestamp": datetime.now(timezone.utc),
         }
-        await asyncio.to_thread(_record_eval_sync, record)
+        await insert_eval(record)
     except Exception as e:
         log.warning("eval_record_error", error=str(e))
 

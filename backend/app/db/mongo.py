@@ -38,6 +38,8 @@ def col_content() -> Collection:             return get_db()["content_items"]
 def col_course_plans() -> Collection:        return get_db()["course_plans"]
 def col_interviews() -> Collection:          return get_db()["module_interviews"]
 def col_evals() -> Collection:               return get_db()["agent_evals"]
+# DEPRECATED: chat evals now write to agent_evals via app/evals/mongo.insert_eval.
+# Keep this accessor for read-only migration queries against old data only.
 def col_chat_evals() -> Collection:          return get_db()["chat_evals"]
 def col_trending_topics() -> Collection:     return get_db()["trending_topics"]
 def col_feed_items() -> Collection:          return get_db()["feed_items"]

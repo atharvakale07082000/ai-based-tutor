@@ -24,6 +24,9 @@ def _base_state(**overrides) -> dict:
         "max_iterations": 10,
         "session_complete": False,
         "mastery_threshold": 700.0,
+        "learner_mood": "NEUTRAL",
+        "learner_mood_score": 0.5,
+        "topic_difficulty": 0.5,
     }
     base.update(overrides)
     return base
