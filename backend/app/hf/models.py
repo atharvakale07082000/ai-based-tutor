@@ -1,16 +1,16 @@
 HF_MODELS: dict[str, dict] = {
-    # ── Generation tasks (provider: together — verified working) ──────────────
+    # ── Generation tasks (provider: together, NVIDIA NIM fallback) ────────────
     "DOUBT_SOLVER": {
         "model_id": "Qwen/Qwen2.5-7B-Instruct",
         "task": "text-generation",
         "provider": "together",
-        "description": "Streaming doubt resolution chatbot (Qwen2.5-7B via Together)",
+        "description": "Streaming doubt resolution chatbot (Qwen2.5-7B via Together, NVIDIA NIM fallback)",
     },
     "QUIZ_GENERATOR": {
         "model_id": "Qwen/Qwen2.5-7B-Instruct",
         "task": "text-generation",
         "provider": "together",
-        "description": "Quiz question generation via Qwen2.5-7B-Instruct (Together)",
+        "description": "Quiz question generation via Qwen2.5-7B-Instruct (Together, NVIDIA NIM fallback)",
     },
     # ── Classification / embedding tasks (provider: hf-inference) ────────────
     "TOPIC_CLASSIFIER": {

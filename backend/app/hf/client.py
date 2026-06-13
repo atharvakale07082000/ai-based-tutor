@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 
 import structlog
 from huggingface_hub import InferenceClient
@@ -9,6 +10,18 @@ from app.config import settings
 
 log = structlog.get_logger()
 
+# huggingface_hub resolves tokens as: HF_TOKEN/HUGGING_FACE_HUB_TOKEN env vars,
+# then the cached ~/.cache/huggingface/token file — even when an explicit
+# token is passed to InferenceClient for provider-routed calls. Force the env
+# vars to the token configured in .env so a stale cached token never wins.
+if settings.HF_TOKEN:
+    os.environ["HF_TOKEN"] = settings.HF_TOKEN
+    os.environ["HUGGING_FACE_HUB_TOKEN"] = settings.HF_TOKEN
+
+# Providers whose Qwen2.5-7B-Instruct generation calls go through the
+# resilient HF-primary / NVIDIA-fallback client (see generation_client.py)
+_GENERATION_PROVIDERS = {"together", "nvidia"}
+
 _clients: dict[str, InferenceClient] = {}
 
 # Track consecutive auth failures per provider to fail-fast early
@@ -16,7 +29,12 @@ _auth_failures: dict[str, int] = {}
 _AUTH_FAILURE_THRESHOLD = 3
 
 
-def _make_client(provider: str) -> InferenceClient:
+def _make_client(provider: str):
+    if provider in _GENERATION_PROVIDERS:
+        from app.hf.generation_client import get_resilient_generation_client
+
+        return get_resilient_generation_client()
+
     token = settings.HF_TOKEN or None
     if not token:
         log.error("hf_token_missing", msg="HF_TOKEN not set — ALL inference calls will fail")
@@ -32,8 +50,8 @@ def _make_client(provider: str) -> InferenceClient:
         return InferenceClient(token=token)
 
 
-def get_hf_client(provider: str = "hf-inference") -> InferenceClient:
-    """Return a cached InferenceClient. Resets on repeated auth failures."""
+def get_hf_client(provider: str = "hf-inference"):
+    """Return a cached InferenceClient (or ResilientGenerationClient). Resets on repeated auth failures."""
     if _auth_failures.get(provider, 0) >= _AUTH_FAILURE_THRESHOLD:
         log.error("hf_client_circuit_open", provider=provider, failures=_auth_failures[provider])
         raise RuntimeError(f"HF provider '{provider}' circuit open after {_auth_failures[provider]} auth failures")

@@ -21,6 +21,15 @@ class Settings(BaseSettings):
     # Hugging Face
     HF_TOKEN: str = ""
 
+    # NVIDIA NIM (OpenAI-compatible) — fallback for generation agents (doubt
+    # solver, quiz generator, supervisor, course planner, interview scorer,
+    # content generator) when the primary HF "together" provider call fails.
+    # The two models are rotated on successive fallbacks.
+    NVIDIA_API_KEY: str = ""
+    NVIDIA_BASE_URL: str = "https://integrate.api.nvidia.com/v1"
+    NVIDIA_MODEL: str = "qwen/qwen3-next-80b-a3b-instruct"
+    NVIDIA_FALLBACK_MODEL: str = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
+
     # MongoDB — primary datastore + evals storage
     MONGO_URL: str = "mongodb://localhost:27017"
     MONGO_DATABASE: str = "ai_tutor_evals"

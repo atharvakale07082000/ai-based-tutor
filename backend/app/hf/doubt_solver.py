@@ -73,6 +73,8 @@ async def stream_doubt_response(
         token_count = 0
         try:
             for chunk in stream:
+                if not chunk.choices:
+                    continue
                 delta = chunk.choices[0].delta.content
                 if delta:
                     yield delta
