@@ -71,7 +71,7 @@ export default function ModulePlayerPage() {
   const bodyIsShort = !module?.body || module.body.length < 400
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', height: '100%', overflow: 'hidden' }}>
+    <div className="grid h-full grid-cols-1 overflow-hidden lg:grid-cols-[1fr_280px]">
       {/* Main content */}
       <div ref={contentRef} style={{ overflowY: 'auto', padding: '24px 32px' }}>
         {isLoading ? (
@@ -201,7 +201,7 @@ export default function ModulePlayerPage() {
       </div>
 
       {/* Right panel */}
-      <div style={{ borderLeft: '1px solid var(--line-1)', background: 'var(--paper-1)', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 0 }}>
+      <div className="hidden lg:flex" style={{ borderLeft: '1px solid var(--line-1)', background: 'var(--paper-1)', overflowY: 'auto', flexDirection: 'column', gap: 0 }}>
         {/* Progress */}
         <div style={{ padding: '16px 16px 14px', borderBottom: '1px solid var(--line-1)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>

@@ -94,9 +94,12 @@ export function CommandPalette() {
       }}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Command palette"
         onClick={(e) => e.stopPropagation()}
+        className="w-[92vw] sm:w-[560px]"
         style={{
-          width: 560,
           maxHeight: '70vh',
           background: 'var(--paper-0)',
           border: '1px solid var(--line-2)',
@@ -116,6 +119,11 @@ export function CommandPalette() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search actions, navigate, ask AI…"
+            aria-label="Search actions and pages"
+            role="combobox"
+            aria-expanded="true"
+            aria-controls="cmdk-results"
+            aria-activedescendant={flat[sel] ? `cmdk-option-${flat[sel].id}` : undefined}
             style={{
               flex: 1,
               border: 0,
@@ -140,7 +148,7 @@ export function CommandPalette() {
         )}
 
         {/* Results */}
-        <div style={{ overflowY: 'auto', maxHeight: 400, padding: '6px 0' }}>
+        <div id="cmdk-results" role="listbox" aria-label="Results" style={{ overflowY: 'auto', maxHeight: 400, padding: '6px 0' }}>
           {flat.length === 0 && (
             <div className="t-sm fg-3" style={{ padding: 24, textAlign: 'center' }}>No matches.</div>
           )}
@@ -153,6 +161,9 @@ export function CommandPalette() {
                   <div className="caps" style={{ padding: '8px 14px 4px', color: 'var(--ink-3)' }}>{it.group}</div>
                 )}
                 <div
+                  id={`cmdk-option-${it.id}`}
+                  role="option"
+                  aria-selected={i === sel}
                   style={{
                     padding: '7px 14px',
                     display: 'flex',

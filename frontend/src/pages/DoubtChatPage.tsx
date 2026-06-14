@@ -180,25 +180,32 @@ export default function DoubtChatPage() {
     <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
       {/* History drawer */}
       {showHistory && (
-        <div style={{ width: 260, borderRight: '1px solid var(--line-1)', background: 'var(--paper-1)', display: 'flex', flexDirection: 'column', flexShrink: 0, overflow: 'hidden' }}>
-          <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--line-1)' }}>
-            <span className="caps fg-2">Session history</span>
-          </div>
-          <div style={{ flex: 1, overflowY: 'auto', padding: 8 }}>
-            {(sessions ?? []).map((s) => (
-              <div key={s.id} style={{ padding: '8px 10px', borderRadius: 'var(--r-2)', cursor: 'pointer', marginBottom: 4 }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--paper-2)')}
-                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span className="t-xs fg-2" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{s.topic_context ?? 'General'}</span>
-                  <span style={{ marginLeft: 6 }}>{MOOD_EMOJI[s.sentiment_mood?.toUpperCase() ?? ''] ?? '💬'}</span>
+        <>
+          <div className="fixed inset-0 z-30 bg-black/40 sm:hidden" onClick={() => setShowHistory(false)} aria-hidden="true" />
+          <div
+            className="fixed inset-y-0 left-0 z-40 w-[80vw] max-w-[280px] sm:static sm:z-auto sm:w-[260px] sm:max-w-none"
+            style={{ borderRight: '1px solid var(--line-1)', background: 'var(--paper-1)', display: 'flex', flexDirection: 'column', flexShrink: 0, overflow: 'hidden' }}
+          >
+            <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--line-1)' }}>
+              <span className="caps fg-2">Session history</span>
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto', padding: 8 }}>
+              {(sessions ?? []).map((s) => (
+                <div key={s.id} className="row-i" style={{ padding: '8px 10px 8px 14px', borderRadius: 'var(--r-2)', cursor: 'pointer', marginBottom: 4 }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--paper-2)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span className="t-xs fg-2" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{s.topic_context ?? 'General'}</span>
+                    <span style={{ marginLeft: 6 }}>{MOOD_EMOJI[s.sentiment_mood?.toUpperCase() ?? ''] ?? '💬'}</span>
+                    <Icon name="chevR" size={12} className="row-chevron" style={{ color: 'var(--ink-3)', marginLeft: 4 }} />
+                  </div>
+                  <div className="t-xs fg-3" style={{ marginTop: 2 }}>{new Date(s.started_at).toLocaleDateString()}</div>
                 </div>
-                <div className="t-xs fg-3" style={{ marginTop: 2 }}>{new Date(s.started_at).toLocaleDateString()}</div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
+        </>
       )}
 
       {/* Main chat */}
@@ -207,6 +214,8 @@ export default function DoubtChatPage() {
         <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--line-1)', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           <button
             onClick={() => setShowHistory((v) => !v)}
+            aria-label="Toggle session history"
+            className="min-h-11 min-w-11 sm:min-h-0 sm:min-w-0"
             style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: 'var(--r-1)', background: 'none', border: 0, cursor: 'pointer' }}
             onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--paper-2)')}
             onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}
@@ -288,6 +297,8 @@ export default function DoubtChatPage() {
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
                 <button
                   onClick={handleVoice}
+                  aria-label={isRecording ? 'Stop voice recording' : 'Start voice recording'}
+                  className="min-h-11 min-w-11 sm:min-h-0 sm:min-w-0 inline-flex items-center justify-center"
                   style={{
                     padding: '4px 6px', borderRadius: 'var(--r-1)', border: 0,
                     background: isRecording ? 'color-mix(in srgb, var(--neg) 15%, var(--paper-1))' : 'transparent',
@@ -297,7 +308,7 @@ export default function DoubtChatPage() {
                 >
                   <Icon name="mic" size={13} />
                 </button>
-                <label style={{ padding: '4px 6px', borderRadius: 'var(--r-1)', cursor: 'pointer', color: 'var(--ink-3)' }}>
+                <label aria-label="Upload an image" className="min-h-11 min-w-11 sm:min-h-0 sm:min-w-0 inline-flex items-center justify-center" style={{ padding: '4px 6px', borderRadius: 'var(--r-1)', cursor: 'pointer', color: 'var(--ink-3)' }}>
                   <Icon name="upload" size={13} />
                   <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleImageUpload} />
                 </label>
@@ -307,7 +318,7 @@ export default function DoubtChatPage() {
                     {input.length}/1500
                   </span>
                 )}
-                <span className="t-xs fg-3"><kbd>↵</kbd> send</span>
+                <span className="hidden sm:inline t-xs fg-3"><kbd>↵</kbd> send</span>
                 <Button size="sm" variant="primary" icon="send" onClick={() => sendMessage(input)} loading={isStreaming}>Send</Button>
               </div>
             </div>

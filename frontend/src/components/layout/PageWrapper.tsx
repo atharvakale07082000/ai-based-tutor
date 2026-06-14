@@ -1,3 +1,4 @@
+import { useLocation } from 'react-router-dom'
 import { useAgentSocket } from '@/hooks/useAgentSocket'
 import { useLearnerStore } from '@/stores/learnerStore'
 
@@ -5,11 +6,16 @@ interface PageWrapperProps {
   children: React.ReactNode
 }
 
-// Thin wrapper that just wires up the socket — shell layout lives in App.tsx
+// Thin wrapper that wires up the socket and plays the page-enter transition — shell layout lives in App.tsx
 export function PageWrapper({ children }: PageWrapperProps) {
   const learnerId = useLearnerStore((s) => s.id ?? undefined)
+  const location = useLocation()
   useAgentSocket({ learnerId })
-  return <>{children}</>
+  return (
+    <div key={location.pathname} className="page-enter" style={{ height: '100%' }}>
+      {children}
+    </div>
+  )
 }
 
 // Keep legacy export for old imports

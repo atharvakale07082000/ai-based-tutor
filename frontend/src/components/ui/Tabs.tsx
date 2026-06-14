@@ -1,3 +1,7 @@
+import { cva } from 'class-variance-authority'
+import { cn } from '@/lib/cn'
+import { Icon } from './Icon'
+
 interface TabItem {
   value: string
   label: string
@@ -12,28 +16,41 @@ interface TabsProps {
   variant?: 'underline' | 'segmented'
 }
 
+const segTab = cva(
+  'seg-i whitespace-nowrap rounded-[var(--r-1)] px-2.5 py-1 text-[12px] font-medium transition-[background-color,color,box-shadow] duration-[var(--dur-fast)] ease-[var(--ease-out)]',
+  {
+    variants: {
+      active: {
+        true: 'bg-paper-0 text-ink-0 shadow-[var(--shadow-1)]',
+        false: 'bg-transparent text-ink-2',
+      },
+    },
+  }
+)
+
+const underlineTab = cva(
+  'tab-i -mb-px inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-2 text-[13px] font-medium border-b-2 transition-colors duration-[var(--dur-fast)] ease-[var(--ease-out)]',
+  {
+    variants: {
+      active: {
+        true: 'text-ink-0 border-ink-0',
+        false: 'text-ink-2 border-transparent',
+      },
+    },
+  }
+)
+
 export function Tabs({ tabs, value, onChange, variant = 'underline' }: TabsProps) {
   if (variant === 'segmented') {
     return (
-      <div style={{ display: 'inline-flex', padding: 2, gap: 2, background: 'var(--paper-2)', borderRadius: 'var(--r-2)', border: '1px solid var(--line-1)' }}>
+      <div role="tablist" className="inline-flex gap-0.5 rounded-[var(--r-2)] border border-line-1 bg-paper-2 p-0.5">
         {tabs.map((t) => (
           <button
             key={t.value}
+            role="tab"
+            aria-selected={value === t.value}
             onClick={() => onChange(t.value)}
-            style={{
-              padding: '3px 10px',
-              fontSize: 12,
-              fontWeight: 500,
-              borderRadius: 'var(--r-1)',
-              background: value === t.value ? 'var(--paper-0)' : 'transparent',
-              color: value === t.value ? 'var(--ink-0)' : 'var(--ink-2)',
-              boxShadow: value === t.value ? 'var(--shadow-1)' : 'none',
-              transition: 'all var(--dur-fast) var(--ease-out)',
-              cursor: 'pointer',
-              border: 0,
-              fontFamily: 'inherit',
-              whiteSpace: 'nowrap',
-            }}
+            className={cn(segTab({ active: value === t.value }), 'border-0 font-[inherit] cursor-pointer')}
           >
             {t.label}
           </button>
@@ -43,32 +60,18 @@ export function Tabs({ tabs, value, onChange, variant = 'underline' }: TabsProps
   }
 
   return (
-    <div style={{ display: 'flex', borderBottom: '1px solid var(--line-1)', gap: 0 }}>
+    <div role="tablist" className="flex gap-0 border-b border-line-1">
       {tabs.map((t) => (
         <button
           key={t.value}
+          role="tab"
+          aria-selected={value === t.value}
           onClick={() => onChange(t.value)}
-          style={{
-            padding: '8px 12px',
-            fontSize: 13,
-            fontWeight: 500,
-            color: value === t.value ? 'var(--ink-0)' : 'var(--ink-2)',
-            borderBottom: `2px solid ${value === t.value ? 'var(--ink-0)' : 'transparent'}`,
-            marginBottom: -1,
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6,
-            transition: 'color var(--dur-fast)',
-            background: 'transparent',
-            cursor: 'pointer',
-            fontFamily: 'inherit',
-            whiteSpace: 'nowrap',
-          }}
+          className={cn(underlineTab({ active: value === t.value }), 'bg-transparent border-x-0 border-t-0 font-[inherit] cursor-pointer')}
         >
+          {t.icon && <Icon name={t.icon} size={13} />}
           {t.label}
-          {t.count !== undefined && (
-            <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>{t.count}</span>
-          )}
+          {t.count !== undefined && <span className="t-xs fg-3">{t.count}</span>}
         </button>
       ))}
     </div>

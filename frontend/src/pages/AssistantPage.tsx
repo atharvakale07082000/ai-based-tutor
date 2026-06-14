@@ -141,9 +141,9 @@ export default function AssistantPage() {
   ]
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '240px 1fr', height: '100%', overflow: 'hidden' }}>
+    <div className="grid h-full grid-cols-1 overflow-hidden lg:grid-cols-[240px_1fr]">
       {/* Left rail */}
-      <div style={{ borderRight: '1px solid var(--line-1)', background: 'var(--paper-1)', overflow: 'auto', padding: 14 }}>
+      <div className="hidden lg:block" style={{ borderRight: '1px solid var(--line-1)', background: 'var(--paper-1)', overflow: 'auto', padding: 14 }}>
         <div className="caps" style={{ color: 'var(--ink-3)', marginBottom: 8 }}>Active agents</div>
         {agentList.map((a) => (
           <div key={a.kind} style={{ padding: 10, borderRadius: 'var(--r-2)', background: 'var(--paper-0)', border: '1px solid var(--line-1)', marginBottom: 6 }}>
@@ -259,7 +259,7 @@ export default function AssistantPage() {
                     {input.length}/2000
                   </span>
                 )}
-                <span className="t-xs fg-3"><kbd>⌘</kbd><kbd>↵</kbd> to send</span>
+                <span className="hidden sm:inline t-xs fg-3"><kbd>⌘</kbd><kbd>↵</kbd> to send</span>
                 <Button size="sm" variant="primary" icon="send" onClick={sendMessage} loading={streaming}>Send</Button>
               </div>
             </div>

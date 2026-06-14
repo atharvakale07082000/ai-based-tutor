@@ -74,13 +74,32 @@ export default function QuizPage() {
     setAnswers((prev) => [...prev, option])
   }, [revealed])
 
-  const handleNext = () => {
+  const handleNext = useCallback(() => {
     if (quiz && currentIdx < quiz.questions.length - 1) {
       setCurrentIdx((i) => i + 1)
     } else {
       handleFinish()
     }
-  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quiz, currentIdx])
+
+  // Keyboard shortcuts: 1-4 to answer, Enter / Cmd+Enter to advance
+  useEffect(() => {
+    if (quizDone) return
+    const handler = (e: KeyboardEvent) => {
+      if (revealed) {
+        if (e.key === 'Enter') { e.preventDefault(); handleNext() }
+        return
+      }
+      const num = Number(e.key)
+      if (num >= 1 && num <= 4 && currentQuestion && num <= currentQuestion.options.length) {
+        e.preventDefault()
+        handleReveal(num - 1)
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [revealed, currentQuestion, handleReveal, handleNext, quizDone])
 
   const handleFinish = async () => {
     if (!quiz) return
@@ -227,7 +246,7 @@ export default function QuizPage() {
           <h2 className="serif" style={{ fontSize: 22, fontWeight: 400, marginBottom: 20, lineHeight: 1.45 }}>{currentQuestion.question}</h2>
 
           {/* Options */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div role="radiogroup" aria-label="Answer options" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {currentQuestion.options.map((option, idx) => {
               let bg = 'var(--paper-2)'
               let border = 'var(--line-1)'
@@ -245,15 +264,21 @@ export default function QuizPage() {
                   key={idx}
                   onClick={() => handleReveal(idx)}
                   disabled={revealed}
+                  role="radio"
+                  aria-checked={selectedOption === idx}
                   style={{
-                    width: '100%', textAlign: 'left', padding: '10px 14px',
+                    width: '100%', textAlign: 'left', padding: '10px 14px', minHeight: 44,
+                    display: 'flex', alignItems: 'center',
                     background: bg, border: `1px solid ${border}`, color,
                     borderRadius: 'var(--r-2)', fontSize: 13, fontFamily: 'inherit',
                     cursor: revealed ? 'default' : 'pointer', transition: 'all var(--dur-fast)',
                   }}
                 >
                   <span style={{ opacity: 0.4, marginRight: 10 }}>{String.fromCharCode(65 + idx)}.</span>
-                  {option}
+                  <span style={{ flex: 1 }}>{option}</span>
+                  {!revealed && (
+                    <kbd className="hidden sm:inline" style={{ marginLeft: 8 }}>{idx + 1}</kbd>
+                  )}
                 </button>
               )
             })}

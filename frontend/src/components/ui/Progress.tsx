@@ -1,3 +1,5 @@
+import { cn } from '@/lib/cn'
+
 type ProgressSize = 'xs' | 'sm' | 'md' | 'lg'
 type ProgressTone = 'accent' | 'pos' | 'warn' | 'neg'
 
@@ -7,6 +9,7 @@ interface ProgressProps {
   size?: ProgressSize
   tone?: ProgressTone
   showLabel?: boolean
+  className?: string
 }
 
 const heights = { xs: 2, sm: 4, md: 6, lg: 8 }
@@ -17,24 +20,20 @@ const colors: Record<ProgressTone, string> = {
   neg:    'var(--neg)',
 }
 
-export function Progress({ value = 0, max = 100, size = 'md', tone = 'accent', showLabel }: ProgressProps) {
+export function Progress({ value = 0, max = 100, size = 'md', tone = 'accent', showLabel, className }: ProgressProps) {
   const pct = Math.min(100, Math.max(0, (value / max) * 100))
   return (
-    <div>
-      <div style={{ height: heights[size], background: 'var(--paper-3)', borderRadius: 'var(--r-pill)', overflow: 'hidden' }}>
+    <div className={className}>
+      <div
+        className="overflow-hidden rounded-[var(--r-pill)] bg-paper-3"
+        style={{ height: heights[size] }}
+      >
         <div
-          style={{
-            width: `${pct}%`,
-            height: '100%',
-            background: colors[tone],
-            borderRadius: 'var(--r-pill)',
-            transition: 'width var(--dur-slow) var(--ease-out)',
-          }}
+          className="h-full rounded-[var(--r-pill)] transition-[width] duration-[var(--dur-slow)] ease-[var(--ease-out)]"
+          style={{ width: `${pct}%`, background: colors[tone] }}
         />
       </div>
-      {showLabel && (
-        <div className="t-xs fg-3" style={{ marginTop: 4 }}>{Math.round(pct)}% complete</div>
-      )}
+      {showLabel && <div className="t-xs fg-3 mt-1">{Math.round(pct)}% complete</div>}
     </div>
   )
 }
@@ -42,27 +41,26 @@ export function Progress({ value = 0, max = 100, size = 'md', tone = 'accent', s
 interface ValueBarProps {
   value: number
   max?: number
-  segments?: number
+  /** Number of segments to render, or an array whose length determines the segment count. */
+  segments?: number | unknown[]
   height?: number
+  className?: string
 }
 
-export function ValueBar({ value, max = 100, segments, height = 4 }: ValueBarProps) {
+export function ValueBar({ value, max = 100, segments, height = 4, className }: ValueBarProps) {
   if (segments !== undefined) {
+    const count = Array.isArray(segments) ? segments.length : segments
     return (
-      <div style={{ display: 'flex', gap: 2 }}>
-        {Array.from({ length: segments }).map((_, i) => (
+      <div className={cn('flex gap-0.5', className)}>
+        {Array.from({ length: count }).map((_, i) => (
           <div
             key={i}
-            style={{
-              flex: 1,
-              height,
-              background: i < value ? 'var(--ink-0)' : 'var(--paper-3)',
-              borderRadius: 1,
-            }}
+            className="flex-1 rounded-[1px]"
+            style={{ height, background: i < value ? 'var(--ink-0)' : 'var(--paper-3)' }}
           />
         ))}
       </div>
     )
   }
-  return <Progress value={value} max={max} />
+  return <Progress value={value} max={max} className={className} />
 }

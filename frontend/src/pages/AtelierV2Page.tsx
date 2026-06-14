@@ -208,9 +208,9 @@ export default function AtelierV2Page() {
   }
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', height: '100%', overflow: 'hidden' }}>
+    <div className="grid h-full grid-cols-1 overflow-hidden lg:grid-cols-[220px_1fr]">
       {/* Left rail */}
-      <div style={{ borderRight: '1px solid var(--line-1)', background: 'var(--paper-1)', overflow: 'auto', padding: 14 }}>
+      <div className="hidden lg:block" style={{ borderRight: '1px solid var(--line-1)', background: 'var(--paper-1)', overflow: 'auto', padding: 14 }}>
         <div className="caps" style={{ color: 'var(--ink-3)', marginBottom: 8 }}>Try asking</div>
         {[
           'Quiz me on transformers',
@@ -412,7 +412,7 @@ export default function AtelierV2Page() {
                     {input.length}/2000
                   </span>
                 )}
-                <span className="t-xs fg-3">
+                <span className="hidden sm:inline t-xs fg-3">
                   <kbd>⌘</kbd><kbd>↵</kbd> to send
                 </span>
                 <Button size="sm" variant="primary" icon="send" onClick={sendMessage} loading={streaming}>

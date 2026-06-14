@@ -264,6 +264,124 @@ kbd, .kbd {
   letter-spacing: 0;
 }
 
+/* TOOLTIP */
+.tt-wrap:hover .tt,
+.tt-wrap:focus-within .tt {
+  opacity: 1;
+}
+
+/* PAGE TRANSITION — transform-only, keeps content visible (no opacity:0 floor) */
+@keyframes pageEnter {
+  from { transform: translateY(7px); }
+  to   { transform: translateY(0); }
+}
+.page-enter {
+  animation: pageEnter var(--dur-slow) var(--ease-out) both;
+}
+
+/* STAGGERED LISTS — transform-only cascade */
+@keyframes staggerIn {
+  from { transform: translateY(9px); }
+  to   { transform: translateY(0); }
+}
+.stagger > * {
+  animation: staggerIn var(--dur-base) var(--ease-out) both;
+}
+.stagger > *:nth-child(1)  { animation-delay: 0ms; }
+.stagger > *:nth-child(2)  { animation-delay: 24ms; }
+.stagger > *:nth-child(3)  { animation-delay: 48ms; }
+.stagger > *:nth-child(4)  { animation-delay: 72ms; }
+.stagger > *:nth-child(5)  { animation-delay: 96ms; }
+.stagger > *:nth-child(6)  { animation-delay: 120ms; }
+.stagger > *:nth-child(7)  { animation-delay: 144ms; }
+.stagger > *:nth-child(8)  { animation-delay: 168ms; }
+.stagger > *:nth-child(9)  { animation-delay: 192ms; }
+.stagger > *:nth-child(10) { animation-delay: 216ms; }
+.stagger > *:nth-child(11) { animation-delay: 240ms; }
+.stagger > *:nth-child(12) { animation-delay: 264ms; }
+
+/* LIST ROW — accent rail scales in + chevron nudges on hover */
+.row-i {
+  position: relative;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+.row-i::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  background: var(--accent);
+  border-radius: 2px;
+  transform: scaleY(0);
+  transform-origin: center;
+  transition: transform var(--dur-base) var(--ease-spring);
+}
+.row-i:hover::before {
+  transform: scaleY(1);
+}
+.row-i .row-chevron {
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.row-i:hover .row-chevron {
+  transform: translateX(3px);
+}
+
+/* NAV ITEM — icon scale + item nudge on hover */
+.nav-i {
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.nav-i:hover {
+  transform: translateX(1.5px);
+}
+.nav-i .nav-i-icon {
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.nav-i:hover .nav-i-icon {
+  transform: scale(1.14);
+}
+
+/* AGENT PILL — hover lift */
+.pill-i {
+  transition: transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+}
+.pill-i:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-1);
+}
+
+/* LINK UNDERLINE — grows left-to-right on hover */
+.link-u {
+  position: relative;
+  text-decoration: none;
+}
+.link-u::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  width: 0;
+  height: 1px;
+  background: currentColor;
+  transition: width var(--dur-base) var(--ease-out);
+}
+.link-u:hover::after {
+  width: 100%;
+}
+
+/* STREAMING — blinking caret + token fade-in */
+.caret-blink {
+  animation: blink 1s steps(1) infinite;
+}
+@keyframes tokenIn {
+  from { opacity: 0; transform: translateY(2px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.token-in {
+  animation: tokenIn var(--dur-fast) var(--ease-out) both;
+}
+
 /* DOT GRID */
 .dotgrid {
   background-image: radial-gradient(var(--line-1) 1px, transparent 1px);

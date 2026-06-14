@@ -1,3 +1,5 @@
+import { cn } from '@/lib/cn'
+
 type AgentKind = 'curr' | 'quiz' | 'prog' | 'doubt'
 
 const COLORS: Record<AgentKind, string> = {
@@ -19,24 +21,20 @@ interface AgentPillProps {
   state?: 'active' | 'idle' | 'thinking'
   label?: string
   mini?: boolean
+  className?: string
 }
 
-export function AgentPill({ kind = 'curr', state = 'idle', label, mini }: AgentPillProps) {
+export function AgentPill({ kind = 'curr', state = 'idle', label, mini, className }: AgentPillProps) {
   const color = COLORS[kind]
   const text = label ?? LABELS[kind]
   const pulsing = state === 'active' || state === 'thinking'
 
   if (mini) {
     return (
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--ink-2)' }}>
+      <span className={cn('inline-flex items-center gap-1.5 text-[11px] text-ink-2', className)}>
         <span
-          style={{
-            width: 6,
-            height: 6,
-            borderRadius: '50%',
-            background: color,
-            animation: pulsing ? 'pulse-soft 2s infinite' : 'none',
-          }}
+          className={cn('h-1.5 w-1.5 rounded-full', pulsing && 'animate-[pulse-soft_2s_infinite]')}
+          style={{ background: color }}
         />
         {text}
       </span>
@@ -45,28 +43,14 @@ export function AgentPill({ kind = 'curr', state = 'idle', label, mini }: AgentP
 
   return (
     <span
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 6,
-        padding: '3px 8px 3px 6px',
-        borderRadius: 'var(--r-pill)',
-        background: 'var(--paper-1)',
-        border: '1px solid var(--line-1)',
-        fontSize: 11,
-        fontWeight: 500,
-        color: 'var(--ink-1)',
-      }}
+      className={cn(
+        'pill-i inline-flex items-center gap-1.5 rounded-[var(--r-pill)] border border-line-1 bg-paper-1 py-[3px] pl-1.5 pr-2 text-[11px] font-medium text-ink-1 transition-[transform,box-shadow] duration-[var(--dur-fast)] ease-[var(--ease-out)]',
+        className
+      )}
     >
       <span
-        style={{
-          width: 7,
-          height: 7,
-          borderRadius: '50%',
-          background: color,
-          boxShadow: pulsing ? `0 0 0 3px ${color}22` : 'none',
-          animation: pulsing ? 'pulse-soft 2s infinite' : 'none',
-        }}
+        className={cn('h-[7px] w-[7px] rounded-full', pulsing && 'animate-[pulse-soft_2s_infinite]')}
+        style={{ background: color, boxShadow: pulsing ? `0 0 0 3px ${color}22` : 'none' }}
       />
       {text}
     </span>

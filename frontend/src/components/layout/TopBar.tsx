@@ -3,6 +3,7 @@ import { Icon } from '@/components/ui/Icon'
 import { Button } from '@/components/ui/Button'
 import { useLearnerStore } from '@/stores/learnerStore'
 import { useCmdkStore } from '@/stores/cmdkStore'
+import { useUiStore } from '@/stores/uiStore'
 import { authAPI } from '@/lib/api'
 
 const BREADCRUMBS: Record<string, string[]> = {
@@ -26,6 +27,7 @@ export function TopBar() {
   const navigate = useNavigate()
   const { name, reset } = useLearnerStore()
   const openCmdk = useCmdkStore((s) => s.setOpen)
+  const toggleSidebar = useUiStore((s) => s.toggleSidebar)
   const crumbs = getBreadcrumbs(location.pathname)
 
   const handleLogout = async () => {
@@ -47,6 +49,16 @@ export function TopBar() {
         flexShrink: 0,
       }}
     >
+      {/* Mobile sidebar toggle */}
+      <button
+        onClick={toggleSidebar}
+        aria-label="Toggle navigation menu"
+        className="lg:hidden"
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, padding: 6, color: 'var(--ink-2)', borderRadius: 'var(--r-1)', flexShrink: 0 }}
+      >
+        <Icon name="menu" size={16} />
+      </button>
+
       {/* Breadcrumbs */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
         {crumbs.map((b, i) => (
@@ -70,8 +82,9 @@ export function TopBar() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <button
           onClick={() => openCmdk(true)}
+          aria-label="Open command palette"
+          className="hidden sm:flex"
           style={{
-            display: 'flex',
             alignItems: 'center',
             gap: 6,
             padding: '4px 8px',
@@ -91,6 +104,7 @@ export function TopBar() {
           size="sm"
           variant="accent"
           icon="sparkle"
+          className="hidden sm:inline-flex"
           onClick={() => navigate('/assistant')}
         >
           Ask Atelier
@@ -98,6 +112,7 @@ export function TopBar() {
 
         <button
           title="Notifications"
+          aria-label="Notifications"
           style={{ padding: 6, color: 'var(--ink-2)', borderRadius: 'var(--r-1)', lineHeight: 0 }}
         >
           <Icon name="bell" size={14} />
@@ -106,6 +121,7 @@ export function TopBar() {
         <button
           onClick={handleLogout}
           title={name ? `Logout ${name}` : 'Logout'}
+          aria-label={name ? `Logout ${name}` : 'Logout'}
           style={{
             width: 26,
             height: 26,

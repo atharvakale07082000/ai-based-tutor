@@ -1,42 +1,40 @@
 import { forwardRef, type HTMLAttributes } from 'react'
+import { cva, type VariantProps } from 'class-variance-authority'
+import { cn } from '@/lib/cn'
 
-interface CardProps extends HTMLAttributes<HTMLDivElement> {
-  padding?: 'none' | 'sm' | 'md' | 'lg'
-  hover?: boolean
+const cardVariants = cva(
+  'relative rounded-[var(--r-3)] border border-line-1 bg-paper-1 transition-[border-color,background-color,transform,box-shadow] duration-[var(--dur-base)] ease-[var(--ease-out)]',
+  {
+    variants: {
+      padding: {
+        none: 'p-0',
+        sm: 'p-3',
+        md: 'p-4',
+        lg: 'p-6',
+      },
+      hover: {
+        true: 'hover:border-line-2 hover:bg-paper-2 hover:-translate-y-0.5 hover:shadow-[var(--shadow-2)]',
+        false: '',
+      },
+      raised: {
+        true: 'shadow-[var(--shadow-2)]',
+        false: '',
+      },
+    },
+    defaultVariants: { padding: 'md', hover: false, raised: false },
+  }
+)
+
+interface CardProps extends HTMLAttributes<HTMLDivElement>, VariantProps<typeof cardVariants> {
   accent?: boolean
-  raised?: boolean
 }
 
-const pads = { none: 0, sm: 12, md: 16, lg: 24 }
-
 export const Card = forwardRef<HTMLDivElement, CardProps>(
-  ({ padding = 'md', hover, accent, raised, className = '', style = {}, children, ...props }, ref) => {
+  ({ padding, hover, raised, accent, className, children, ...props }, ref) => {
     return (
-      <div
-        ref={ref}
-        className={className}
-        style={{
-          background: 'var(--paper-1)',
-          border: '1px solid var(--line-1)',
-          borderRadius: 'var(--r-3)',
-          padding: pads[padding],
-          boxShadow: raised ? 'var(--shadow-2)' : 'none',
-          position: 'relative',
-          transition: 'border-color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out)',
-          ...style,
-        }}
-        onMouseEnter={hover ? (e) => {
-          e.currentTarget.style.borderColor = 'var(--line-2)'
-          e.currentTarget.style.background = 'var(--paper-2)'
-        } : undefined}
-        onMouseLeave={hover ? (e) => {
-          e.currentTarget.style.borderColor = 'var(--line-1)'
-          e.currentTarget.style.background = 'var(--paper-1)'
-        } : undefined}
-        {...props}
-      >
+      <div ref={ref} className={cn(cardVariants({ padding, hover, raised }), className)} {...props}>
         {accent && (
-          <div style={{ position: 'absolute', top: 0, left: 12, right: 12, height: 2, background: 'var(--accent)', borderRadius: '0 0 2px 2px' }} />
+          <div className="absolute left-3 right-3 top-0 h-0.5 rounded-b-sm bg-accent" />
         )}
         {children}
       </div>
@@ -47,10 +45,10 @@ Card.displayName = 'Card'
 
 export function CardSkeleton() {
   return (
-    <div style={{ background: 'var(--paper-1)', border: '1px solid var(--line-1)', borderRadius: 'var(--r-3)', padding: 16 }}>
-      <div className="skel" style={{ height: 12, width: '60%', marginBottom: 8 }} />
-      <div className="skel" style={{ height: 12, width: '80%', marginBottom: 8 }} />
-      <div className="skel" style={{ height: 12, width: '40%' }} />
+    <div className="rounded-[var(--r-3)] border border-line-1 bg-paper-1 p-4">
+      <div className="skel mb-2 h-3 w-3/5" />
+      <div className="skel mb-2 h-3 w-4/5" />
+      <div className="skel h-3 w-2/5" />
     </div>
   )
 }
