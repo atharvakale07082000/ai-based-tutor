@@ -12,7 +12,6 @@ and allows course creation to pre-populate the bank for all topics.
 
 from __future__ import annotations
 
-import asyncio
 import random
 from datetime import datetime, timezone
 
@@ -50,11 +49,8 @@ async def get_or_generate_quiz_questions(
     """
     from app.db.mongo import col_quiz_bank
 
-    def _fetch() -> list[dict]:
-        entry = col_quiz_bank().find_one({"topic": topic, "bloom_level": bloom_level}, {"_id": 0, "questions": 1})
-        return (entry or {}).get("questions", [])
-
-    cached = await asyncio.to_thread(_fetch)
+    entry = await col_quiz_bank().find_one({"topic": topic, "bloom_level": bloom_level}, {"_id": 0, "questions": 1})
+    cached = (entry or {}).get("questions", [])
     if len(cached) >= count:
         # Shuffle so repeated requests feel varied
         sample = random.sample(cached, count)
@@ -70,19 +66,16 @@ async def get_or_generate_quiz_questions(
     if questions:
         merged = list({q["id"]: q for q in (cached + questions)}.values())
 
-        def _upsert() -> None:
-            col_quiz_bank().update_one(
-                {"topic": topic, "bloom_level": bloom_level},
-                {
-                    "$set": {
-                        "questions": merged,
-                        "generated_at": datetime.now(timezone.utc).isoformat(),
-                    }
-                },
-                upsert=True,
-            )
-
-        await asyncio.to_thread(_upsert)
+        await col_quiz_bank().update_one(
+            {"topic": topic, "bloom_level": bloom_level},
+            {
+                "$set": {
+                    "questions": merged,
+                    "generated_at": datetime.now(timezone.utc).isoformat(),
+                }
+            },
+            upsert=True,
+        )
         return questions[:count]
 
     return cached[:count]

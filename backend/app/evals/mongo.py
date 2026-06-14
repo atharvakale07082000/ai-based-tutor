@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
-
 import structlog
 
 from app.db.mongo import col_evals
@@ -14,36 +12,12 @@ log = structlog.get_logger()
 # ─── Write ────────────────────────────────────────────────────────────────────
 
 
-def _insert_eval_sync(record: dict) -> str:
-    result = col_evals().insert_one({**record})
+async def insert_eval(record: dict) -> str:
+    result = await col_evals().insert_one({**record})
     return str(result.inserted_id)
 
 
-async def insert_eval(record: dict) -> str:
-    return await asyncio.to_thread(_insert_eval_sync, record)
-
-
 # ─── Read ─────────────────────────────────────────────────────────────────────
-
-
-def _query_evals_sync(
-    *,
-    eval_type: str | None,
-    agent: str | None,
-    learner_id: str | None,
-    passed: bool | None,
-    limit: int,
-) -> list[dict]:
-    query: dict = {}
-    if eval_type:
-        query["eval_type"] = eval_type
-    if agent:
-        query["agent"] = agent
-    if learner_id:
-        query["learner_id"] = learner_id
-    if passed is not None:
-        query["passed"] = passed
-    return list(col_evals().find(query, {"_id": 0}).sort("timestamp", -1).limit(limit))
 
 
 async def query_evals(
@@ -54,17 +28,22 @@ async def query_evals(
     passed: bool | None = None,
     limit: int = 50,
 ) -> list[dict]:
-    return await asyncio.to_thread(
-        _query_evals_sync,
-        eval_type=eval_type,
-        agent=agent,
-        learner_id=learner_id,
-        passed=passed,
-        limit=limit,
-    )
+    query: dict = {}
+    if eval_type:
+        query["eval_type"] = eval_type
+    if agent:
+        query["agent"] = agent
+    if learner_id:
+        query["learner_id"] = learner_id
+    if passed is not None:
+        query["passed"] = passed
+    return await col_evals().find(query, {"_id": 0}).sort("timestamp", -1).limit(limit).to_list(length=None)
 
 
-def _aggregate_sync(eval_type: str | None, agent: str | None) -> list[dict]:
+async def aggregate_summary(
+    eval_type: str | None = None,
+    agent: str | None = None,
+) -> list[dict]:
     match: dict = {}
     if eval_type:
         match["eval_type"] = eval_type
@@ -94,14 +73,7 @@ def _aggregate_sync(eval_type: str | None, agent: str | None) -> list[dict]:
         },
         {"$sort": {"eval_type": 1, "agent": 1}},
     ]
-    return list(col_evals().aggregate(pipeline))
-
-
-async def aggregate_summary(
-    eval_type: str | None = None,
-    agent: str | None = None,
-) -> list[dict]:
-    return await asyncio.to_thread(_aggregate_sync, eval_type, agent)
+    return await (await col_evals().aggregate(pipeline)).to_list(length=None)
 
 
 async def close_mongo() -> None:

@@ -13,8 +13,8 @@ log = structlog.get_logger()
 PROJ = {"_id": 0}
 
 
-def _get_learner_or_404(user_id: str) -> dict:
-    learner = col_learners().find_one({"user_id": user_id}, PROJ)
+async def _get_learner_or_404(user_id: str) -> dict:
+    learner = await col_learners().find_one({"user_id": user_id}, PROJ)
     if not learner:
         raise HTTPException(status_code=404, detail="Learner profile not found")
     return learner
@@ -22,7 +22,7 @@ def _get_learner_or_404(user_id: str) -> dict:
 
 @router.get("/profile", response_model=LearnerProfileSchema)
 async def get_profile(user_id: str = Depends(get_current_user_id)):
-    learner = _get_learner_or_404(user_id)
+    learner = await _get_learner_or_404(user_id)
     return LearnerProfileSchema(
         id=learner["id"],
         user_id=learner["user_id"],
@@ -41,7 +41,7 @@ async def update_profile(
     body: LearnerProfileUpdate,
     user_id: str = Depends(get_current_user_id),
 ):
-    learner = _get_learner_or_404(user_id)
+    learner = await _get_learner_or_404(user_id)
 
     updates: dict = {"updated_at": datetime.now(timezone.utc).isoformat()}
     if body.name is not None:
@@ -53,8 +53,8 @@ async def update_profile(
     if body.session_cadence is not None:
         updates["session_cadence"] = body.session_cadence
 
-    col_learners().update_one({"user_id": user_id}, {"$set": updates})
-    learner = _get_learner_or_404(user_id)
+    await col_learners().update_one({"user_id": user_id}, {"$set": updates})
+    learner = await _get_learner_or_404(user_id)
     log.info("learner_profile_updated", learner_id=learner["id"])
 
     return LearnerProfileSchema(
@@ -89,6 +89,6 @@ async def onboard(
         "onboarded_at": datetime.now(timezone.utc).isoformat(),
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
-    col_learners().update_one({"user_id": user_id}, {"$set": updates}, upsert=True)
+    await col_learners().update_one({"user_id": user_id}, {"$set": updates}, upsert=True)
     log.info("learner_onboarded", user_id=user_id, name=body.name)
     return OnboardResponse(name=body.name.strip())

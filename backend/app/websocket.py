@@ -96,7 +96,7 @@ async def join_room(sid: str, data: dict):
     try:
         from app.db.mongo import col_learners
 
-        learner = col_learners().find_one(
+        learner = await col_learners().find_one(
             {"id": learner_id, "user_id": user_id},
             {"_id": 0, "id": 1},
         )

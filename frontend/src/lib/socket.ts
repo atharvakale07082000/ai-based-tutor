@@ -1,4 +1,5 @@
 import { io, Socket } from 'socket.io-client'
+import { getAccessToken } from './api'
 
 const WS_URL = import.meta.env.VITE_WS_URL ?? 'http://localhost:8000'
 
@@ -13,6 +14,7 @@ export function getSocket(): Socket {
       reconnection: true,
       reconnectionAttempts: 10,
       reconnectionDelay: 1000,
+      auth: (cb) => cb({ token: getAccessToken() }),
     })
 
     socket.on('connect', () => {
@@ -32,7 +34,7 @@ export function getSocket(): Socket {
 
 export function connectSocket(learnerId?: string) {
   const s = getSocket()
-  if (!s.connected) {
+  if (!s.connected && getAccessToken()) {
     s.connect()
     if (learnerId) {
       s.once('connect', () => {

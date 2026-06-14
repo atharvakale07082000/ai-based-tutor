@@ -147,16 +147,17 @@ def _llm_call(prompt: str, max_tokens: int = 512, temperature: float = 0.1) -> s
 # ─── RAG context fetch ────────────────────────────────────────────────────────
 
 
-def _fetch_user_context_sync(user_id: str) -> dict:
-    learner = col_learners().find_one({"user_id": user_id}, PROJ)
+async def _fetch_user_context_sync(user_id: str) -> dict:
+    learner = await col_learners().find_one({"user_id": user_id}, PROJ)
     if not learner:
         return {}
 
-    quizzes = list(
+    quizzes = await (
         col_quizzes()
         .find({"learner_id": learner["id"], "completed_at": {"$ne": None}}, PROJ)
         .sort("completed_at", -1)
         .limit(5)
+        .to_list(length=None)
     )
 
     proficiency = learner.get("topic_proficiency_map") or {}
@@ -178,7 +179,7 @@ def _fetch_user_context_sync(user_id: str) -> dict:
 
 async def _fetch_user_context(user_id: str) -> dict:
     try:
-        return await asyncio.to_thread(_fetch_user_context_sync, user_id)
+        return await _fetch_user_context_sync(user_id)
     except Exception as e:
         log.warning("rag_context_fetch_error", error=str(e))
         return {}
@@ -277,9 +278,9 @@ async def _exec_doubt(message, history, topic, user_ctx):
         yield {"type": "error", "message": str(e)}
 
 
-def _create_quiz_sync(learner_id: str, topic: str, bloom: str, questions: list) -> str:
+async def _create_quiz_sync(learner_id: str, topic: str, bloom: str, questions: list) -> str:
     quiz_id = str(uuid.uuid4())
-    col_quizzes().insert_one(
+    await col_quizzes().insert_one(
         {
             "id": quiz_id,
             "learner_id": learner_id,
@@ -304,7 +305,7 @@ async def _exec_quiz(topic, user_ctx, user_id):
     yield {"type": "token", "content": f"Generating a quiz on **{resolved_topic}**…\n\n"}
 
     try:
-        learner = col_learners().find_one({"user_id": user_id}, PROJ)
+        learner = await col_learners().find_one({"user_id": user_id}, PROJ)
         if not learner:
             yield {"type": "error", "message": "Learner profile not found"}
             return
@@ -315,7 +316,7 @@ async def _exec_quiz(topic, user_ctx, user_id):
 
         questions = await get_or_generate_quiz_questions(resolved_topic, bloom, count=5)
 
-        quiz_id = await asyncio.to_thread(_create_quiz_sync, learner["id"], resolved_topic, bloom, questions)
+        quiz_id = await _create_quiz_sync(learner["id"], resolved_topic, bloom, questions)
 
         yield {"type": "token", "content": f"Ready! **{len(questions)} questions** at **{bloom}** level.\n"}
         yield {
@@ -367,7 +368,7 @@ async def _exec_course_planner(goal, message, user_ctx, user_id):
 
 async def _exec_progress(user_ctx, user_id):
     try:
-        learner = col_learners().find_one({"user_id": user_id}, PROJ)
+        learner = await col_learners().find_one({"user_id": user_id}, PROJ)
         if not learner:
             yield {"type": "token", "content": "No learner profile found."}
             return
@@ -409,10 +410,10 @@ async def _exec_curriculum(user_ctx, user_id):
     from app.db.mongo import col_curricula
 
     try:
-        learner = col_learners().find_one({"user_id": user_id}, PROJ)
+        learner = await col_learners().find_one({"user_id": user_id}, PROJ)
         cp = None
         if learner:
-            cp = col_curricula().find_one(
+            cp = await col_curricula().find_one(
                 {"learner_id": learner["id"], "is_active": True},
                 PROJ,
                 sort=[("generated_at", -1)],

@@ -40,23 +40,19 @@ def _chat(prompt: str, max_tokens: int = 2000, temperature: float = 0.2) -> str:
 
 
 async def get_plan(plan_id: str) -> dict | None:
-    return col_course_plans().find_one({"plan_id": plan_id}, PROJ)
+    return await col_course_plans().find_one({"plan_id": plan_id}, PROJ)
 
 
 async def list_plans(user_id: str) -> list[dict]:
-    return list(col_course_plans().find({"user_id": user_id}, PROJ).sort("created_at", -1))
-
-
-def _save_plan_sync(plan: dict) -> None:
-    col_course_plans().insert_one({**plan})
+    return await col_course_plans().find({"user_id": user_id}, PROJ).sort("created_at", -1).to_list(length=None)
 
 
 async def _save_plan(plan: dict) -> None:
-    await asyncio.to_thread(_save_plan_sync, plan)
+    await col_course_plans().insert_one({**plan})
 
 
-def _update_module_interview_sync(plan_id: str, module_id: str, status: str, score: float) -> None:
-    col_course_plans().update_one(
+async def _update_module_interview(plan_id: str, module_id: str, status: str, score: float) -> None:
+    await col_course_plans().update_one(
         {"plan_id": plan_id, "modules.id": module_id},
         {
             "$set": {
@@ -67,16 +63,12 @@ def _update_module_interview_sync(plan_id: str, module_id: str, status: str, sco
     )
 
 
-async def _update_module_interview(plan_id: str, module_id: str, status: str, score: float) -> None:
-    await asyncio.to_thread(_update_module_interview_sync, plan_id, module_id, status, score)
-
-
 async def get_interview(interview_id: str) -> dict | None:
-    return col_interviews().find_one({"interview_id": interview_id}, PROJ)
+    return await col_interviews().find_one({"interview_id": interview_id}, PROJ)
 
 
 async def get_module_interview(plan_id: str, module_id: str, user_id: str) -> dict | None:
-    return col_interviews().find_one(
+    return await col_interviews().find_one(
         {"plan_id": plan_id, "module_id": module_id, "user_id": user_id},
         PROJ,
         sort=[("created_at", -1)],
@@ -273,13 +265,13 @@ Requirements:
         "completed_at": None,
     }
 
-    col_interviews().insert_one({**interview})
+    await col_interviews().insert_one({**interview})
     log.info("interview_started", interview_id=interview["interview_id"])
     return interview
 
 
 async def evaluate_answer(interview_id: str, question_id: int, answer_text: str) -> dict:
-    interview = col_interviews().find_one({"interview_id": interview_id})
+    interview = await col_interviews().find_one({"interview_id": interview_id})
     if not interview:
         raise ValueError("Interview not found")
 
@@ -313,7 +305,7 @@ Return ONLY the JSON."""
     evaluation["question_id"] = question_id
     evaluation["answer_text"] = answer_text
 
-    col_interviews().update_one(
+    await col_interviews().update_one(
         {"interview_id": interview_id},
         {"$push": {"answers": evaluation}},
     )
@@ -324,7 +316,7 @@ async def complete_interview(interview_id: str, plan_id: str, module_id: str) ->
     """Run LangGraph scoring agent on all Q&A pairs, mark module pass/fail."""
     from app.agents.interview_scorer import run_scoring_agent
 
-    interview = col_interviews().find_one({"interview_id": interview_id})
+    interview = await col_interviews().find_one({"interview_id": interview_id})
     if not interview:
         raise ValueError("Interview not found")
 
@@ -346,7 +338,7 @@ async def complete_interview(interview_id: str, plan_id: str, module_id: str) ->
     passed = scoring["passed"]
     completed_at = datetime.now(timezone.utc).isoformat()
 
-    col_interviews().update_one(
+    await col_interviews().update_one(
         {"interview_id": interview_id},
         {
             "$set": {

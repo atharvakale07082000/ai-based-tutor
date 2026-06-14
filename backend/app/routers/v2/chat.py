@@ -78,7 +78,7 @@ async def v2_chat(
 
         try:
             PROJ = {"_id": 0}
-            learner = col_learners().find_one({"user_id": user_id}, PROJ) or {}
+            learner = await col_learners().find_one({"user_id": user_id}, PROJ) or {}
             context = {
                 "learner_id": learner.get("id", ""),
                 "current_topic": body.context.get("current_topic", ""),

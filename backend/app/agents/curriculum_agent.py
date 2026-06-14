@@ -16,7 +16,7 @@ def _load_settings() -> dict:
     return get_curriculum_config()["settings"]
 
 
-def _enrich_with_trending(topic_graph: dict[str, list[str]]) -> dict[str, list[str]]:
+async def _enrich_with_trending(topic_graph: dict[str, list[str]]) -> dict[str, list[str]]:
     """
     Inject the latest trending subtopics from the discovery agent into the
     topic_graph so curriculum paths include up-to-date industry skills.
@@ -26,14 +26,14 @@ def _enrich_with_trending(topic_graph: dict[str, list[str]]) -> dict[str, list[s
         from app.db.mongo import col_trending_topics
 
         # Get the most recent batch of trending topics
-        latest = col_trending_topics().find_one({}, {"_id": 0, "discovered_at": 1}, sort=[("discovered_at", -1)])
+        latest = await col_trending_topics().find_one({}, {"_id": 0, "discovered_at": 1}, sort=[("discovered_at", -1)])
         if not latest:
             return topic_graph
 
         batch_time = latest["discovered_at"]
-        trends = list(
+        trends = await (
             col_trending_topics().find({"discovered_at": batch_time}, {"_id": 0, "domain": 1, "subtopic": 1}).limit(100)
-        )
+        ).to_list(length=None)
 
         enriched = {k: list(v) for k, v in topic_graph.items()}
         for t in trends:
@@ -87,7 +87,7 @@ async def _build_curriculum(state: AgentState) -> dict:
     proficiency = state.get("topic_proficiency", {})
     goals = profile.get("goal_vector", [])
 
-    topic_graph = _enrich_with_trending(_load_topic_graph())
+    topic_graph = await _enrich_with_trending(_load_topic_graph())
     settings = _load_settings()
 
     curriculum_path: list[dict] = []

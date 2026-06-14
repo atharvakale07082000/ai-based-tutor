@@ -15,7 +15,7 @@ import asyncio
 import json
 import time
 from dataclasses import dataclass, field
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
@@ -423,11 +423,13 @@ async def v2_client():
     app.dependency_overrides[get_current_user_id] = lambda: "test-user-id"
 
     mock_col = MagicMock()
-    mock_col.find_one.return_value = {
-        "id": "test-user-id",
-        "user_id": "test-user-id",
-        "topic_proficiency_map": {"Python": 500.0, "Machine Learning": 350.0},
-    }
+    mock_col.find_one = AsyncMock(
+        return_value={
+            "id": "test-user-id",
+            "user_id": "test-user-id",
+            "topic_proficiency_map": {"Python": 500.0, "Machine Learning": 350.0},
+        }
+    )
 
     async def _mock_tool_call(name: str, args: dict) -> MockToolResult:
         return MockToolResult(name=name, args=args)

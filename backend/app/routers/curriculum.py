@@ -16,10 +16,10 @@ PROJ = {"_id": 0}
 
 @router.get("")
 async def get_curriculum(user_id: str = Depends(get_current_user_id)):
-    learner = col_learners().find_one({"user_id": user_id}, PROJ)
+    learner = await col_learners().find_one({"user_id": user_id}, PROJ)
     if not learner:
         return []
-    curriculum = col_curricula().find_one(
+    curriculum = await col_curricula().find_one(
         {"learner_id": learner["id"], "is_active": True},
         PROJ,
         sort=[("generated_at", -1)],
@@ -29,7 +29,7 @@ async def get_curriculum(user_id: str = Depends(get_current_user_id)):
 
 @router.post("/generate")
 async def generate_curriculum(user_id: str = Depends(get_current_user_id)):
-    learner = col_learners().find_one({"user_id": user_id}, PROJ)
+    learner = await col_learners().find_one({"user_id": user_id}, PROJ)
     if not learner:
         raise HTTPException(status_code=404, detail="Learner not found")
 
@@ -57,13 +57,13 @@ async def generate_curriculum(user_id: str = Depends(get_current_user_id)):
     curriculum_path = result.get("curriculum_path", [])
 
     # Deactivate old curricula
-    col_curricula().update_many(
+    await col_curricula().update_many(
         {"learner_id": learner["id"], "is_active": True},
         {"$set": {"is_active": False}},
     )
 
     new_version = learner.get("curriculum_version", 1) + 1
-    col_curricula().insert_one(
+    await col_curricula().insert_one(
         {
             "id": str(uuid.uuid4()),
             "learner_id": learner["id"],
@@ -73,7 +73,7 @@ async def generate_curriculum(user_id: str = Depends(get_current_user_id)):
             "is_active": True,
         }
     )
-    col_learners().update_one(
+    await col_learners().update_one(
         {"user_id": user_id},
         {"$set": {"curriculum_version": new_version, "updated_at": datetime.now(timezone.utc).isoformat()}},
     )
@@ -93,7 +93,7 @@ async def get_curriculum_graph(user_id: str = Depends(get_current_user_id)):
     topic_graph: dict[str, list[str]] = cfg.get("topic_graph", {})
     prerequisites: dict[str, list[str]] = cfg.get("prerequisites", {})
 
-    learner = col_learners().find_one({"user_id": user_id}, PROJ)
+    learner = await col_learners().find_one({"user_id": user_id}, PROJ)
     proficiency = (learner or {}).get("topic_proficiency_map", {})
 
     nodes = []

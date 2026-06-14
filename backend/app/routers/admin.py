@@ -30,14 +30,14 @@ async def get_learners(
             {"email": {"$regex": search, "$options": "i"}},
         ]
 
-    learners = list(col_learners().find(query, PROJ).skip((page - 1) * limit).limit(limit))
+    learners = await col_learners().find(query, PROJ).skip((page - 1) * limit).limit(limit).to_list(length=None)
 
     items = []
     for learner in learners:
         proficiency = learner.get("topic_proficiency_map") or {}
         avg_proficiency = sum(proficiency.values()) / max(len(proficiency), 1) if proficiency else 0
 
-        mood_doc = col_doubts().find_one(
+        mood_doc = await col_doubts().find_one(
             {"learner_id": learner["id"], "sentiment_mood": {"$ne": None}},
             {"sentiment_mood": 1, "_id": 0},
             sort=[("started_at", -1)],
@@ -78,13 +78,13 @@ async def trigger_digest(
     """Manually trigger the weekly digest for a specific email address."""
     from app.db.mongo import col_users
 
-    user_doc = col_users().find_one({"email": email}, {"_id": 0, "id": 1})
+    user_doc = await col_users().find_one({"email": email}, {"_id": 0, "id": 1})
     if not user_doc:
         from fastapi import HTTPException
 
         raise HTTPException(status_code=404, detail=f"No user found with email {email}")
 
-    learner = col_learners().find_one({"user_id": user_doc["id"]}, {"_id": 0, "id": 1})
+    learner = await col_learners().find_one({"user_id": user_doc["id"]}, {"_id": 0, "id": 1})
     if not learner:
         from fastapi import HTTPException
 

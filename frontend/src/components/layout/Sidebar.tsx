@@ -33,6 +33,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     group: 'System',
     items: [
+      { id: '/profile',   label: 'Profile',    icon: 'user' },
       { id: '/admin',     label: 'Admin',      icon: 'admin' },
     ],
   },

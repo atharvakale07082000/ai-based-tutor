@@ -40,7 +40,7 @@ def _anonymize(learner: dict, is_self: bool) -> dict:
 @router.get("")
 async def get_leaderboard(user_id: str = Depends(get_current_user_id)):
     """Return top 10 learners by XP + the caller's rank (even if outside top 10)."""
-    all_learners = list(col_learners().find({}, PROJ).sort("xp", -1))
+    all_learners = await col_learners().find({}, PROJ).sort("xp", -1).to_list(length=None)
 
     top_10 = all_learners[:10]
     caller_rank = next(

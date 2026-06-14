@@ -27,6 +27,7 @@ const ModuleInterviewPage = lazy(() => import('@/pages/ModuleInterviewPage'))
 const AssistantPage      = lazy(() => import('@/pages/AssistantPage'))
 const AtelierV2Page      = lazy(() => import('@/pages/AtelierV2Page'))
 const FlashcardsPage     = lazy(() => import('@/pages/FlashcardsPage'))
+const ProfilePage        = lazy(() => import('@/pages/ProfilePage'))
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 1000 * 60 * 2, retry: 2 } },
@@ -155,6 +156,7 @@ export default function App() {
               <Route path="/assistant" element={<PrivateRoute><PageWrapper><AssistantPage /></PageWrapper></PrivateRoute>} />
               <Route path="/assistant-v2" element={<PrivateRoute><PageWrapper><AtelierV2Page /></PageWrapper></PrivateRoute>} />
               <Route path="/flashcards" element={<PrivateRoute><PageWrapper><FlashcardsPage /></PageWrapper></PrivateRoute>} />
+              <Route path="/profile" element={<PrivateRoute><PageWrapper><ProfilePage /></PageWrapper></PrivateRoute>} />
               <Route path="/login" element={<Navigate to="/" replace />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

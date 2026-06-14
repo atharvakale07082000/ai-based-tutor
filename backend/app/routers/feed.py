@@ -55,8 +55,8 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _get_interaction(user_id: str, item_id: str) -> dict | None:
-    return col_feed_interactions().find_one({"user_id": user_id, "item_id": item_id}, PROJ)
+async def _get_interaction(user_id: str, item_id: str) -> dict | None:
+    return await col_feed_interactions().find_one({"user_id": user_id, "item_id": item_id}, PROJ)
 
 
 def _is_snoozed(interaction: dict | None) -> bool:
@@ -95,26 +95,38 @@ async def list_feed(
 
     # Fetch active interactions for this user
     if not include_snoozed:
-        snoozed_items = [
-            i["item_id"]
-            for i in col_feed_interactions().find(
+        snoozed_docs = (
+            await col_feed_interactions()
+            .find(
                 {"user_id": user_id, "snoozed_until": {"$gt": now.isoformat()}},
                 {"item_id": 1, "_id": 0},
             )
-        ]
+            .to_list(length=None)
+        )
+        snoozed_items = [i["item_id"] for i in snoozed_docs]
         if snoozed_items:
             query["id"] = {"$nin": snoozed_items}
 
     skip = (page - 1) * limit
-    raw = list(col_feed_items().find(query, PROJ).sort("discovered_at", -1).skip(skip).limit(limit + 1))
+    raw = (
+        await col_feed_items()
+        .find(query, PROJ)
+        .sort("discovered_at", -1)
+        .skip(skip)
+        .limit(limit + 1)
+        .to_list(length=None)
+    )
     has_more = len(raw) > limit
     items = raw[:limit]
 
     # Annotate each item with user interaction state
     item_ids = [i["id"] for i in items]
-    interactions = {
-        i["item_id"]: i for i in col_feed_interactions().find({"user_id": user_id, "item_id": {"$in": item_ids}}, PROJ)
-    }
+    interaction_docs = (
+        await col_feed_interactions()
+        .find({"user_id": user_id, "item_id": {"$in": item_ids}}, PROJ)
+        .to_list(length=None)
+    )
+    interactions = {i["item_id"]: i for i in interaction_docs}
 
     for item in items:
         ix = interactions.get(item["id"])
@@ -139,15 +151,15 @@ async def list_trending(
 ):
     """Return the latest batch of 24 trending topics discovered by the agent."""
     # Get the most recent discovery batch
-    latest = col_trending_topics().find_one({}, PROJ, sort=[("discovered_at", -1)])
+    latest = await col_trending_topics().find_one({}, PROJ, sort=[("discovered_at", -1)])
     if not latest:
         return {"topics": _fallback_trending(), "discovered_at": _now_iso(), "fresh": False}
 
     batch_time = latest["discovered_at"]
-    topics = list(col_trending_topics().find({"discovered_at": batch_time}, PROJ).limit(limit))
+    topics = await col_trending_topics().find({"discovered_at": batch_time}, PROJ).limit(limit).to_list(length=None)
 
     # Annotate with learner proficiency if available
-    learner = col_learners().find_one({"user_id": user_id}, PROJ)
+    learner = await col_learners().find_one({"user_id": user_id}, PROJ)
     proficiency = learner.get("topic_proficiency_map", {}) if learner else {}
     for t in topics:
         elo = proficiency.get(t["subtopic"], None)
@@ -170,11 +182,11 @@ async def run_discovery(user_id: str = Depends(get_current_user_id)):
 
         # Persist topics
         if result["topics"]:
-            col_trending_topics().insert_many(result["topics"])
+            await col_trending_topics().insert_many(result["topics"])
 
         # Persist feed items (deduplicate by URL)
         for item in result["feed_items"]:
-            col_feed_items().update_one(
+            await col_feed_items().update_one(
                 {"url": item["url"]},
                 {"$setOnInsert": item},
                 upsert=True,
@@ -204,7 +216,7 @@ async def snooze_item(
     """Snooze a feed item for the specified number of hours."""
     snoozed_until = (datetime.now(timezone.utc) + timedelta(hours=body.hours)).isoformat()
 
-    col_feed_interactions().update_one(
+    await col_feed_interactions().update_one(
         {"user_id": user_id, "item_id": item_id},
         {
             "$set": {
@@ -242,7 +254,7 @@ async def schedule_item(
     except ValueError:
         raise HTTPException(status_code=422, detail="Invalid datetime format. Use ISO 8601.")
 
-    col_feed_interactions().update_one(
+    await col_feed_interactions().update_one(
         {"user_id": user_id, "item_id": item_id},
         {
             "$set": {
@@ -271,7 +283,7 @@ async def clear_interaction(
     user_id: str = Depends(get_current_user_id),
 ):
     """Remove snooze or schedule for an item."""
-    col_feed_interactions().delete_one({"user_id": user_id, "item_id": item_id})
+    await col_feed_interactions().delete_one({"user_id": user_id, "item_id": item_id})
     return {"status": "cleared", "item_id": item_id}
 
 
@@ -282,18 +294,20 @@ async def clear_interaction(
 async def list_scheduled(user_id: str = Depends(get_current_user_id)):
     """Return all items the learner has scheduled for future study."""
     now_iso = _now_iso()
-    interactions = list(
+    interactions = await (
         col_feed_interactions()
         .find(
             {"user_id": user_id, "action": "schedule", "scheduled_for": {"$gt": now_iso}},
             PROJ,
         )
         .sort("scheduled_for", 1)
+        .to_list(length=None)
     )
 
     # Join with feed items
     item_ids = [i["item_id"] for i in interactions]
-    items_by_id = {i["id"]: i for i in col_feed_items().find({"id": {"$in": item_ids}}, PROJ)}
+    feed_item_docs = await col_feed_items().find({"id": {"$in": item_ids}}, PROJ).to_list(length=None)
+    items_by_id = {i["id"]: i for i in feed_item_docs}
 
     result = []
     for ix in interactions:

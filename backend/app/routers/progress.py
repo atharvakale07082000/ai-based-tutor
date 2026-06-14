@@ -24,18 +24,26 @@ class StudySessionRequest(BaseModel):
 
 @router.get("")
 async def get_progress(user_id: str = Depends(get_current_user_id)):
-    learner = col_learners().find_one({"user_id": user_id}, PROJ)
+    learner = await col_learners().find_one({"user_id": user_id}, PROJ)
     if not learner:
         return {"topic_proficiency": {}, "history": []}
 
-    records = list(col_progress().find({"learner_id": learner["id"]}, PROJ).sort("recorded_at", 1).limit(100))
-    quizzes = list(
-        col_quizzes().find(
+    records = (
+        await col_progress()
+        .find({"learner_id": learner["id"]}, PROJ)
+        .sort("recorded_at", 1)
+        .limit(100)
+        .to_list(length=None)
+    )
+    quizzes = (
+        await col_quizzes()
+        .find(
             {"learner_id": learner["id"], "completed_at": {"$ne": None}},
             PROJ,
         )
+        .to_list(length=None)
     )
-    doubt_sessions = list(col_doubts().find({"learner_id": learner["id"]}, PROJ))
+    doubt_sessions = await col_doubts().find({"learner_id": learner["id"]}, PROJ).to_list(length=None)
 
     quiz_accuracy = 0.0
     if quizzes:
@@ -47,7 +55,7 @@ async def get_progress(user_id: str = Depends(get_current_user_id)):
         if d.get("sentiment_mood")
     ]
 
-    study_sessions = list(col_study_sessions().find({"learner_id": learner["id"]}, PROJ))
+    study_sessions = await col_study_sessions().find({"learner_id": learner["id"]}, PROJ).to_list(length=None)
     total_study_minutes = sum(s.get("minutes", 0) for s in study_sessions) + len(quizzes) * 15
 
     return {
@@ -71,18 +79,19 @@ async def get_due_topics(user_id: str = Depends(get_current_user_id)):
     Spaced repetition scheduler: returns topics ordered by urgency.
     Uses SM-2-inspired algorithm with HuggingFace difficulty scoring support.
     """
-    learner = col_learners().find_one({"user_id": user_id}, PROJ)
+    learner = await col_learners().find_one({"user_id": user_id}, PROJ)
     if not learner:
         return {"due_topics": []}
 
     proficiency = learner.get("topic_proficiency_map") or {}
-    quizzes = list(
+    quizzes = await (
         col_quizzes()
         .find(
             {"learner_id": learner["id"], "completed_at": {"$ne": None}},
             {"_id": 0, "topic": 1, "completed_at": 1},
         )
         .sort("completed_at", -1)
+        .to_list(length=None)
     )
 
     last_quiz_dates: dict[str, str] = {}
@@ -103,13 +112,13 @@ async def record_study_session(
     user_id: str = Depends(get_current_user_id),
 ):
     """Record a completed study session (pomodoro, quiz, reading, etc.)."""
-    learner = col_learners().find_one({"user_id": user_id}, PROJ)
+    learner = await col_learners().find_one({"user_id": user_id}, PROJ)
     if not learner:
         return {"ok": False}
 
     now = datetime.now(timezone.utc).isoformat()
 
-    col_study_sessions().insert_one(
+    await col_study_sessions().insert_one(
         {
             "id": str(uuid.uuid4()),
             "learner_id": learner["id"],
@@ -122,15 +131,15 @@ async def record_study_session(
 
     # Award XP: 5 XP per minute, capped at 50 per session
     xp_earned = min(50, max(1, body.minutes) * 5)
-    _update_xp_and_streak(user_id, xp_earned, now)
+    await _update_xp_and_streak(user_id, xp_earned, now)
 
     log.info("study_session_recorded", topic=body.topic, minutes=body.minutes, xp=xp_earned)
     return {"ok": True, "xp_earned": xp_earned}
 
 
-def _update_xp_and_streak(user_id: str, xp_delta: int, now_iso: str) -> None:
+async def _update_xp_and_streak(user_id: str, xp_delta: int, now_iso: str) -> None:
     """Atomically add XP and update streak based on last_active date."""
-    learner = col_learners().find_one({"user_id": user_id}, PROJ)
+    learner = await col_learners().find_one({"user_id": user_id}, PROJ)
     if not learner:
         return
 
@@ -153,7 +162,7 @@ def _update_xp_and_streak(user_id: str, xp_delta: int, now_iso: str) -> None:
     else:
         streak = 1
 
-    col_learners().update_one(
+    await col_learners().update_one(
         {"user_id": user_id},
         {"$inc": {"xp": xp_delta}, "$set": {"streak": streak, "last_active_date": now_iso[:10], "updated_at": now_iso}},
     )

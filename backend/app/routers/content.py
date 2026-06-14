@@ -105,10 +105,10 @@ SEED_CONTENT = [
 ]
 
 
-def _ensure_seed():
-    if col_content().count_documents({}) == 0:
+async def _ensure_seed():
+    if await col_content().count_documents({}) == 0:
         for item in SEED_CONTENT:
-            col_content().insert_one({"id": str(uuid.uuid4()), **item})
+            await col_content().insert_one({"id": str(uuid.uuid4()), **item})
 
 
 @router.get("")
@@ -122,7 +122,7 @@ async def list_content(
     limit: int = Query(12, ge=1, le=50),
     user_id: str = Depends(get_current_user_id),
 ):
-    _ensure_seed()
+    await _ensure_seed()
 
     query: dict = {
         "difficulty": {"$gte": min_difficulty, "$lte": max_difficulty},
@@ -138,14 +138,14 @@ async def list_content(
         ]
 
     skip = (page - 1) * limit
-    items = list(col_content().find(query, PROJ).skip(skip).limit(limit + 1))
+    items = await col_content().find(query, PROJ).skip(skip).limit(limit + 1).to_list(length=None)
     has_more = len(items) > limit
     result_items = items[:limit]
 
     # Semantic recommendation: rank items by learner profile (page 1 only, no filter active)
     if page == 1 and not topic and not search and not type:
         try:
-            learner = col_learners().find_one({"user_id": user_id}, {"_id": 0})
+            learner = await col_learners().find_one({"user_id": user_id}, {"_id": 0})
             if learner:
                 result_items = await rank_content_for_learner(
                     result_items,
@@ -164,8 +164,8 @@ async def list_content(
 
 @router.get("/{item_id}")
 async def get_content(item_id: str, user_id: str = Depends(get_current_user_id)):
-    _ensure_seed()
-    item = col_content().find_one({"id": item_id}, PROJ)
+    await _ensure_seed()
+    item = await col_content().find_one({"id": item_id}, PROJ)
     if not item:
         raise HTTPException(status_code=404, detail="Content not found")
 
@@ -177,7 +177,7 @@ async def get_content(item_id: str, user_id: str = Depends(get_current_user_id))
             content_type=item.get("content_type", "article"),
             difficulty=item.get("difficulty", 0.5),
         )
-        col_content().update_one({"id": item_id}, {"$set": {"body": generated_body}})
+        await col_content().update_one({"id": item_id}, {"$set": {"body": generated_body}})
         item["body"] = generated_body
 
     return item
@@ -186,8 +186,8 @@ async def get_content(item_id: str, user_id: str = Depends(get_current_user_id))
 @router.post("/{item_id}/regenerate")
 async def regenerate_content(item_id: str, user_id: str = Depends(get_current_user_id)):
     """Force-regenerate the AI-written body for a content item regardless of current length."""
-    _ensure_seed()
-    item = col_content().find_one({"id": item_id}, PROJ)
+    await _ensure_seed()
+    item = await col_content().find_one({"id": item_id}, PROJ)
     if not item:
         raise HTTPException(status_code=404, detail="Content not found")
 
@@ -198,6 +198,6 @@ async def regenerate_content(item_id: str, user_id: str = Depends(get_current_us
         content_type=item.get("content_type", "article"),
         difficulty=item.get("difficulty", 0.5),
     )
-    col_content().update_one({"id": item_id}, {"$set": {"body": generated_body}})
+    await col_content().update_one({"id": item_id}, {"$set": {"body": generated_body}})
     item["body"] = generated_body
     return item

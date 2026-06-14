@@ -13,6 +13,7 @@ from structlog.contextvars import bind_contextvars, clear_contextvars
 from app.config import settings
 from app.db.mongo import ensure_indexes, get_client
 from app.logging_config import configure_logging
+from app.middleware.activity_logger import ActivityLoggingMiddleware
 from app.otel import current_trace_id, get_otel_tracer
 from app.routers import (
     admin,
@@ -27,6 +28,7 @@ from app.routers import (
     hf,
     leaderboard,
     learner,
+    profile,
     progress,
     quiz,
     session,
@@ -46,7 +48,7 @@ async def _mongo_keepalive():
     while True:
         await asyncio.sleep(30)
         try:
-            get_client().admin.command("ping")
+            await get_client().admin.command("ping")
             log.debug("mongo_keepalive_ok")
         except Exception as exc:
             log.warning("mongo_keepalive_failed", error=str(exc))
@@ -62,7 +64,7 @@ async def lifespan(app: FastAPI):
     loop.set_default_executor(executor)
     log.info("thread_pool_set", max_workers=64)
 
-    ensure_indexes()
+    await ensure_indexes()
     log.info("mongo_indexes_ensured")
 
     task = asyncio.create_task(_mongo_keepalive())
@@ -85,6 +87,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.add_middleware(ActivityLoggingMiddleware)
 
 
 # ── Request correlation middleware ────────────────────────────────────────────
@@ -139,6 +143,7 @@ app.include_router(courses.router, prefix="/api/v1/courses", tags=["courses"])
 app.include_router(assistant.router, prefix="/api/v1/assistant", tags=["assistant"])
 app.include_router(feed.router, prefix="/api/v1/feed", tags=["feed"])
 app.include_router(leaderboard.router, prefix="/api/v1/leaderboard", tags=["leaderboard"])
+app.include_router(profile.router, prefix="/api/v1/profile", tags=["profile"])
 app.include_router(chat_v2.router, prefix="/api/v2", tags=["v2"])
 
 
@@ -180,7 +185,7 @@ async def ready():
 
     # MongoDB
     try:
-        get_client().admin.command("ping", serverSelectionTimeoutMS=2000)
+        await get_client().admin.command("ping", serverSelectionTimeoutMS=2000)
         checks["mongodb"] = "ok"
     except Exception as exc:
         checks["mongodb"] = f"error: {exc}"

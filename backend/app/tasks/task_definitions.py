@@ -11,7 +11,7 @@ log = structlog.get_logger()
 def regenerate_curriculum(self, learner_id: str | None = None):
     log.info("task_regenerate_curriculum_start", learner_id=learner_id)
     try:
-        from app.db.mongo import col_learners
+        from app.db.mongo_sync import col_learners
 
         query = {"id": learner_id} if learner_id else {}
         learners = list(col_learners().find(query, {"_id": 0}).limit(100))
@@ -25,7 +25,7 @@ def regenerate_curriculum(self, learner_id: str | None = None):
 def process_quiz_results(self, quiz_session_id: str):
     log.info("task_process_quiz_start", quiz_session_id=quiz_session_id)
     try:
-        from app.db.mongo import col_quizzes
+        from app.db.mongo_sync import col_quizzes
 
         quiz = col_quizzes().find_one({"id": quiz_session_id}, {"_id": 0})
         if quiz and quiz.get("score") is not None:
@@ -61,7 +61,7 @@ def send_progress_digest(self, learner_id: str | None = None):
         from email.mime.multipart import MIMEMultipart
         from email.mime.text import MIMEText
 
-        from app.db.mongo import col_learners, col_quizzes, col_trending_topics, col_users
+        from app.db.mongo_sync import col_learners, col_quizzes, col_trending_topics, col_users
 
         query = {"id": learner_id} if learner_id else {}
         learners = list(col_learners().find(query, {"_id": 0}).limit(500))
@@ -281,7 +281,7 @@ def discover_trending_topics(self):
     """
     log.info("task_discover_trending_topics_start")
     try:
-        from app.db.mongo import col_feed_items, col_trending_topics
+        from app.db.mongo_sync import col_feed_items, col_trending_topics
         from app.hf.trend_discovery import discover_trends
 
         result = asyncio.run(discover_trends())

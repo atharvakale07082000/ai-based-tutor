@@ -23,8 +23,8 @@ log = structlog.get_logger()
 PROJ = {"_id": 0}
 
 
-def _get_learner_or_404(user_id: str) -> dict:
-    learner = col_learners().find_one({"user_id": user_id}, PROJ)
+async def _get_learner_or_404(user_id: str) -> dict:
+    learner = await col_learners().find_one({"user_id": user_id}, PROJ)
     if not learner:
         raise HTTPException(status_code=404, detail="Learner not found")
     return learner
@@ -35,7 +35,7 @@ async def generate_quiz(
     body: QuizGenerateRequest,
     user_id: str = Depends(get_current_user_id),
 ):
-    learner = _get_learner_or_404(user_id)
+    learner = await _get_learner_or_404(user_id)
     log.info("quiz_generate_start", topic=body.topic, learner_id=learner["id"])
 
     proficiency = learner.get("topic_proficiency_map") or {}
@@ -45,7 +45,7 @@ async def generate_quiz(
     questions = await get_or_generate_quiz_questions(body.topic, bloom_level, count=5)
 
     quiz_id = str(uuid.uuid4())
-    col_quizzes().insert_one(
+    await col_quizzes().insert_one(
         {
             "id": quiz_id,
             "learner_id": learner["id"],
@@ -72,7 +72,7 @@ async def generate_quiz(
 
 @router.get("/{quiz_id}", response_model=QuizSessionSchema)
 async def get_quiz(quiz_id: str, user_id: str = Depends(get_current_user_id)):
-    quiz = col_quizzes().find_one({"id": quiz_id}, PROJ)
+    quiz = await col_quizzes().find_one({"id": quiz_id}, PROJ)
     if not quiz:
         raise HTTPException(status_code=404, detail="Quiz not found")
     return QuizSessionSchema(
@@ -90,11 +90,11 @@ async def submit_quiz(
     body: QuizSubmitRequest,
     user_id: str = Depends(get_current_user_id),
 ):
-    quiz = col_quizzes().find_one({"id": quiz_id}, PROJ)
+    quiz = await col_quizzes().find_one({"id": quiz_id}, PROJ)
     if not quiz:
         raise HTTPException(status_code=404, detail="Quiz not found")
 
-    learner = _get_learner_or_404(user_id)
+    learner = await _get_learner_or_404(user_id)
 
     questions = quiz.get("questions") or []
     answers = body.answers or []
@@ -122,7 +122,7 @@ async def submit_quiz(
     if new_elo >= 700 and not previously_mastered:
         xp_delta += 200  # mastery bonus
 
-    col_learners().update_one(
+    await col_learners().update_one(
         {"user_id": user_id},
         {
             "$set": {
@@ -133,7 +133,7 @@ async def submit_quiz(
         },
     )
 
-    col_progress().insert_one(
+    await col_progress().insert_one(
         {
             "id": str(uuid.uuid4()),
             "learner_id": learner["id"],
@@ -143,7 +143,7 @@ async def submit_quiz(
         }
     )
 
-    col_quizzes().update_one(
+    await col_quizzes().update_one(
         {"id": quiz_id},
         {
             "$set": {

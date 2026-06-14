@@ -23,7 +23,7 @@ log = structlog.get_logger()
 async def _get_proficiency(learner_id: str) -> dict:
     from app.db.mongo import col_learners
 
-    doc = col_learners().find_one({"id": learner_id}, {"_id": 0})
+    doc = await col_learners().find_one({"id": learner_id}, {"_id": 0})
     if not doc:
         log.warning("get_proficiency_not_found", learner_id=learner_id)
         return {"proficiency": {}, "xp": 0, "streak": 0}
@@ -61,7 +61,7 @@ async def _save_quiz(
         "questions": questions,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
-    col_quizzes().insert_one(doc)
+    await col_quizzes().insert_one(doc)
     log.info("save_quiz_done", quiz_id=quiz_id, topic=topic, learner_id=learner_id)
     return {"quiz_id": quiz_id, "url": f"/quiz/{quiz_id}"}
 
@@ -80,7 +80,7 @@ async def _save_progress(
     now = datetime.now(timezone.utc).isoformat()
 
     # Update the proficiency map and xp on the learner profile
-    col_learners().update_one(
+    await col_learners().update_one(
         {"id": learner_id},
         {
             "$set": {f"topic_proficiency.{topic}": new_elo},
@@ -90,7 +90,7 @@ async def _save_progress(
     )
 
     # Insert a progress record
-    col_progress().insert_one(
+    await col_progress().insert_one(
         {
             "learner_id": learner_id,
             "topic": topic,
@@ -118,13 +118,17 @@ async def _get_due_topics(learner_id: str) -> dict:
     from app.db.mongo import col_learners, col_quizzes
     from app.hf.spaced_repetition import compute_due_topics
 
-    learner = col_learners().find_one({"id": learner_id}, {"_id": 0}) or {}
+    learner = await col_learners().find_one({"id": learner_id}, {"_id": 0}) or {}
     topic_proficiency: dict[str, float] = learner.get("topic_proficiency", {})
 
     # Build last_quiz_dates from quiz session records
-    quiz_cursor = col_quizzes().find(
-        {"learner_id": learner_id},
-        {"topic": 1, "created_at": 1, "_id": 0},
+    quiz_cursor = (
+        await col_quizzes()
+        .find(
+            {"learner_id": learner_id},
+            {"topic": 1, "created_at": 1, "_id": 0},
+        )
+        .to_list(length=None)
     )
     last_quiz_dates: dict[str, str] = {}
     for doc in quiz_cursor:

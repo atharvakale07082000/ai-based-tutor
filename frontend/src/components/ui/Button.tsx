@@ -15,13 +15,21 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   href?: string
 }
 
-const variantStyles: Record<Variant, React.CSSProperties & { hover: string }> = {
-  primary:   { background: 'var(--ink-0)', color: 'var(--paper-0)', border: '1px solid var(--ink-0)', hover: 'var(--ink-1)' },
-  accent:    { background: 'var(--accent)', color: '#fff', border: '1px solid var(--accent)', hover: 'var(--accent-hover)' },
-  secondary: { background: 'var(--paper-1)', color: 'var(--ink-0)', border: '1px solid var(--line-2)', hover: 'var(--paper-2)' },
-  ghost:     { background: 'transparent', color: 'var(--ink-1)', border: '1px solid transparent', hover: 'var(--paper-2)' },
-  outline:   { background: 'transparent', color: 'var(--ink-0)', border: '1px solid var(--line-2)', hover: 'var(--paper-1)' },
-  danger:    { background: 'var(--neg-soft)', color: 'var(--neg)', border: '1px solid transparent', hover: 'var(--neg-soft)' },
+interface VariantStyle {
+  background: string
+  color: string
+  borderColor: string
+  hover: string
+  hoverBorder: string
+}
+
+const variantStyles: Record<Variant, VariantStyle> = {
+  primary:   { background: 'var(--ink-0)', color: 'var(--paper-0)', borderColor: 'var(--ink-0)', hover: 'var(--accent)', hoverBorder: 'var(--accent)' },
+  accent:    { background: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)', hover: 'var(--accent-hover)', hoverBorder: 'var(--accent-hover)' },
+  secondary: { background: 'var(--paper-1)', color: 'var(--ink-0)', borderColor: 'var(--line-2)', hover: 'var(--paper-2)', hoverBorder: 'var(--line-2)' },
+  ghost:     { background: 'transparent', color: 'var(--ink-1)', borderColor: 'transparent', hover: 'var(--paper-2)', hoverBorder: 'transparent' },
+  outline:   { background: 'transparent', color: 'var(--ink-0)', borderColor: 'var(--line-2)', hover: 'var(--paper-1)', hoverBorder: 'var(--line-2)' },
+  danger:    { background: 'var(--neg-soft)', color: 'var(--neg)', borderColor: 'transparent', hover: 'var(--neg-soft)', hoverBorder: 'transparent' },
 }
 
 const sizeStyles: Record<Size, { height: number; px: number; fontSize: number; gap: number }> = {
@@ -53,7 +61,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
           fontWeight: 500,
           background: v.background,
           color: v.color,
-          border: v.border,
+          border: `1px solid ${v.borderColor}`,
           borderRadius: 'var(--r-2)',
           cursor: isDisabled ? 'not-allowed' : 'pointer',
           opacity: disabled ? 0.5 : 1,
@@ -64,8 +72,16 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
           flexShrink: 0,
           fontFamily: 'inherit',
         }}
-        onMouseEnter={(e) => !isDisabled && (e.currentTarget.style.background = v.hover)}
-        onMouseLeave={(e) => !isDisabled && (e.currentTarget.style.background = v.background as string)}
+        onMouseEnter={(e) => {
+          if (isDisabled) return
+          e.currentTarget.style.background = v.hover
+          e.currentTarget.style.borderColor = v.hoverBorder
+        }}
+        onMouseLeave={(e) => {
+          if (isDisabled) return
+          e.currentTarget.style.background = v.background
+          e.currentTarget.style.borderColor = v.borderColor
+        }}
         {...props}
       >
         {loading ? (

@@ -24,7 +24,7 @@ async def stream_doubt(
     body: DoubtStreamRequest,
     user_id: str = Depends(get_current_user_id),
 ):
-    learner = col_learners().find_one({"user_id": user_id}, PROJ)
+    learner = await col_learners().find_one({"user_id": user_id}, PROJ)
     log.info("doubt_stream_start", question=body.question[:80], topic=body.topic_context)
 
     async def event_generator():
@@ -44,18 +44,18 @@ async def stream_doubt(
             if learner:
                 now = datetime.now(timezone.utc).isoformat()
                 session_id = body.session_id or str(uuid.uuid4())
-                existing = col_doubts().find_one({"id": session_id}, PROJ)
+                existing = await col_doubts().find_one({"id": session_id}, PROJ)
                 new_msgs = [
                     {"role": "user", "content": body.question, "timestamp": now},
                     {"role": "assistant", "content": full_response, "timestamp": now},
                 ]
                 if existing:
-                    col_doubts().update_one(
+                    await col_doubts().update_one(
                         {"id": session_id},
                         {"$push": {"messages": {"$each": new_msgs}}},
                     )
                 else:
-                    col_doubts().insert_one(
+                    await col_doubts().insert_one(
                         {
                             "id": session_id if len(session_id) == 36 else str(uuid.uuid4()),
                             "learner_id": learner["id"],
@@ -114,10 +114,16 @@ async def caption(image: UploadFile = File(...), user_id: str = Depends(get_curr
 
 @router.get("/sessions")
 async def get_sessions(user_id: str = Depends(get_current_user_id)):
-    learner = col_learners().find_one({"user_id": user_id}, PROJ)
+    learner = await col_learners().find_one({"user_id": user_id}, PROJ)
     if not learner:
         return []
-    sessions = list(col_doubts().find({"learner_id": learner["id"]}, PROJ).sort("started_at", -1).limit(20))
+    sessions = (
+        await col_doubts()
+        .find({"learner_id": learner["id"]}, PROJ)
+        .sort("started_at", -1)
+        .limit(20)
+        .to_list(length=None)
+    )
     return [
         {
             "id": s["id"],
@@ -133,7 +139,7 @@ async def get_sessions(user_id: str = Depends(get_current_user_id)):
 
 @router.get("/sessions/{session_id}")
 async def get_session(session_id: str, user_id: str = Depends(get_current_user_id)):
-    session = col_doubts().find_one({"id": session_id}, PROJ)
+    session = await col_doubts().find_one({"id": session_id}, PROJ)
     if not session:
         return {"messages": []}
     return {

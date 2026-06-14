@@ -466,6 +466,41 @@ export const assistantAPI = {
   },
 }
 
+// ─── Activity Logs ────────────────────────────────────────────────────────────
+
+export interface ActivityLogEntry {
+  id: string
+  user_id: string
+  action: string
+  method: string
+  endpoint: string
+  ip_address?: string | null
+  user_agent?: string | null
+  status_code: number
+  duration_ms: number
+  metadata: Record<string, unknown>
+  timestamp: string
+}
+
+export interface ActivityLogsResponse {
+  logs: ActivityLogEntry[]
+  total: number
+}
+
+export interface ActivityStats {
+  action_counts: Record<string, number>
+  most_active_day: string | null
+  total_actions: number
+  window_days: number
+}
+
+export const activityAPI = {
+  getLogs: (params: { limit?: number; skip?: number; action_filter?: string } = {}) =>
+    api.get<ActivityLogsResponse>('/profile/activity-logs', { params }),
+  getStats: () => api.get<ActivityStats>('/profile/activity-stats'),
+  clearLogs: () => api.delete<{ deleted: boolean; count: number; message: string }>('/profile/activity-logs'),
+}
+
 // ─── Assistant V2 ─────────────────────────────────────────────────────────────
 
 export type V2EventType = 'routing' | 'thought' | 'tool_call' | 'tool_result' | 'token' | 'action' | 'done' | 'error'

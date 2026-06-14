@@ -50,15 +50,15 @@ class SessionAdvanceResponse(BaseModel):
     iteration_count: int
 
 
-def _get_learner_or_404(user_id: str) -> dict:
-    learner = col_learners().find_one({"user_id": user_id}, PROJ)
+async def _get_learner_or_404(user_id: str) -> dict:
+    learner = await col_learners().find_one({"user_id": user_id}, PROJ)
     if not learner:
         raise HTTPException(status_code=404, detail="Learner not found")
     return learner
 
 
-def _load_active_curriculum(learner_id: str) -> tuple[list, dict | None]:
-    record = col_curricula().find_one(
+async def _load_active_curriculum(learner_id: str) -> tuple[list, dict | None]:
+    record = await col_curricula().find_one(
         {"learner_id": learner_id, "is_active": True},
         PROJ,
         sort=[("generated_at", -1)],
@@ -68,8 +68,8 @@ def _load_active_curriculum(learner_id: str) -> tuple[list, dict | None]:
 
 @router.post("/start", response_model=SessionStartResponse)
 async def start_session(user_id: str = Depends(get_current_user_id)):
-    learner = _get_learner_or_404(user_id)
-    existing_path, _ = _load_active_curriculum(learner["id"])
+    learner = await _get_learner_or_404(user_id)
+    existing_path, _ = await _load_active_curriculum(learner["id"])
 
     state = {
         "learner_id": learner["id"],
@@ -97,11 +97,11 @@ async def start_session(user_id: str = Depends(get_current_user_id)):
     now = datetime.now(timezone.utc).isoformat()
 
     if new_path and new_path != existing_path:
-        col_curricula().update_many(
+        await col_curricula().update_many(
             {"learner_id": learner["id"], "is_active": True},
             {"$set": {"is_active": False}},
         )
-        col_curricula().insert_one(
+        await col_curricula().insert_one(
             {
                 "id": str(uuid.uuid4()),
                 "learner_id": learner["id"],
@@ -111,7 +111,7 @@ async def start_session(user_id: str = Depends(get_current_user_id)):
                 "is_active": True,
             }
         )
-        col_learners().update_one(
+        await col_learners().update_one(
             {"user_id": user_id},
             {"$set": {"curriculum_version": learner.get("curriculum_version", 1) + 1, "updated_at": now}},
         )
@@ -119,7 +119,7 @@ async def start_session(user_id: str = Depends(get_current_user_id)):
     questions = final.get("quiz_questions", [])
     session_id = str(uuid.uuid4())
     if questions:
-        col_quizzes().insert_one(
+        await col_quizzes().insert_one(
             {
                 "id": session_id,
                 "learner_id": learner["id"],
@@ -152,12 +152,12 @@ async def advance_session(
     body: SessionAdvanceRequest,
     user_id: str = Depends(get_current_user_id),
 ):
-    quiz = col_quizzes().find_one({"id": body.quiz_id}, PROJ)
+    quiz = await col_quizzes().find_one({"id": body.quiz_id}, PROJ)
     if not quiz:
         raise HTTPException(status_code=404, detail="Quiz not found")
 
-    learner = _get_learner_or_404(user_id)
-    curriculum_path, _ = _load_active_curriculum(learner["id"])
+    learner = await _get_learner_or_404(user_id)
+    curriculum_path, _ = await _load_active_curriculum(learner["id"])
 
     questions = quiz.get("questions") or []
     answers = body.answers or []
@@ -189,7 +189,7 @@ async def advance_session(
     delta = final.get("progress_delta", {})
     now = datetime.now(timezone.utc).isoformat()
 
-    col_learners().update_one(
+    await col_learners().update_one(
         {"user_id": user_id},
         {
             "$set": {
@@ -200,7 +200,7 @@ async def advance_session(
         },
     )
 
-    col_progress().insert_one(
+    await col_progress().insert_one(
         {
             "id": str(uuid.uuid4()),
             "learner_id": learner["id"],
@@ -210,7 +210,7 @@ async def advance_session(
         }
     )
 
-    col_quizzes().update_one(
+    await col_quizzes().update_one(
         {"id": body.quiz_id},
         {"$set": {"answers": answers, "score": score, "completed_at": now}},
     )
@@ -218,7 +218,7 @@ async def advance_session(
     next_questions = final.get("quiz_questions", [])
     next_session_id = str(uuid.uuid4())
     if next_questions:
-        col_quizzes().insert_one(
+        await col_quizzes().insert_one(
             {
                 "id": next_session_id,
                 "learner_id": learner["id"],
