@@ -2,10 +2,10 @@
 (doubt solver, quiz generator, supervisor, course planner, interview scorer,
 content generator, agents_v2).
 
-Primary: Hugging Face "together" provider (Qwen2.5-7B-Instruct).
-Fallback: NVIDIA NIM (OpenAI-compatible) on any HF failure, rotating between
-two NVIDIA models so a single bad/rate-limited model doesn't take down the
-fallback path too.
+Primary: NVIDIA NIM (OpenAI-compatible), rotating between two NVIDIA models
+so a single bad/rate-limited model doesn't take down the primary path.
+Fallback: Hugging Face "together" provider (Qwen2.5-7B-Instruct) on any
+NVIDIA failure.
 """
 
 from __future__ import annotations
@@ -52,13 +52,8 @@ class ResilientGenerationClient:
         stream: bool = False,
     ):
         if not stream:
+            nvidia_model = self._next_nvidia_model()
             try:
-                return self._hf.chat_completion(
-                    model=model, messages=messages, max_tokens=max_tokens, temperature=temperature
-                )
-            except Exception as e:
-                nvidia_model = self._next_nvidia_model()
-                log.warning("hf_generation_failed", error=str(e)[:200], fallback="nvidia", model=nvidia_model)
                 return self._nvidia.chat.completions.create(
                     model=nvidia_model,
                     messages=messages,
@@ -66,19 +61,18 @@ class ResilientGenerationClient:
                     temperature=temperature,
                     extra_body=self._nvidia_extra_body(),
                 )
+            except Exception as e:
+                log.warning("nvidia_generation_failed", error=str(e)[:200], fallback="hf_together", model=model)
+                return self._hf.chat_completion(
+                    model=model, messages=messages, max_tokens=max_tokens, temperature=temperature
+                )
 
         return self._stream_with_fallback(model, messages, max_tokens, temperature)
 
     def _stream_with_fallback(self, model: str, messages: list[dict], max_tokens: int, temperature: float) -> Iterator:
+        nvidia_model = self._next_nvidia_model()
         try:
-            hf_stream = self._hf.chat_completion(
-                model=model, messages=messages, max_tokens=max_tokens, temperature=temperature, stream=True
-            )
-            first_chunk = next(hf_stream)
-        except Exception as e:
-            nvidia_model = self._next_nvidia_model()
-            log.warning("hf_generation_stream_failed", error=str(e)[:200], fallback="nvidia", model=nvidia_model)
-            return self._nvidia.chat.completions.create(
+            nvidia_stream = self._nvidia.chat.completions.create(
                 model=nvidia_model,
                 messages=messages,
                 max_tokens=max_tokens,
@@ -86,10 +80,16 @@ class ResilientGenerationClient:
                 stream=True,
                 extra_body=self._nvidia_extra_body(),
             )
+            first_chunk = next(nvidia_stream)
+        except Exception as e:
+            log.warning("nvidia_generation_stream_failed", error=str(e)[:200], fallback="hf_together", model=model)
+            return self._hf.chat_completion(
+                model=model, messages=messages, max_tokens=max_tokens, temperature=temperature, stream=True
+            )
 
         def _resume():
             yield first_chunk
-            yield from hf_stream
+            yield from nvidia_stream
 
         return _resume()
 
@@ -100,10 +100,13 @@ _client: ResilientGenerationClient | None = None
 def get_resilient_generation_client() -> ResilientGenerationClient:
     global _client
     if _client is None:
-        if not settings.HF_TOKEN:
-            log.error("hf_token_missing", msg="HF_TOKEN not set — generation calls go straight to NVIDIA fallback")
         if not settings.NVIDIA_API_KEY:
-            log.error("nvidia_api_key_missing", msg="NVIDIA_API_KEY not set — fallback generation calls will fail")
+            log.error(
+                "nvidia_api_key_missing",
+                msg="NVIDIA_API_KEY not set — generation calls go straight to HF together fallback",
+            )
+        if not settings.HF_TOKEN:
+            log.error("hf_token_missing", msg="HF_TOKEN not set — fallback generation calls will fail")
         hf_client = InferenceClient(token=settings.HF_TOKEN or None, provider="together")
         nvidia_client = OpenAI(base_url=settings.NVIDIA_BASE_URL, api_key=settings.NVIDIA_API_KEY)
         _client = ResilientGenerationClient(hf_client, nvidia_client)
