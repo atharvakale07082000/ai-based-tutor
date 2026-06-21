@@ -89,7 +89,7 @@ async def login(request: Request, body: LoginRequest):
             pass
 
     if user.get("hashed_password") and not verify_password(body.password, user["hashed_password"]):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid credentials")
 
     payload = {"sub": str(user["id"])}
     access_token = create_access_token(payload)

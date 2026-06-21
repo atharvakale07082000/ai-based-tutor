@@ -134,12 +134,8 @@ function _forceLogout() {
   window.location.href = '/'
 }
 
-// Auth endpoints where we skip the refresh-retry (login 401 = wrong password, not expired session)
-const SKIP_REFRESH = /\/auth\/(login|reset-request|reset-confirm)/
-// Auth endpoints where a 401 means the session is truly dead → force logout
-const FORCE_LOGOUT_ON_401 = /\/auth\/(logout|refresh)/
-
 // Auto-refresh on 401; version check + auto-invalidation on every success
+// Backend guarantees 401 means only "token invalid/expired" — login wrong-password is 400.
 api.interceptors.response.use(
   (res) => {
     const v = res.headers['x-app-version'] as string | undefined
@@ -149,13 +145,9 @@ api.interceptors.response.use(
   },
   async (error) => {
     const original = error.config
-    const url = original?.url ?? ''
     if (error.response?.status === 401) {
-      if (FORCE_LOGOUT_ON_401.test(url)) {
-        // logout or refresh returned 401 — session is dead, clear everything
-        _forceLogout()
-      } else if (!original._retry && !SKIP_REFRESH.test(url)) {
-        // Protected endpoint — try to silently refresh once
+      if (!original._retry) {
+        // First 401 — silently try to refresh the access token once
         original._retry = true
         try {
           const { data } = await axios.post(`${BASE_URL}/auth/refresh`, {}, { withCredentials: true })
@@ -163,9 +155,13 @@ api.interceptors.response.use(
           original.headers.Authorization = `Bearer ${data.access_token}`
           return api(original)
         } catch {
+          // Refresh also failed — session is dead
           _forceLogout()
+          return Promise.reject(error)
         }
       }
+      // Already retried — still 401, session is dead
+      _forceLogout()
     }
     return Promise.reject(error)
   }
