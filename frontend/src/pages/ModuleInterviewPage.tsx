@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -248,6 +248,8 @@ export default function ModuleInterviewPage() {
   const recognitionRef = useRef<any>(null)
   const transcriptRef = useRef('')
 
+  const queryClient = useQueryClient()
+
   const { data: plan } = useQuery({
     queryKey: ['course', planId],
     queryFn: () => coursesAPI.get(planId!).then((r) => r.data),
@@ -423,6 +425,12 @@ export default function ModuleInterviewPage() {
       const { data } = await coursesAPI.completeInterview(planId!, moduleId!, interview.interview_id)
       setFinalResult(data as FinalResult)
       setPhase('complete')
+
+      // Invalidate course cache so CourseDetailPage sees the updated score
+      // and newly unlocked modules without requiring a manual refresh.
+      await queryClient.invalidateQueries({ queryKey: ['course', planId] })
+      await queryClient.invalidateQueries({ queryKey: ['courses'] })
+
       const r = data as FinalResult
       const utt = new SpeechSynthesisUtterance(
         r.passed

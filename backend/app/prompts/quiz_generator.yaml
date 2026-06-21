@@ -77,6 +77,6 @@ bloom_prompts:
     ANSWER: A
 
 limits:
-  max_tokens: 250
-  temperature: 0.8
+  max_tokens: 400
+  temperature: 0.3
   retry_attempts: 3

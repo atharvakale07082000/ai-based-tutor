@@ -7,8 +7,8 @@ Import this module to get the fully-populated `tool_registry` singleton:
     result = await tool_registry.call("classify_topic", {"text": "learn python"})
     descriptions = tool_registry.describe_tools(["classify_topic", "calculate_elo"])
 
-All 13 tools are registered here in deterministic order:
-  6 HF tools → 5 DB tools → 2 logic tools
+All 14 tools are registered here in deterministic order:
+  6 HF tools → 5 DB tools → 2 logic tools → 1 search tool
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ from __future__ import annotations
 from app.tools.implementations.db_tools import TOOLS as _DB_TOOLS
 from app.tools.implementations.hf_tools import TOOLS as _HF_TOOLS
 from app.tools.implementations.logic_tools import TOOLS as _LOGIC_TOOLS
+from app.tools.implementations.search_tools import TOOLS as _SEARCH_TOOLS
 from app.tools.registry import ToolRegistry
 from app.tools.schemas import Tool, ToolResult  # re-export for convenience
 
@@ -29,6 +30,9 @@ for _tool in _DB_TOOLS:
     tool_registry.register(_tool)
 
 for _tool in _LOGIC_TOOLS:
+    tool_registry.register(_tool)
+
+for _tool in _SEARCH_TOOLS:
     tool_registry.register(_tool)
 
 __all__ = ["tool_registry", "Tool", "ToolResult"]
