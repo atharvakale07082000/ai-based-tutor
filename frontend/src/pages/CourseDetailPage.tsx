@@ -18,6 +18,114 @@ const STATUS_CONFIG = {
   failed:      { tone: 'neg'     as const, label: 'Retry'         },
 }
 
+interface RoadmapProps {
+  passed: boolean
+  failed: boolean
+  quizLoading: boolean
+  onStudy: () => void
+  onQuiz: () => void
+  onInterview: () => void
+}
+
+function ModuleRoadmap({ passed, failed, quizLoading, onStudy, onQuiz, onInterview }: RoadmapProps) {
+  const interviewLabel = passed ? 'Review' : failed ? 'Retry' : 'AI Interview'
+  const interviewDone = passed
+
+  const steps = [
+    {
+      num: 1,
+      label: 'Study',
+      icon: 'book' as const,
+      done: false,
+      onClick: onStudy,
+      loading: false,
+    },
+    {
+      num: 2,
+      label: 'Quiz',
+      icon: 'zap' as const,
+      done: false,
+      onClick: onQuiz,
+      loading: quizLoading,
+    },
+    {
+      num: 3,
+      label: interviewLabel,
+      icon: 'mic' as const,
+      done: interviewDone,
+      onClick: onInterview,
+      loading: false,
+      primary: true,
+    },
+  ]
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 0, marginTop: 4 }}>
+      {steps.map((step, i) => (
+        <div key={step.num} style={{ display: 'flex', alignItems: 'center', flex: i < steps.length - 1 ? 'none' : 1 }}>
+          {/* Step button */}
+          <button
+            onClick={step.loading ? undefined : step.onClick}
+            disabled={step.loading}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '6px 12px',
+              borderRadius: 'var(--r-pill)',
+              border: step.primary && !step.done
+                ? '1.5px solid var(--ink-0)'
+                : '1.5px solid var(--line-2)',
+              background: step.primary && !step.done
+                ? 'var(--ink-0)'
+                : step.done
+                  ? 'color-mix(in srgb, var(--pos) 12%, var(--paper-1))'
+                  : 'var(--paper-1)',
+              color: step.primary && !step.done
+                ? 'var(--paper-0)'
+                : step.done
+                  ? 'var(--pos)'
+                  : 'var(--ink-1)',
+              cursor: step.loading ? 'default' : 'pointer',
+              fontSize: 12,
+              fontWeight: 500,
+              fontFamily: 'inherit',
+              opacity: step.loading ? 0.6 : 1,
+              transition: 'all 0.15s ease',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+            }}
+          >
+            {step.done
+              ? <Icon name="check" size={11} />
+              : step.loading
+                ? <Icon name="refresh" size={11} style={{ animation: 'spin 1s linear infinite' }} />
+                : <Icon name={step.icon} size={11} />
+            }
+            {step.label}
+          </button>
+
+          {/* Connector arrow between steps */}
+          {i < steps.length - 1 && (
+            <div style={{
+              width: 20,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+              color: 'var(--ink-4)',
+            }}>
+              <svg width="12" height="8" viewBox="0 0 12 8" fill="none">
+                <path d="M1 4h9M7 1l3 3-3 3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function ModuleRow({ module, index, planId, isUnlocked }: { module: CourseModule; index: number; planId: string; isUnlocked: boolean }) {
   const navigate = useNavigate()
   const [quizLoading, setQuizLoading] = useState(false)
@@ -96,33 +204,14 @@ function ModuleRow({ module, index, planId, isUnlocked }: { module: CourseModule
         )}
 
         {isUnlocked && (
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            <Button
-              size="sm"
-              variant="secondary"
-              icon="book"
-              onClick={() => navigate(`/learn?topic=${encodeURIComponent(primaryTopic)}`)}
-            >
-              Study
-            </Button>
-            <Button
-              size="sm"
-              variant="secondary"
-              icon="zap"
-              loading={quizLoading}
-              onClick={handleTakeQuiz}
-            >
-              Quiz
-            </Button>
-            <Button
-              size="sm"
-              variant={passed ? 'ghost' : 'primary'}
-              iconRight="arrow"
-              onClick={() => navigate(`/courses/${planId}/modules/${module.id}/interview`)}
-            >
-              {passed ? 'Review interview' : failed ? 'Retry interview' : 'AI Interview'}
-            </Button>
-          </div>
+          <ModuleRoadmap
+            passed={passed}
+            failed={failed}
+            quizLoading={quizLoading}
+            onStudy={() => navigate(`/learn?topic=${encodeURIComponent(primaryTopic)}`)}
+            onQuiz={handleTakeQuiz}
+            onInterview={() => navigate(`/courses/${planId}/modules/${module.id}/interview`)}
+          />
         )}
         {!isUnlocked && (
           <div className="t-xs fg-3" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
