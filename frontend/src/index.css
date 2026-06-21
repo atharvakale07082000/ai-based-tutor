@@ -226,8 +226,9 @@ input, textarea { font: inherit; color: inherit; }
 @keyframes meshRotate { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
 @keyframes float     { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-20px); } }
 @keyframes drainTimer { from { width: 100%; } to { width: 0%; } }
-@keyframes voiceBar   { from { transform: scaleY(0.1); } to { transform: scaleY(1); } }
-@keyframes rippleRing { 0% { transform: scale(1); opacity: 0.55; } 100% { transform: scale(2.8); opacity: 0; } }
+@keyframes voiceBar    { from { transform: scaleY(0.1); } to { transform: scaleY(1); } }
+@keyframes rippleRing  { 0% { transform: scale(1); opacity: 0.55; } 100% { transform: scale(2.8); opacity: 0; } }
+@keyframes fadeSlideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
 .fade-up { animation: fadeUp var(--dur-slow) var(--ease-out) both; }
 .fade-in { animation: fadeIn var(--dur-base) var(--ease-out) both; }

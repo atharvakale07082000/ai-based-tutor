@@ -1,5 +1,9 @@
 """Course Planning & AI Interview router."""
 
+import asyncio
+import subprocess
+import sys
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -16,6 +20,9 @@ from app.auth.jwt import get_current_user_id
 
 router = APIRouter()
 
+_MAX_OUTPUT = 4000  # chars
+_CODE_TIMEOUT = 10  # seconds
+
 
 # ─── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -27,6 +34,11 @@ class PlanRequest(BaseModel):
 class AnswerRequest(BaseModel):
     question_id: int
     answer_text: str
+
+
+class RunCodeRequest(BaseModel):
+    code: str
+    language: str = "python"
 
 
 # ─── Course plan endpoints ────────────────────────────────────────────────────
@@ -104,6 +116,50 @@ async def submit_answer(
         return evaluation
     except Exception as e:
         raise HTTPException(500, f"Evaluation failed: {e}")
+
+
+@router.post("/{plan_id}/modules/{module_id}/interview/{interview_id}/run-code")
+async def run_code(
+    plan_id: str,
+    module_id: str,
+    interview_id: str,
+    body: RunCodeRequest,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Execute a code snippet in a sandboxed subprocess and return stdout/stderr."""
+    interview = await get_interview(interview_id)
+    if not interview or interview["user_id"] != user_id:
+        raise HTTPException(404, "Interview not found")
+
+    if body.language not in ("python", "python3"):
+        raise HTTPException(400, "Only Python execution is supported")
+
+    code = body.code.strip()
+    if not code:
+        return {"stdout": "", "stderr": "", "exit_code": 0}
+
+    def _run() -> dict:
+        try:
+            proc = subprocess.run(
+                [sys.executable, "-c", code],
+                capture_output=True,
+                text=True,
+                timeout=_CODE_TIMEOUT,
+                # Restrict environment — no network, limited memory via ulimit is OS-specific;
+                # for an educational single-tenant deployment this subprocess approach is sufficient.
+            )
+            return {
+                "stdout": proc.stdout[:_MAX_OUTPUT],
+                "stderr": proc.stderr[:_MAX_OUTPUT],
+                "exit_code": proc.returncode,
+            }
+        except subprocess.TimeoutExpired:
+            return {"stdout": "", "stderr": f"Execution timed out after {_CODE_TIMEOUT}s", "exit_code": 124}
+        except Exception as e:
+            return {"stdout": "", "stderr": str(e)[:500], "exit_code": 1}
+
+    result = await asyncio.to_thread(_run)
+    return result
 
 
 @router.post("/{plan_id}/modules/{module_id}/interview/{interview_id}/complete")

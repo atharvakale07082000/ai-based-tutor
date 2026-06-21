@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import Optional, TypedDict
@@ -222,6 +223,7 @@ async def create_course_plan(goal: str, user_id: str) -> dict:
 
 
 async def start_interview(plan_id: str, module_id: str, user_id: str, module_title: str, topics: list[str]) -> dict:
+    log.info("interview_generating", module=module_title, topics=topics[:6])
     topics_str = ", ".join(topics[:6])
     prompt = f"""You are a technical interviewer. Create exactly 4 interview questions to assess understanding of "{module_title}".
 
@@ -229,24 +231,47 @@ Topics covered: {topics_str}
 
 Return ONLY a JSON array of question objects:
 [
-  {{"id": 1, "text": "question text here", "expected_depth": "conceptual|applied|analytical"}},
-  {{"id": 2, "text": "...", "expected_depth": "..."}},
-  {{"id": 3, "text": "...", "expected_depth": "..."}},
-  {{"id": 4, "text": "...", "expected_depth": "..."}}
+  {{
+    "id": 1,
+    "text": "question text here",
+    "expected_depth": "conceptual|applied|analytical",
+    "is_coding_question": false,
+    "language": null
+  }},
+  {{
+    "id": 2,
+    "text": "Write a Python function that...",
+    "expected_depth": "applied",
+    "is_coding_question": true,
+    "language": "python"
+  }}
 ]
 
 Requirements:
 - Mix conceptual, applied, and analytical questions
 - Progressive difficulty (easier first)
-- Clear, concise questions a student can answer in 60-90 seconds verbally
-- Return ONLY the JSON array"""
+- Include AT LEAST 1 coding question if the topic involves programming, data structures, algorithms, ML, or any technical implementation
+- For coding questions set is_coding_question=true and language to "python" (default) or the most appropriate language
+- For non-coding conceptual/verbal questions set is_coding_question=false and language=null
+- Coding questions should ask the candidate to write a function, class, or script
+- Return ONLY the JSON array, exactly 4 questions"""
 
+    t0 = time.perf_counter()
     text = await asyncio.to_thread(_chat, prompt, 800, 0.4)
     text = text.strip()
     match = re.search(r"\[[\s\S]*\]", text)
     if match:
         text = match.group(0)
     questions = json.loads(text)
+    coding_qs = [q for q in questions if q.get("is_coding_question")]
+    log.info(
+        "interview_questions_generated",
+        module=module_title,
+        total=len(questions),
+        coding=len(coding_qs),
+        latency_ms=round((time.perf_counter() - t0) * 1000),
+        preview=[q["text"][:60] for q in questions],
+    )
 
     interview = {
         "interview_id": str(uuid.uuid4()),
@@ -279,6 +304,15 @@ async def evaluate_answer(interview_id: str, question_id: int, answer_text: str)
     if not question:
         raise ValueError("Question not found")
 
+    answer_preview = answer_text[:120].replace("\n", " ")
+    log.info(
+        "answer_evaluating",
+        interview_id=interview_id,
+        q_id=question_id,
+        q_type="coding" if question.get("is_coding_question") else "verbal",
+        answer_preview=answer_preview,
+    )
+
     prompt = f"""You are evaluating a technical interview answer.
 
 Module: {interview["module_title"]}
@@ -296,6 +330,7 @@ Evaluate and return ONLY this JSON:
 Scoring guide: 0-3 incorrect/missing, 4-6 partially correct, 7-8 good, 9-10 excellent.
 Return ONLY the JSON."""
 
+    t0 = time.perf_counter()
     text = await asyncio.to_thread(_chat, prompt, 300, 0.1)
     text = text.strip()
     match = re.search(r"\{[\s\S]*\}", text)
@@ -304,6 +339,17 @@ Return ONLY the JSON."""
     evaluation = json.loads(text)
     evaluation["question_id"] = question_id
     evaluation["answer_text"] = answer_text
+
+    score = evaluation.get("score", "?")
+    log.info(
+        "answer_evaluated",
+        interview_id=interview_id,
+        q_id=question_id,
+        score=score,
+        key_points=evaluation.get("key_points_covered", []),
+        feedback=evaluation.get("feedback", "")[:100],
+        latency_ms=round((time.perf_counter() - t0) * 1000),
+    )
 
     await col_interviews().update_one(
         {"interview_id": interview_id},
@@ -324,8 +370,17 @@ async def complete_interview(interview_id: str, plan_id: str, module_id: str) ->
     if not answers:
         raise ValueError("No answers submitted")
 
+    log.info(
+        "interview_scoring",
+        interview_id=interview_id,
+        module=interview["module_title"],
+        answers_submitted=len(answers),
+        per_question_scores={str(a["question_id"]): a.get("score") for a in answers},
+    )
+
     transcriptions = [{"question_id": a.get("question_id"), "answer_text": a.get("answer_text", "")} for a in answers]
 
+    t0 = time.perf_counter()
     scoring = await asyncio.to_thread(
         run_scoring_agent,
         interview["module_title"],
@@ -354,7 +409,15 @@ async def complete_interview(interview_id: str, plan_id: str, module_id: str) ->
     status = "passed" if passed else "failed"
     await _update_module_interview(plan_id, module_id, status, round(final_score / 10, 2))
 
-    log.info("interview_complete", interview_id=interview_id, score=final_score, passed=passed)
+    log.info(
+        "interview_complete",
+        interview_id=interview_id,
+        module=interview["module_title"],
+        final_score=final_score,
+        passed=passed,
+        status="PASSED ✓" if passed else "FAILED ✗",
+        scoring_latency_ms=round((time.perf_counter() - t0) * 1000),
+    )
     return {
         "interview_id": interview_id,
         "final_score": final_score,

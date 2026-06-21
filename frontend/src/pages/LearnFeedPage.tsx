@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, memo } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
@@ -100,7 +100,7 @@ function ScheduleModal({ item, onClose, onSchedule }: {
 
 // ── Trending topic chip ───────────────────────────────────────────────────────
 
-function TrendChip({ topic, onClick, isActive }: { topic: TrendTopic; onClick: () => void; isActive: boolean }) {
+const TrendChip = memo(function TrendChip({ topic, onClick, isActive }: { topic: TrendTopic; onClick: () => void; isActive: boolean }) {
   return (
     <div
       role="button"
@@ -150,11 +150,11 @@ function TrendChip({ topic, onClick, isActive }: { topic: TrendTopic; onClick: (
       )}
     </div>
   )
-}
+})
 
 // ── Feed card ─────────────────────────────────────────────────────────────────
 
-function FeedCard({ item, onSnooze, onSchedule, onClear }: {
+const FeedCard = memo(function FeedCard({ item, onSnooze, onSchedule, onClear }: {
   item: FeedItem
   onSnooze: (id: string) => void
   onSchedule: (item: FeedItem) => void
@@ -292,7 +292,7 @@ function FeedCard({ item, onSnooze, onSchedule, onClear }: {
       </div>
     </Card>
   )
-}
+})
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
@@ -338,19 +338,16 @@ export default function LearnFeedPage() {
   const items = data?.pages.flatMap((p) => p.items) ?? []
   const topics = trendingData?.topics ?? []
 
-  // Mutations
+  // Mutations — auto-invalidation (axios interceptor) handles cache busting;
+  // these only need to fire toast notifications.
   const snoozeMut = useMutation({
     mutationFn: ({ id, hours }: { id: string; hours: number }) => feedAPI.snooze(id, hours),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['feed'] })
-      toast.success('Snoozed for 24 hours')
-    },
+    onSuccess: () => toast.success('Snoozed for 24 hours'),
   })
 
   const scheduleMut = useMutation({
     mutationFn: ({ id, iso }: { id: string; iso: string }) => feedAPI.schedule(id, iso),
     onSuccess: (_, vars) => {
-      qc.invalidateQueries({ queryKey: ['feed'] })
       const dt = new Date(vars.iso).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })
       toast.success(`Scheduled for ${dt}`)
     },
@@ -358,20 +355,18 @@ export default function LearnFeedPage() {
 
   const clearMut = useMutation({
     mutationFn: (id: string) => feedAPI.clearInteraction(id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['feed'] })
-      toast.success('Removed')
-    },
+    onSuccess: () => toast.success('Removed'),
   })
 
   const discoveryMut = useMutation({
     mutationFn: () => feedAPI.runDiscovery(),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['feed'] })
-      toast.success('Trend discovery started — feed will refresh shortly')
-    },
+    onSuccess: () => toast.success('Trend discovery started — feed will refresh shortly'),
     onError: () => toast.error('Discovery failed'),
   })
+
+  const handleSnooze = useCallback((id: string) => snoozeMut.mutate({ id, hours: 24 }), [snoozeMut])
+  const handleClear  = useCallback((id: string) => clearMut.mutate(id), [clearMut])
+  const handleSchedule = useCallback((item: FeedItem) => setScheduleItem(item), [])
 
   const handleTrendClick = (topic: TrendTopic) => {
     if (activeTrendId) return // debounce
@@ -540,9 +535,9 @@ export default function LearnFeedPage() {
             <FeedCard
               key={item.id}
               item={item}
-              onSnooze={(id) => snoozeMut.mutate({ id, hours: 24 })}
-              onSchedule={setScheduleItem}
-              onClear={(id) => clearMut.mutate(id)}
+              onSnooze={handleSnooze}
+              onSchedule={handleSchedule}
+              onClear={handleClear}
             />
           ))}
         </div>

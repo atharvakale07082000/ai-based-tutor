@@ -68,9 +68,7 @@ memory/
 
 # ------------------------------------------------------------
 # Legacy agent versions (v1 & v2) — kept locally for reference only
-# Only agents_v3 (the DeepAgent) ships in the repository
 # ------------------------------------------------------------
-backend/app/agents/
 backend/app/agents_v2/
 backend/data/agents_v2/
 

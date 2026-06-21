@@ -434,6 +434,8 @@ export interface InterviewQuestion {
   id: number
   text: string
   expected_depth: string
+  is_coding_question?: boolean
+  language?: string | null
 }
 
 export interface Interview {
@@ -462,6 +464,11 @@ export const coursesAPI = {
     ),
   completeInterview: (planId: string, moduleId: string, interviewId: string) =>
     api.post(`/courses/${planId}/modules/${moduleId}/interview/${interviewId}/complete`),
+  runCode: (planId: string, moduleId: string, interviewId: string, code: string, language = 'python') =>
+    api.post<{ stdout: string; stderr: string; exit_code: number }>(
+      `/courses/${planId}/modules/${moduleId}/interview/${interviewId}/run-code`,
+      { code, language },
+    ),
 }
 
 // ─── Feed ─────────────────────────────────────────────────────────────────────

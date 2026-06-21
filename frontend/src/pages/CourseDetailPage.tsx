@@ -232,9 +232,12 @@ export default function CourseDetailPage() {
     queryKey: ['course', planId],
     queryFn: () => coursesAPI.get(planId!).then((r) => r.data),
     enabled: !!planId,
-    staleTime: 1000 * 60 * 5,   // course detail: 5 min (stable once generated)
+    staleTime: 1000 * 60 * 5,
     gcTime: 1000 * 60 * 15,
-    refetchInterval: 5000,       // keeps polling until generation completes
+    refetchInterval: (q) => {
+      const p = q.state.data as { modules?: unknown[] } | undefined
+      return p?.modules?.length ? false : 3000  // poll until modules arrive, then stop
+    },
   })
 
   if (isLoading) {

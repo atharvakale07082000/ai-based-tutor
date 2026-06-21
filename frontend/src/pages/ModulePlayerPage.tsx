@@ -34,8 +34,7 @@ export default function ModulePlayerPage() {
     queryKey: ['content', 'module', moduleId],
     queryFn: () => contentAPI.get(moduleId!).then((r) => r.data),
     enabled: !!moduleId,
-    staleTime: 0,
-    refetchOnMount: true,
+    staleTime: 0,  // always refetch on mount — content may have generated since last visit
     // Poll every 3 s while content is still generating; stop once it arrives
     refetchInterval: (query) => {
       const body = (query.state.data as { body?: string } | undefined)?.body

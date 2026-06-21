@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     # App
     APP_ENV: str = "development"
     LOG_LEVEL: str = "INFO"
-    JSON_LOGS: bool = True
+    JSON_LOGS: bool = False  # False = pretty coloured console; set JSON_LOGS=true in production
 
     # JWT
     SECRET_KEY: str = "change-this-secret-in-production"

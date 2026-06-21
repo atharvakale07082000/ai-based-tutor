@@ -33,9 +33,10 @@ const ProfilePage        = lazy(() => import('@/pages/ProfilePage'))
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 0,
-      gcTime: 1000 * 60 * 2,
+      staleTime: 1000 * 60,       // 1 min — auto-invalidation handles post-mutation freshness
+      gcTime: 1000 * 60 * 10,     // 10 min — keep cache warm across navigation
       retry: 2,
+      refetchOnWindowFocus: false, // tab-switch refetches are noisy; mutations invalidate instead
     },
   },
 })

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
@@ -6,6 +6,11 @@ import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Icon } from '@/components/ui/Icon'
 import { coursesAPI, type Interview } from '@/lib/api'
+
+// Lazy-load Monaco so it doesn't bloat the initial bundle
+const MonacoEditor = lazy(() => import('@monaco-editor/react'))
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 type Phase = 'loading' | 'intro' | 'question' | 'recording' | 'evaluating' | 'feedback' | 'scoring' | 'complete'
 
@@ -31,164 +36,90 @@ interface FinalResult {
   total_questions: number
 }
 
-// ── Voice waveform ────────────────────────────────────────────────────────────
+// ── Shared styles ─────────────────────────────────────────────────────────────
 
-// [maxHeightPx, durationS, delayS]
-const WAVE_BARS: [number, string, string][] = [
-  [14, '0.70s', '0.00s'], [22, '0.90s', '0.05s'], [34, '0.60s', '0.11s'],
-  [46, '1.00s', '0.00s'], [58, '0.80s', '0.07s'], [48, '1.10s', '0.13s'],
-  [64, '0.70s', '0.04s'], [40, '0.85s', '0.09s'], [72, '0.75s', '0.01s'],
-  [54, '0.90s', '0.07s'], [60, '1.00s', '0.03s'], [42, '0.80s', '0.10s'],
-  [36, '0.90s', '0.06s'], [52, '0.70s', '0.12s'], [30, '1.10s', '0.02s'],
-  [46, '0.75s', '0.08s'], [66, '0.65s', '0.05s'], [38, '0.95s', '0.11s'],
-  [56, '0.80s', '0.07s'], [32, '1.00s', '0.04s'], [50, '0.72s', '0.09s'],
-  [68, '0.88s', '0.02s'], [44, '0.92s', '0.06s'], [24, '0.78s', '0.12s'],
-]
+const S = {
+  card: {
+    background: 'var(--paper-1)',
+    border: '1px solid var(--line-1)',
+    borderRadius: 16,
+    padding: '28px 28px',
+    width: '100%',
+  } as React.CSSProperties,
+  fadeIn: {
+    animation: 'fadeSlideUp 0.35s var(--ease-out) both',
+  } as React.CSSProperties,
+}
 
-function VoiceWave({ active }: { active: boolean }) {
+// ── ScoreRing ─────────────────────────────────────────────────────────────────
+
+function ScoreRing({ score, outOf = 10 }: { score: number; outOf?: number }) {
+  const pct = Math.min((score / outOf) * 100, 100)
+  const r = 48, circ = 2 * Math.PI * r
+  const color = pct >= 70 ? 'var(--pos)' : pct >= 50 ? 'var(--warn)' : 'var(--neg)'
   return (
-    <div
-      aria-hidden
-      style={{
-        display: 'flex',
-        alignItems: 'flex-end',
-        justifyContent: 'center',
-        gap: 3,
-        height: 72,
-        padding: '0 4px',
-      }}
-    >
-      {WAVE_BARS.map(([maxH, dur, delay], i) => (
-        <div
-          key={i}
-          style={{
-            width: 3,
-            height: maxH,
-            borderRadius: '2px 2px 1px 1px',
-            background: active ? 'var(--accent)' : 'var(--line-2)',
-            transformOrigin: 'center bottom',
-            transform: active ? undefined : 'scaleY(0.1)',
-            transition: active
-              ? 'background 0.4s ease'
-              : 'transform 0.5s var(--ease-out), background 0.4s ease',
-            animation: active
-              ? `voiceBar ${dur} ease-in-out ${delay} infinite alternate`
-              : 'none',
-          }}
+    <div style={{ position: 'relative', width: 120, height: 120, margin: '0 auto' }}>
+      <svg width="120" height="120" viewBox="0 0 116 116" style={{ transform: 'rotate(-90deg)' }}>
+        <circle cx="58" cy="58" r={r} fill="none" stroke="var(--paper-3)" strokeWidth="9" />
+        <circle cx="58" cy="58" r={r} fill="none" stroke={color} strokeWidth="9"
+          strokeLinecap="round" strokeDasharray={circ}
+          strokeDashoffset={circ - circ * (pct / 100)}
+          style={{ transition: 'stroke-dashoffset 1.6s cubic-bezier(.4,0,.2,1)' }}
         />
+      </svg>
+      <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+        <span className="serif" style={{ fontSize: 26, fontWeight: 400, lineHeight: 1 }}>{score.toFixed(1)}</span>
+        <span className="t-xs fg-3">/ {outOf}</span>
+      </div>
+    </div>
+  )
+}
+
+// ── MicWave — animated bars while recording ───────────────────────────────────
+
+function MicWave({ active }: { active: boolean }) {
+  const heights = [12, 20, 28, 36, 44, 36, 28, 20, 12]
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 3, height: 44 }}>
+      {heights.map((h, i) => (
+        <div key={i} style={{
+          width: 4, borderRadius: 2,
+          background: active ? 'var(--neg)' : 'var(--line-2)',
+          height: active ? h : 4,
+          transition: 'height 0.3s ease, background 0.3s ease',
+          animation: active ? `voiceBar ${0.6 + i * 0.07}s ease-in-out ${i * 0.05}s infinite alternate` : 'none',
+        }} />
       ))}
     </div>
   )
 }
 
-// ── Real-time mic audio canvas ────────────────────────────────────────────────
+// ── Live transcript ───────────────────────────────────────────────────────────
 
-function MicCanvas({ stream, active }: { stream: MediaStream | null; active: boolean }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const rafRef    = useRef<number>(0)
-  const ctxRef    = useRef<AudioContext | null>(null)
-
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-
-    cancelAnimationFrame(rafRef.current)
-    if (ctxRef.current) { ctxRef.current.close().catch(() => {}); ctxRef.current = null }
-
-    const ctx2d = canvas.getContext('2d')!
-    if (!active || !stream) {
-      ctx2d.clearRect(0, 0, canvas.width, canvas.height)
-      return
-    }
-
-    let audioCtx: AudioContext
-    try { audioCtx = new AudioContext() } catch { return }
-    ctxRef.current = audioCtx
-
-    const analyser = audioCtx.createAnalyser()
-    analyser.fftSize = 128
-    analyser.smoothingTimeConstant = 0.72
-    try { audioCtx.createMediaStreamSource(stream).connect(analyser) }
-    catch { audioCtx.close(); return }
-
-    const W = canvas.width, H = canvas.height
-    const bufLen = analyser.frequencyBinCount
-    const data = new Uint8Array(bufLen)
-    const BARS = 40, barW = 4, gap = 2
-    const totalW = BARS * barW + (BARS - 1) * gap
-    const startX = (W - totalW) / 2
-
-    const draw = () => {
-      rafRef.current = requestAnimationFrame(draw)
-      analyser.getByteFrequencyData(data)
-      ctx2d.clearRect(0, 0, W, H)
-      for (let i = 0; i < BARS; i++) {
-        const idx = Math.floor((i / BARS) * bufLen * 0.52)
-        const v = data[idx] / 255
-        const barH = Math.max(3, v * H)
-        const x = startX + i * (barW + gap)
-        const y = (H - barH) / 2
-        ctx2d.fillStyle = `rgba(168, 85, 58, ${0.18 + v * 0.82})`
-        ctx2d.fillRect(x, y, barW, barH)
-      }
-    }
-    draw()
-
-    return () => {
-      cancelAnimationFrame(rafRef.current)
-      audioCtx.close().catch(() => {})
-    }
-  }, [active, stream])
-
+function Transcript({ confirmed, interim }: { confirmed: string; interim: string }) {
+  const empty = !confirmed && !interim
   return (
-    <canvas
-      ref={canvasRef}
-      width={320}
-      height={44}
-      style={{ display: 'block', opacity: active ? 1 : 0, transition: 'opacity 0.35s ease' }}
-    />
-  )
-}
-
-// ── Live transcript display ───────────────────────────────────────────────────
-
-function LiveTranscript({ confirmed, interim }: { confirmed: string; interim: string }) {
-  const isEmpty = !confirmed.trim() && !interim.trim()
-  return (
-    <div
-      style={{
-        minHeight: 108,
-        padding: '18px 22px',
-        background: 'var(--paper-1)',
-        border: '1px solid var(--line-1)',
-        borderRadius: 'var(--r-3)',
-        display: 'flex',
-        alignItems: isEmpty ? 'center' : 'flex-start',
-      }}
-    >
-      {isEmpty ? (
-        <p style={{
-          margin: 0, width: '100%', textAlign: 'center',
-          fontStyle: 'italic', color: 'var(--ink-4)', fontSize: 14,
-        }}>
-          Your answer will appear here as you speak…
+    <div style={{
+      minHeight: 96,
+      maxHeight: 200,
+      overflowY: 'auto',
+      padding: '14px 16px',
+      background: 'var(--paper-0)',
+      border: '1px solid var(--line-1)',
+      borderRadius: 10,
+      boxSizing: 'border-box',
+    }}>
+      {empty ? (
+        <p style={{ margin: 0, color: 'var(--ink-4)', fontSize: 13, fontStyle: 'italic' }}>
+          Your answer appears here as you speak…
         </p>
       ) : (
-        <p style={{
-          margin: 0, fontSize: 15, lineHeight: 1.72,
-          color: 'var(--ink-0)', letterSpacing: '-0.01em',
-        }}>
+        <p style={{ margin: 0, fontSize: 14, lineHeight: 1.7, color: 'var(--ink-0)', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
           <span>{confirmed}</span>
           {interim && (
             <span style={{ color: 'var(--ink-3)' }}>
-              {confirmed ? ' ' : ''}
-              {interim}
-              <span style={{
-                display: 'inline-block', width: 2, height: '0.85em',
-                background: 'var(--accent)', marginLeft: 2,
-                verticalAlign: 'text-bottom',
-                animation: 'blink 0.85s step-end infinite',
-              }} />
+              {confirmed ? ' ' : ''}{interim}
+              <span style={{ display: 'inline-block', width: 2, height: '0.85em', background: 'var(--accent)', marginLeft: 2, verticalAlign: 'text-bottom', animation: 'blink 0.8s step-end infinite' }} />
             </span>
           )}
         </p>
@@ -197,65 +128,200 @@ function LiveTranscript({ confirmed, interim }: { confirmed: string; interim: st
   )
 }
 
-// ── Score ring ────────────────────────────────────────────────────────────────
+// ── Code Environment ──────────────────────────────────────────────────────────
 
-function ScoreRing({ score, outOf = 10 }: { score: number; outOf?: number }) {
-  const pct = (score / outOf) * 100
-  const r = 54, circ = 2 * Math.PI * r
-  const color = pct >= 70 ? 'var(--pos)' : pct >= 50 ? 'var(--warn)' : 'var(--neg)'
+interface CodeEnvProps {
+  planId: string
+  moduleId: string
+  interviewId: string
+  language: string
+  value: string
+  onChange: (v: string) => void
+}
+
+function CodeEnvironment({ planId, moduleId, interviewId, language, value, onChange }: CodeEnvProps) {
+  const [output, setOutput] = useState<{ stdout: string; stderr: string; exit_code: number } | null>(null)
+  const [running, setRunning] = useState(false)
+
+  const handleRun = async () => {
+    if (!value.trim()) return
+    setRunning(true)
+    setOutput(null)
+    try {
+      const { data } = await coursesAPI.runCode(planId, moduleId, interviewId, value, language)
+      setOutput(data)
+    } catch {
+      setOutput({ stdout: '', stderr: 'Execution failed — check your code and try again.', exit_code: 1 })
+    } finally {
+      setRunning(false)
+    }
+  }
+
+  const hasError = output && (output.exit_code !== 0 || output.stderr)
+
   return (
-    <div style={{ position: 'relative', width: 144, height: 144, margin: '0 auto' }}>
-      <svg width="144" height="144" style={{ transform: 'rotate(-90deg)' }} viewBox="0 0 130 130">
-        <circle cx="65" cy="65" r={r} fill="none" stroke="var(--paper-3)" strokeWidth="10" />
-        <circle cx="65" cy="65" r={r} fill="none" stroke={color} strokeWidth="10"
-          strokeLinecap="round" strokeDasharray={circ}
-          strokeDashoffset={circ - circ * (pct / 100)}
-          style={{ transition: 'stroke-dashoffset 1.4s ease' }}
-        />
-      </svg>
-      <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-        <span className="serif" style={{ fontSize: 30 }}>{score.toFixed(1)}</span>
-        <span className="t-xs fg-3">/ {outOf}</span>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {/* Editor */}
+      <div style={{
+        border: '1px solid var(--line-1)',
+        borderRadius: 10,
+        overflow: 'hidden',
+        background: '#1e1e1e',
+      }}>
+        {/* Editor toolbar */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '8px 14px',
+          background: '#2d2d2d',
+          borderBottom: '1px solid #3a3a3a',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 11, color: '#888', fontFamily: 'var(--font-mono)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>{language}</span>
+          </div>
+          <button
+            onClick={handleRun}
+            disabled={running || !value.trim()}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '4px 12px', borderRadius: 6,
+              background: running ? '#3a3a3a' : '#22c55e',
+              color: running ? '#888' : '#fff',
+              fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
+              cursor: running ? 'default' : 'pointer',
+              border: 'none',
+              transition: 'background 0.15s ease',
+            }}
+          >
+            {running
+              ? <><Icon name="refresh" size={11} style={{ animation: 'spin 1s linear infinite' }} /> Running…</>
+              : <><Icon name="play" size={11} /> Run Code</>
+            }
+          </button>
+        </div>
+
+        <Suspense fallback={
+          <div style={{ height: 220, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#1e1e1e' }}>
+            <span style={{ color: '#888', fontSize: 13 }}>Loading editor…</span>
+          </div>
+        }>
+          <MonacoEditor
+            height="220px"
+            language={language === 'python3' ? 'python' : language}
+            value={value}
+            onChange={(v) => onChange(v ?? '')}
+            theme="vs-dark"
+            options={{
+              fontSize: 13,
+              fontFamily: 'var(--font-mono)',
+              minimap: { enabled: false },
+              scrollBeyondLastLine: false,
+              lineNumbers: 'on',
+              wordWrap: 'on',
+              padding: { top: 12, bottom: 12 },
+              renderLineHighlight: 'gutter',
+              automaticLayout: true,
+              tabSize: 4,
+            }}
+          />
+        </Suspense>
       </div>
+
+      {/* Output panel */}
+      {output && (
+        <div style={{
+          ...S.fadeIn,
+          border: `1px solid ${hasError ? 'color-mix(in srgb, var(--neg) 30%, var(--line-1))' : 'color-mix(in srgb, var(--pos) 30%, var(--line-1))'}`,
+          borderRadius: 10,
+          overflow: 'hidden',
+          background: 'var(--paper-0)',
+        }}>
+          <div style={{
+            padding: '7px 14px',
+            background: hasError ? 'color-mix(in srgb, var(--neg) 8%, var(--paper-1))' : 'color-mix(in srgb, var(--pos) 8%, var(--paper-1))',
+            borderBottom: '1px solid var(--line-1)',
+            display: 'flex', alignItems: 'center', gap: 6,
+          }}>
+            <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: hasError ? 'var(--neg)' : 'var(--pos)' }}>
+              {hasError ? 'Error' : 'Output'}
+            </span>
+            <span style={{ fontSize: 10, color: 'var(--ink-4)', fontFamily: 'var(--font-mono)' }}>exit {output.exit_code}</span>
+          </div>
+          <pre style={{
+            margin: 0, padding: '12px 14px',
+            fontSize: 12, fontFamily: 'var(--font-mono)',
+            color: hasError ? 'var(--neg)' : 'var(--ink-1)',
+            whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+            maxHeight: 160, overflowY: 'auto',
+            lineHeight: 1.6,
+          }}>
+            {output.stderr || output.stdout || '(no output)'}
+          </pre>
+        </div>
+      )}
+
+      {!output && (
+        <p style={{ margin: 0, fontSize: 12, color: 'var(--ink-4)', textAlign: 'center' }}>
+          Write your solution above, then click Run to test it.
+        </p>
+      )}
     </div>
   )
 }
 
-// ── Page ──────────────────────────────────────────────────────────────────────
+// ── Step dots ─────────────────────────────────────────────────────────────────
 
-const PANEL: React.CSSProperties = {
-  background: 'var(--paper-1)', border: '1px solid var(--line-1)',
-  borderRadius: 'var(--r-4)', padding: 28, width: '100%',
+function StepDots({ total, current, evals }: { total: number; current: number; evals: AnswerResult[] }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      {Array.from({ length: total }, (_, i) => {
+        const done = i < current
+        const active = i === current
+        const score = evals[i]?.score ?? null
+        const color = score != null ? (score >= 7 ? 'var(--pos)' : score >= 5 ? 'var(--warn)' : 'var(--neg)') : undefined
+        return (
+          <div key={i} style={{
+            height: 6, borderRadius: 3,
+            width: active ? 24 : 6,
+            background: color ?? (done ? 'var(--pos)' : active ? 'var(--ink-0)' : 'var(--paper-3)'),
+            transition: 'all 0.4s cubic-bezier(.4,0,.2,1)',
+          }} />
+        )
+      })}
+    </div>
+  )
 }
+
+// ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function ModuleInterviewPage() {
   const { planId, moduleId } = useParams<{ planId: string; moduleId: string }>()
   const navigate = useNavigate()
 
-  const [interview,        setInterview]        = useState<Interview | null>(null)
-  const [phase,            setPhase]            = useState<Phase>('loading')
-  const [currentQIdx,      setCurrentQIdx]      = useState(0)
-  const [isRecording,      setIsRecording]      = useState(false)
-  const [transcript,       setTranscript]       = useState('')
-  const [interimTranscript, setInterimTranscript] = useState('')
-  const [currentEval,      setCurrentEval]      = useState<AnswerResult | null>(null)
-  const [finalResult,      setFinalResult]      = useState<FinalResult | null>(null)
-  const [isSpeaking,       setIsSpeaking]       = useState(false)
-  const [displayedQ,       setDisplayedQ]       = useState('')
-  const [micStream,        setMicStream]        = useState<MediaStream | null>(null)
+  const [interview,          setInterview]          = useState<Interview | null>(null)
+  const [phase,              setPhase]              = useState<Phase>('loading')
+  const [currentQIdx,        setCurrentQIdx]        = useState(0)
+  const [isRecording,        setIsRecording]        = useState(false)
+  const [transcript,         setTranscript]         = useState('')
+  const [interimTranscript,  setInterimTranscript]  = useState('')
+  const [codeValue,          setCodeValue]          = useState('')
+  const [currentEval,        setCurrentEval]        = useState<AnswerResult | null>(null)
+  const [evalHistory,        setEvalHistory]        = useState<AnswerResult[]>([])
+  const [finalResult,        setFinalResult]        = useState<FinalResult | null>(null)
+  const [isSpeaking,         setIsSpeaking]         = useState(false)
+  const [displayedQ,         setDisplayedQ]         = useState('')
 
-  const mediaRef      = useRef<MediaRecorder | null>(null)
+  const mediaRef       = useRef<MediaRecorder | null>(null)
   const recognitionRef = useRef<any>(null)
-  const transcriptRef = useRef('')
+  const transcriptRef  = useRef('')
 
   const { data: plan } = useQuery({
     queryKey: ['course', planId],
     queryFn: () => coursesAPI.get(planId!).then((r) => r.data),
     enabled: !!planId,
-    staleTime: 1000 * 60 * 5,   // same key as CourseDetailPage — shares cache
+    staleTime: 1000 * 60 * 5,
     gcTime: 1000 * 60 * 15,
   })
-  const module = plan?.modules.find((m) => m.id === moduleId)
+  const currentModule = plan?.modules.find((m) => m.id === moduleId)
 
   // Start interview on mount
   useEffect(() => {
@@ -266,68 +332,43 @@ export default function ModuleInterviewPage() {
   }, [planId, moduleId])
 
   const currentQuestion = interview?.questions[currentQIdx]
+  const isCoding = !!currentQuestion?.is_coding_question
+  const codingLang = currentQuestion?.language ?? 'python'
 
-  // Typewriter reveal when entering question phase
+  // Typewriter for question text
   useEffect(() => {
     if (!currentQuestion) return
-    if (phase !== 'question') {
-      setDisplayedQ(currentQuestion.text)
-      return
-    }
+    if (phase !== 'question') { setDisplayedQ(currentQuestion.text); return }
     let i = 0
     setDisplayedQ('')
     const full = currentQuestion.text
-    const id = setInterval(() => {
-      i++
-      setDisplayedQ(full.slice(0, i))
-      if (i >= full.length) clearInterval(id)
-    }, 22)
+    const id = setInterval(() => { i++; setDisplayedQ(full.slice(0, i)); if (i >= full.length) clearInterval(id) }, 20)
     return () => clearInterval(id)
   }, [currentQuestion?.id, phase])
 
-  // Auto-speak each new question
+  // Reset code editor when question changes
+  useEffect(() => { setCodeValue('') }, [currentQIdx])
+
+  // Auto-speak question (verbal only)
   useEffect(() => {
-    if (phase !== 'question' || !currentQuestion) return
-    const timer = setTimeout(() => {
+    if (phase !== 'question' || !currentQuestion || isCoding) return
+    const t = setTimeout(() => {
       setIsSpeaking(true)
-      const utt = new SpeechSynthesisUtterance(
-        `Question ${currentQIdx + 1}. ${currentQuestion.text}`
-      )
+      const utt = new SpeechSynthesisUtterance(`Question ${currentQIdx + 1}. ${currentQuestion.text}`)
       utt.rate = 0.92
-      const voices = window.speechSynthesis?.getVoices() ?? []
-      const preferred = voices.find((v) => v.lang.startsWith('en') && v.localService)
-      if (preferred) utt.voice = preferred
+      const v = window.speechSynthesis?.getVoices().find((v) => v.lang.startsWith('en') && v.localService)
+      if (v) utt.voice = v
       utt.onend = () => setIsSpeaking(false)
       utt.onerror = () => setIsSpeaking(false)
       window.speechSynthesis?.cancel()
       window.speechSynthesis?.speak(utt)
-    }, 350)
-    return () => {
-      clearTimeout(timer)
-      window.speechSynthesis?.cancel()
-      setIsSpeaking(false)
-    }
-  }, [currentQIdx, phase])
+    }, 400)
+    return () => { clearTimeout(t); window.speechSynthesis?.cancel(); setIsSpeaking(false) }
+  }, [currentQIdx, phase, isCoding])
 
-  const reSpeak = useCallback(() => {
-    if (!currentQuestion) return
-    setIsSpeaking(true)
-    const utt = new SpeechSynthesisUtterance(
-      `Question ${currentQIdx + 1}. ${currentQuestion.text}`
-    )
-    utt.rate = 0.92
-    const voices = window.speechSynthesis?.getVoices() ?? []
-    const preferred = voices.find((v) => v.lang.startsWith('en') && v.localService)
-    if (preferred) utt.voice = preferred
-    utt.onend = () => setIsSpeaking(false)
-    utt.onerror = () => setIsSpeaking(false)
-    window.speechSynthesis?.cancel()
-    window.speechSynthesis?.speak(utt)
-  }, [currentQuestion, currentQIdx])
-
-  const updateTranscript = useCallback((updater: string | ((prev: string) => string)) => {
+  const updateTranscript = useCallback((upd: string | ((p: string) => string)) => {
     setTranscript((prev) => {
-      const next = typeof updater === 'function' ? updater(prev) : updater
+      const next = typeof upd === 'function' ? upd(prev) : upd
       transcriptRef.current = next
       return next
     })
@@ -336,38 +377,33 @@ export default function ModuleInterviewPage() {
   const startRecording = async () => {
     updateTranscript('')
     setInterimTranscript('')
-    let stream: MediaStream | null = null
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      setMicStream(stream)
-      const recorder = new MediaRecorder(stream)
-      recorder.onstop = () => { stream?.getTracks().forEach((t) => t.stop()); setMicStream(null) }
-      recorder.start()
-      mediaRef.current = recorder
-    } catch { /* proceed without MediaRecorder */ }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const rec = new MediaRecorder(stream)
+      rec.onstop = () => stream.getTracks().forEach((t) => t.stop())
+      rec.start()
+      mediaRef.current = rec
+    } catch { /* mic unavailable */ }
 
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
     if (SR) {
       const rec = new SR()
-      rec.continuous = true
-      rec.interimResults = true
-      rec.lang = 'en-US'
-      rec.onresult = (event: any) => {
-        let finalText = '', interimText = ''
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const r = event.results[i]?.[0]
-          if (!r) continue
-          if (event.results[i].isFinal) finalText += r.transcript + ' '
-          else interimText += r.transcript
+      rec.continuous = true; rec.interimResults = true; rec.lang = 'en-US'
+      rec.onresult = (e: any) => {
+        let fin = '', int = ''
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          const r = e.results[i]?.[0]; if (!r) continue
+          if (e.results[i].isFinal) fin += r.transcript + ' '
+          else int += r.transcript
         }
-        if (finalText) updateTranscript((prev) => prev + finalText)
-        setInterimTranscript(interimText)
+        if (fin) updateTranscript((p) => p + fin)
+        setInterimTranscript(int)
       }
       rec.onerror = () => {}
       rec.start()
       recognitionRef.current = rec
     } else {
-      toast('Speech recognition not supported — type below', { icon: 'ℹ️' })
+      toast('Speech recognition not available — type your answer below', { icon: 'ℹ️' })
     }
     setIsRecording(true)
     setPhase('recording')
@@ -380,28 +416,36 @@ export default function ModuleInterviewPage() {
     setInterimTranscript('')
     setIsRecording(false)
     setPhase('evaluating')
-    setTimeout(() => evaluateAnswer(transcriptRef.current || '[No answer recorded]'), 350)
+    setTimeout(() => evaluateAnswer(transcriptRef.current || '[No answer recorded]'), 300)
   }
 
   const evaluateAnswer = async (answerText: string) => {
     if (!interview || !currentQuestion) return
     try {
-      const { data } = await coursesAPI.submitAnswer(
-        planId!, moduleId!, interview.interview_id, currentQuestion.id, answerText
-      )
-      setCurrentEval(data as AnswerResult)
+      const { data } = await coursesAPI.submitAnswer(planId!, moduleId!, interview.interview_id, currentQuestion.id, answerText)
+      const result = data as AnswerResult
+      setCurrentEval(result)
+      setEvalHistory((prev) => [...prev, result])
       setPhase('feedback')
-      const r = data as AnswerResult
-      const utt = new SpeechSynthesisUtterance(
-        `Score: ${r.score} out of 10. ${r.feedback}`
-      )
-      utt.rate = 0.92
-      window.speechSynthesis?.cancel()
-      window.speechSynthesis?.speak(utt)
+      if (!isCoding) {
+        const utt = new SpeechSynthesisUtterance(`Score: ${result.score} out of 10. ${result.feedback}`)
+        utt.rate = 0.92
+        window.speechSynthesis?.cancel()
+        window.speechSynthesis?.speak(utt)
+      }
     } catch {
-      toast.error('Evaluation failed')
+      toast.error('Evaluation failed — try again')
       setPhase('question')
     }
+  }
+
+  const handleSubmitCode = () => {
+    window.speechSynthesis?.cancel()
+    setPhase('evaluating')
+    const combined = codeValue.trim()
+      ? `[Code Answer]\n\`\`\`${codingLang}\n${codeValue}\n\`\`\``
+      : '[No code submitted]'
+    setTimeout(() => evaluateAnswer(combined), 200)
   }
 
   const handleNext = () => {
@@ -419,11 +463,11 @@ export default function ModuleInterviewPage() {
   const handleComplete = async () => {
     if (!interview) return
     setPhase('scoring')
+    window.speechSynthesis?.cancel()
     try {
       const { data } = await coursesAPI.completeInterview(planId!, moduleId!, interview.interview_id)
       setFinalResult(data as FinalResult)
       setPhase('complete')
-
       const r = data as FinalResult
       const utt = new SpeechSynthesisUtterance(
         r.passed
@@ -431,7 +475,6 @@ export default function ModuleInterviewPage() {
           : `You scored ${r.final_score.toFixed(1)} out of 10. Review and try again.`
       )
       utt.rate = 0.92
-      window.speechSynthesis?.cancel()
       window.speechSynthesis?.speak(utt)
     } catch {
       toast.error('Could not finalize interview')
@@ -439,30 +482,36 @@ export default function ModuleInterviewPage() {
     }
   }
 
-  // ── Loading ──────────────────────────────────────────────────────────────────
+  const totalQ = interview?.questions.length ?? 1
+  const headerProgress = phase === 'intro' ? 0
+    : ((currentQIdx + (phase === 'feedback' || phase === 'evaluating' ? 1 : 0)) / totalQ) * 100
+
+  // ── Layouts ──────────────────────────────────────────────────────────────────
+
   if (phase === 'loading') {
     return (
-      <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ textAlign: 'center' }}>
-          <Icon name="mic" size={28} style={{ color: 'var(--ink-2)', marginBottom: 12, animation: 'pulse-soft 2s ease-in-out infinite' }} />
-          <div className="t-sm fg-3">Preparing your interview…</div>
-        </div>
+      <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }}>
+        <div style={{ width: 40, height: 40, borderRadius: '50%', border: '3px solid var(--line-2)', borderTopColor: 'var(--ink-0)', animation: 'spin 0.8s linear infinite' }} />
+        <span className="t-sm fg-3">Starting interview…</span>
       </div>
     )
   }
 
-  // ── Scoring ──────────────────────────────────────────────────────────────────
   if (phase === 'scoring') {
     return (
       <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-        <div style={{ ...PANEL, maxWidth: 460, textAlign: 'center' }}>
-          <Icon name="sparkle" size={28} style={{ color: 'var(--accent)', marginBottom: 12, animation: 'pulse-soft 2s ease-in-out infinite' }} />
-          <h2 className="serif" style={{ fontSize: 22, fontWeight: 400, marginBottom: 8 }}>Scoring Agent Running</h2>
-          <p className="t-sm fg-2" style={{ marginBottom: 20 }}>Analysing your answers and computing the final score…</p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ ...S.card, maxWidth: 420, textAlign: 'center' }}>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 20 }}>
+            <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'var(--paper-2)', display: 'grid', placeItems: 'center', animation: 'pulse-soft 1.8s ease-in-out infinite' }}>
+              <Icon name="sparkle" size={24} style={{ color: 'var(--accent)' }} />
+            </div>
+          </div>
+          <h2 className="serif" style={{ fontSize: 22, fontWeight: 400, marginBottom: 8 }}>Computing your score</h2>
+          <p className="t-sm fg-2" style={{ marginBottom: 24 }}>AI is cross-checking all answers against module knowledge…</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {['Analysing answers', 'Building scoring matrix', 'Computing final score'].map((step, i) => (
-              <div key={step} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', animation: `blink 1.4s ease-in-out ${i * 0.35}s infinite`, flexShrink: 0 }} />
+              <div key={step} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0, animation: `blink 1.4s ease-in-out ${i * 0.4}s infinite` }} />
                 <span className="t-sm fg-2">{step}</span>
               </div>
             ))}
@@ -472,54 +521,52 @@ export default function ModuleInterviewPage() {
     )
   }
 
-  // ── Complete ─────────────────────────────────────────────────────────────────
   if (phase === 'complete' && finalResult) {
     return (
-      <div style={{ height: '100%', overflowY: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-        <div style={{ ...PANEL, maxWidth: 520 }}>
-          <h2 className="serif" style={{ fontSize: 26, fontWeight: 400, textAlign: 'center', marginBottom: 20 }}>Interview Complete</h2>
-          <ScoreRing score={finalResult.final_score} />
-          <div style={{ textAlign: 'center', margin: '16px 0 20px' }}>
-            <Badge tone={finalResult.passed ? 'pos' : 'neg'} size="sm">
-              {finalResult.passed ? 'Module Passed' : 'Not Passed — Review & Retry'}
-            </Badge>
+      <div style={{ height: '100%', overflowY: 'auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '32px 16px' }}>
+        <div style={{ ...S.card, ...S.fadeIn, maxWidth: 560 }}>
+          <div style={{ textAlign: 'center', marginBottom: 24 }}>
+            <h2 className="serif" style={{ fontSize: 26, fontWeight: 400, marginBottom: 16 }}>Interview Complete</h2>
+            <ScoreRing score={finalResult.final_score} />
+            <div style={{ margin: '14px 0 0' }}>
+              <Badge tone={finalResult.passed ? 'pos' : 'neg'} size="sm">
+                {finalResult.passed ? 'Module Passed ✓' : 'Not Passed — Review & Retry'}
+              </Badge>
+            </div>
           </div>
+
           {finalResult.summary && (
-            <div style={{ background: 'color-mix(in srgb, var(--accent) 8%, var(--paper-1))', border: '1px solid color-mix(in srgb, var(--accent) 20%, transparent)', borderRadius: 'var(--r-2)', padding: '10px 14px', marginBottom: 16 }}>
-              <div className="caps" style={{ color: 'var(--accent)', marginBottom: 4 }}>AI Assessment</div>
-              <div className="t-sm fg-1" style={{ lineHeight: 1.6 }}>{finalResult.summary}</div>
+            <div style={{ background: 'color-mix(in srgb, var(--accent) 8%, var(--paper-1))', border: '1px solid color-mix(in srgb, var(--accent) 20%, transparent)', borderRadius: 10, padding: '12px 16px', marginBottom: 20 }}>
+              <div className="caps" style={{ color: 'var(--accent)', marginBottom: 4, fontSize: 10 }}>AI Assessment</div>
+              <div className="t-sm fg-1" style={{ lineHeight: 1.65 }}>{finalResult.summary}</div>
             </div>
           )}
+
           {finalResult.scoring_matrix?.length > 0 && (
             <div style={{ marginBottom: 20 }}>
-              <div className="caps fg-2" style={{ marginBottom: 8 }}>Scoring Matrix</div>
+              <div className="caps fg-3" style={{ marginBottom: 10, fontSize: 10 }}>Question Breakdown</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {finalResult.scoring_matrix.map((entry, i) => (
-                  <div key={i} style={{ background: 'var(--paper-2)', borderRadius: 'var(--r-2)', padding: '10px 12px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                      <span className="t-xs fg-3">Q{entry.question_id}</span>
+                  <div key={i} style={{ background: 'var(--paper-2)', borderRadius: 10, padding: '12px 14px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <span className="t-xs fg-3" style={{ fontWeight: 500 }}>Q{entry.question_id}</span>
                       <Badge tone={entry.score >= 7 ? 'pos' : entry.score >= 5 ? 'warn' : 'neg'} size="xs">{entry.score}/10</Badge>
                     </div>
-                    <div className="t-xs fg-2" style={{ marginBottom: 6 }}>{entry.justification}</div>
-                    {entry.concepts_covered?.length > 0 && (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, marginBottom: 3 }}>
-                        {entry.concepts_covered.map((c) => <Badge key={c} tone="pos" size="xs">{c}</Badge>)}
-                      </div>
-                    )}
-                    {entry.concepts_missed?.length > 0 && (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
-                        {entry.concepts_missed.map((c) => <Badge key={c} tone="neg" size="xs">{c}</Badge>)}
-                      </div>
-                    )}
+                    <div className="t-xs fg-2" style={{ marginBottom: 8, lineHeight: 1.55 }}>{entry.justification}</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                      {entry.concepts_covered?.map((c) => <Badge key={c} tone="pos" size="xs">{c}</Badge>)}
+                      {entry.concepts_missed?.map((c) => <Badge key={c} tone="neg" size="xs">✕ {c}</Badge>)}
+                    </div>
                   </div>
                 ))}
               </div>
             </div>
           )}
+
           <div style={{ display: 'flex', gap: 8 }}>
             <Button variant="secondary" full onClick={() => navigate(`/courses/${planId}`)}>Back to Plan</Button>
             {!finalResult.passed && (
-              <Button variant="primary" full onClick={() => window.location.reload()}>Retry Interview</Button>
+              <Button variant="primary" full onClick={() => window.location.reload()}>Retry</Button>
             )}
           </div>
         </div>
@@ -527,107 +574,67 @@ export default function ModuleInterviewPage() {
     )
   }
 
-  // ── Main interview UI ─────────────────────────────────────────────────────────
-  const totalQ = interview?.questions.length ?? 1
-  const progress = phase === 'intro'
-    ? 0
-    : ((currentQIdx + (phase === 'feedback' ? 1 : 0)) / totalQ) * 100
+  // ── Main interview shell ──────────────────────────────────────────────────────
 
   return (
-    <div style={{
-      height: '100%',
-      display: 'flex',
-      flexDirection: 'column',
-      background: 'var(--paper-0)',
-      overflow: 'hidden',
-    }}>
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--paper-0)', overflow: 'hidden' }}>
 
-      {/* ── Header ──────────────────────────────────────────────────────────── */}
-      <div style={{
-        padding: '10px 20px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 12,
-        borderBottom: '1px solid var(--line-1)',
-        background: 'var(--paper-1)',
-        flexShrink: 0,
-      }}>
-        <button
-          onClick={() => { window.speechSynthesis?.cancel(); navigate(`/courses/${planId}`) }}
-          style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--ink-2)', cursor: 'pointer', flexShrink: 0 }}
-        >
-          <Icon name="arrow-left" size={13} />
-          <span className="t-sm">Back</span>
-        </button>
+      {/* ── Header ────────────────────────────────────────────────────────────── */}
+      <div style={{ flexShrink: 0, borderBottom: '1px solid var(--line-1)', background: 'var(--paper-1)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 18px' }}>
+          <button
+            onClick={() => { window.speechSynthesis?.cancel(); navigate(`/courses/${planId}`) }}
+            style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--ink-2)', cursor: 'pointer', flexShrink: 0, fontSize: 13, fontFamily: 'inherit' }}
+          >
+            <Icon name="arrow-left" size={13} /> Back
+          </button>
 
-        {module && (
-          <span className="t-xs fg-3" style={{ flexShrink: 0, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {module.title}
+          {currentModule && (
+            <span className="t-xs fg-3" style={{ flexShrink: 0, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {currentModule.title}
+            </span>
+          )}
+
+          <div style={{ flex: 1, height: 3, borderRadius: 2, background: 'var(--paper-3)', overflow: 'hidden' }}>
+            <div style={{ height: '100%', borderRadius: 2, background: 'var(--ink-0)', width: `${headerProgress}%`, transition: 'width 0.6s cubic-bezier(.4,0,.2,1)' }} />
+          </div>
+
+          <span className="t-xs fg-3 mono" style={{ flexShrink: 0 }}>
+            {phase === 'intro' ? 'Intro' : `${currentQIdx + 1} / ${totalQ}`}
           </span>
-        )}
-
-        {/* Progress bar */}
-        <div style={{ flex: 1, height: 3, borderRadius: 2, background: 'var(--paper-3)', overflow: 'hidden' }}>
-          <div style={{
-            height: '100%', borderRadius: 2,
-            background: 'var(--accent)',
-            width: `${progress}%`,
-            transition: 'width 0.7s var(--ease-out)',
-          }} />
         </div>
-
-        <span className="t-xs fg-3" style={{ flexShrink: 0 }}>
-          {phase === 'intro' ? 'Intro' : `${currentQIdx + 1} / ${totalQ}`}
-        </span>
       </div>
 
-      {/* ── Scrollable content ───────────────────────────────────────────────── */}
-      <div style={{
-        flex: 1,
-        overflowY: 'auto',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        padding: '28px 20px 20px',
-        gap: 20,
-      }}>
-        <div style={{ width: '100%', maxWidth: 580 }}>
+      {/* ── Body ──────────────────────────────────────────────────────────────── */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '24px 16px 32px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        <div style={{ width: '100%', maxWidth: 640, display: 'flex', flexDirection: 'column', gap: 16 }}>
 
           {/* ── Intro ─────────────────────────────────────────────────────── */}
           {phase === 'intro' && (
-            <div style={PANEL}>
+            <div style={{ ...S.card, ...S.fadeIn }}>
               <div style={{ textAlign: 'center', marginBottom: 24 }}>
-                <div style={{
-                  width: 56, height: 56, borderRadius: '50%',
-                  background: 'var(--ink-1)', color: 'var(--paper-0)',
-                  display: 'grid', placeItems: 'center', margin: '0 auto 16px',
-                }}>
+                <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'var(--ink-0)', color: 'var(--paper-0)', display: 'grid', placeItems: 'center', margin: '0 auto 16px' }}>
                   <Icon name="mic" size={22} />
                 </div>
-                <h2 className="serif" style={{ fontSize: 22, fontWeight: 400, marginBottom: 8 }}>
-                  Ready to be assessed?
-                </h2>
-                <p className="t-sm fg-2" style={{ marginBottom: 4 }}>
-                  {interview?.questions.length} questions about <strong>{module?.title}</strong>
-                </p>
-                <p className="t-xs fg-3" style={{ marginBottom: 16 }}>
-                  Speak your answers out loud. Real-time transcription will capture every word. Pass threshold: 6 / 10.
-                </p>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, justifyContent: 'center', marginBottom: 24 }}>
-                  {module?.topics.map((t) => <Badge key={t} tone="outline" size="xs">{t}</Badge>)}
-                </div>
+                <h2 className="serif" style={{ fontSize: 22, fontWeight: 400, marginBottom: 6 }}>Ready to be assessed?</h2>
+                <p className="t-sm fg-2">{interview?.questions.length} questions on <strong>{currentModule?.title}</strong></p>
+                <p className="t-xs fg-3" style={{ marginTop: 4 }}>Pass threshold: 6 / 10 per question average</p>
               </div>
 
-              {/* Instructions */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 24 }}>
-                {[
-                  ['mic',     'Tap the mic button to start speaking. Tap again to stop.'],
-                  ['sparkle', 'AI will transcribe your speech in real time.'],
-                  ['book',    'You\'ll get instant feedback after each answer.'],
-                ].map(([icon, text]) => (
-                  <div key={icon} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                    <Icon name={icon as any} size={13} style={{ color: 'var(--ink-3)', marginTop: 2, flexShrink: 0 }} />
-                    <span className="t-sm fg-2">{text}</span>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, justifyContent: 'center', marginBottom: 22 }}>
+                {currentModule?.topics.map((t) => <Badge key={t} tone="outline" size="xs">{t}</Badge>)}
+              </div>
+
+              {/* Question type preview */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 24 }}>
+                {interview?.questions.map((q, i) => (
+                  <div key={q.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 8, background: 'var(--paper-2)' }}>
+                    <span className="t-xs mono fg-3" style={{ minWidth: 18 }}>Q{i + 1}</span>
+                    {q.is_coding_question
+                      ? <Badge tone="warn" size="xs" icon="code">Coding · {q.language ?? 'python'}</Badge>
+                      : <Badge tone="outline" size="xs" icon="mic">Verbal</Badge>
+                    }
+                    <span className="t-xs fg-2" style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{q.text.slice(0, 60)}{q.text.length > 60 ? '…' : ''}</span>
                   </div>
                 ))}
               </div>
@@ -638,180 +645,154 @@ export default function ModuleInterviewPage() {
             </div>
           )}
 
-          {/* ── Question + Recording ──────────────────────────────────────── */}
+          {/* ── Question phase ────────────────────────────────────────────── */}
           {(phase === 'question' || phase === 'recording') && currentQuestion && (
-            <>
-              {/* AI interviewer card */}
-              <div style={{
-                background: 'var(--paper-1)',
-                border: '1px solid var(--line-1)',
-                borderRadius: 'var(--r-4)',
-                padding: '28px 24px 22px',
-                marginBottom: 16,
-                textAlign: 'center',
-              }}>
-                {/* Avatar + status */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 18 }}>
+            <div style={{ ...S.fadeIn, display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+              {/* Question card */}
+              <div style={{ ...S.card }}>
+                {/* AI interviewer row */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
                   <div style={{
-                    width: 38, height: 38, borderRadius: '50%',
+                    width: 34, height: 34, borderRadius: '50%', flexShrink: 0,
                     background: isSpeaking ? 'var(--accent)' : 'var(--ink-1)',
-                    color: 'var(--paper-0)',
-                    display: 'grid', placeItems: 'center',
+                    color: 'var(--paper-0)', display: 'grid', placeItems: 'center',
                     transition: 'background 0.4s ease',
-                    flexShrink: 0,
+                    boxShadow: isSpeaking ? '0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent)' : 'none',
                   }}>
-                    <Icon name="sparkle" size={17} />
+                    <Icon name="sparkle" size={15} />
                   </div>
-                  <div style={{ textAlign: 'left' }}>
-                    <div className="t-sm" style={{ fontWeight: 600, color: 'var(--ink-0)' }}>AI Interviewer</div>
-                    <div className="t-xs" style={{ color: isSpeaking ? 'var(--accent)' : 'var(--ink-3)' }}>
-                      {isSpeaking ? 'Speaking…' : phase === 'recording' ? 'Listening to your answer' : 'Ready'}
-                    </div>
+                  <div>
+                    <span className="t-sm fg-0" style={{ fontWeight: 600 }}>AI Interviewer</span>
+                    <span className="t-xs fg-3" style={{ marginLeft: 8 }}>{isSpeaking ? 'Speaking…' : 'Listening'}</span>
+                  </div>
+                  <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {currentQuestion.is_coding_question && (
+                      <Badge tone="warn" size="xs" icon="code">Coding</Badge>
+                    )}
+                    <Badge tone="outline" size="xs">{currentQuestion.expected_depth}</Badge>
                   </div>
                 </div>
 
-                {/* Voice waveform */}
-                <VoiceWave active={isSpeaking} />
-
-                {/* Question text with typewriter */}
-                <p
-                  className="serif"
-                  style={{
-                    fontSize: 'clamp(17px, 3vw, 21px)',
-                    lineHeight: 1.48,
-                    color: 'var(--ink-0)',
-                    fontWeight: 400,
-                    margin: '18px 0 16px',
-                    minHeight: 60,
-                  }}
-                >
+                {/* Question text */}
+                <p className="serif" style={{
+                  fontSize: 'clamp(16px, 3vw, 20px)', lineHeight: 1.5, fontWeight: 400,
+                  color: 'var(--ink-0)', margin: 0, minHeight: 48,
+                }}>
                   {displayedQ}
                   {displayedQ.length < currentQuestion.text.length && (
-                    <span style={{
-                      display: 'inline-block', width: 2, height: '0.8em',
-                      background: 'var(--accent)', marginLeft: 3,
-                      verticalAlign: 'text-bottom',
-                      animation: 'blink 0.8s step-end infinite',
-                    }} />
+                    <span style={{ display: 'inline-block', width: 2, height: '0.85em', background: 'var(--accent)', marginLeft: 3, verticalAlign: 'text-bottom', animation: 'blink 0.8s step-end infinite' }} />
                   )}
                 </p>
-
-                {/* Depth badge + re-listen */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Badge tone="outline" size="xs">{currentQuestion.expected_depth}</Badge>
-                  <button
-                    onClick={reSpeak}
-                    disabled={isSpeaking}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 4,
-                      fontSize: 11, color: 'var(--ink-3)', cursor: 'pointer',
-                      opacity: isSpeaking ? 0.35 : 1, padding: '3px 6px', borderRadius: 'var(--r-1)',
-                    }}
-                  >
-                    <Icon name="mic" size={10} />
-                    Re-listen
-                  </button>
-                </div>
               </div>
 
-              {/* User response zone */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-
-                {/* Live transcript */}
-                <LiveTranscript confirmed={transcript} interim={isRecording ? interimTranscript : ''} />
-
-                {/* Optional manual textarea (only when not recording) */}
-                {!isRecording && (
-                  <textarea
-                    value={transcript}
-                    onChange={(e) => updateTranscript(e.target.value)}
-                    placeholder="Or type your answer here…"
-                    style={{
-                      width: '100%', background: 'var(--paper-0)',
-                      border: '1px solid var(--line-1)', borderRadius: 'var(--r-2)',
-                      padding: '10px 12px', fontSize: 13, color: 'var(--ink-0)',
-                      fontFamily: 'inherit', outline: 'none', resize: 'none',
-                      height: 72, boxSizing: 'border-box',
-                    }}
+              {/* Answer zone */}
+              {isCoding ? (
+                // ── Coding environment ──
+                <div style={S.card}>
+                  <div className="caps fg-3" style={{ fontSize: 10, marginBottom: 12 }}>Write your solution</div>
+                  <CodeEnvironment
+                    planId={planId!}
+                    moduleId={moduleId!}
+                    interviewId={interview!.interview_id}
+                    language={codingLang}
+                    value={codeValue}
+                    onChange={setCodeValue}
                   />
-                )}
-
-                {/* Mic button + audio visualizer */}
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, padding: '8px 0' }}>
-
-                  {/* Ripple rings + button */}
-                  <div style={{ position: 'relative', width: 84, height: 84, display: 'grid', placeItems: 'center' }}>
-                    {isRecording && [0, 1, 2].map((i) => (
-                      <div key={i} style={{
-                        position: 'absolute',
-                        width: 80, height: 80,
-                        borderRadius: '50%',
-                        border: '2px solid var(--neg)',
-                        animation: `rippleRing 2s ease-out ${i * 0.65}s infinite`,
-                        pointerEvents: 'none',
-                      }} />
-                    ))}
-                    <button
-                      onClick={isRecording ? stopRecording : startRecording}
-                      style={{
-                        width: 72, height: 72, borderRadius: '50%',
-                        background: isRecording ? 'var(--neg)' : 'var(--ink-0)',
-                        color: 'var(--paper-0)', border: 'none',
-                        display: 'grid', placeItems: 'center',
-                        cursor: 'pointer', position: 'relative', zIndex: 1,
-                        transition: 'background 0.25s ease, transform 0.12s ease',
-                        boxShadow: 'var(--shadow-3)',
-                      }}
-                      onMouseDown={(e) => (e.currentTarget.style.transform = 'scale(0.92)')}
-                      onMouseUp={(e)   => (e.currentTarget.style.transform = 'scale(1)')}
-                      onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+                  <div style={{ marginTop: 14 }}>
+                    <Button
+                      variant="primary"
+                      full
+                      iconRight="arrow"
+                      onClick={handleSubmitCode}
+                      disabled={!codeValue.trim()}
                     >
-                      <Icon name="mic" size={26} />
-                    </button>
+                      Submit Answer
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                // ── Verbal answer zone ──
+                <div style={S.card}>
+                  <div className="caps fg-3" style={{ fontSize: 10, marginBottom: 12 }}>Your answer</div>
+                  <Transcript confirmed={transcript} interim={isRecording ? interimTranscript : ''} />
+
+                  {/* Typed fallback */}
+                  {!isRecording && (
+                    <textarea
+                      value={transcript}
+                      onChange={(e) => updateTranscript(e.target.value)}
+                      placeholder="Or type your answer here…"
+                      style={{
+                        marginTop: 10, width: '100%', boxSizing: 'border-box',
+                        background: 'var(--paper-0)', border: '1px solid var(--line-1)',
+                        borderRadius: 8, padding: '10px 12px', fontSize: 13,
+                        color: 'var(--ink-0)', fontFamily: 'inherit', outline: 'none',
+                        resize: 'vertical', minHeight: 68, maxHeight: 200,
+                        wordBreak: 'break-word', overflowWrap: 'break-word', whiteSpace: 'pre-wrap',
+                      }}
+                    />
+                  )}
+
+                  {/* Mic button */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 16, justifyContent: 'center', flexWrap: 'wrap' }}>
+                    <div style={{ position: 'relative', display: 'grid', placeItems: 'center', width: 64, height: 64 }}>
+                      {isRecording && [0, 1, 2].map((i) => (
+                        <div key={i} style={{
+                          position: 'absolute', width: 64, height: 64, borderRadius: '50%',
+                          border: '1.5px solid var(--neg)',
+                          animation: `rippleRing 1.8s ease-out ${i * 0.55}s infinite`,
+                          pointerEvents: 'none',
+                        }} />
+                      ))}
+                      <button
+                        onClick={isRecording ? stopRecording : startRecording}
+                        style={{
+                          width: 56, height: 56, borderRadius: '50%',
+                          background: isRecording ? 'var(--neg)' : 'var(--ink-0)',
+                          color: 'var(--paper-0)', border: 'none', cursor: 'pointer',
+                          display: 'grid', placeItems: 'center', position: 'relative', zIndex: 1,
+                          transition: 'background 0.2s ease, transform 0.1s ease',
+                          boxShadow: 'var(--shadow-2)',
+                        }}
+                        onMouseDown={(e) => (e.currentTarget.style.transform = 'scale(0.92)')}
+                        onMouseUp={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+                      >
+                        <Icon name="mic" size={22} />
+                      </button>
+                    </div>
+                    <MicWave active={isRecording} />
+                    <span className="t-xs fg-3">{isRecording ? 'Tap to stop' : 'Tap to record'}</span>
                   </div>
 
-                  <span className="t-xs fg-3">
-                    {isRecording ? 'Tap to stop' : 'Tap to record'}
-                  </span>
-
-                  {/* Real mic audio bars */}
-                  <MicCanvas stream={micStream} active={isRecording} />
+                  {/* Submit typed answer */}
+                  {!isRecording && transcript.trim() && (
+                    <Button variant="primary" full style={{ marginTop: 12 }} onClick={() => evaluateAnswer(transcript)}>
+                      Submit Answer
+                    </Button>
+                  )}
                 </div>
-
-                {/* Submit when not recording + has text */}
-                {!isRecording && transcript.trim() && (
-                  <Button
-                    variant="primary"
-                    full
-                    onClick={() => evaluateAnswer(transcript)}
-                  >
-                    Submit Answer
-                  </Button>
-                )}
-              </div>
-            </>
+              )}
+            </div>
           )}
 
           {/* ── Evaluating ────────────────────────────────────────────────── */}
           {phase === 'evaluating' && (
-            <div style={{ ...PANEL, textAlign: 'center' }}>
-              <Icon name="sparkle" size={24} style={{ color: 'var(--accent)', marginBottom: 12, animation: 'pulse-soft 1.6s ease-in-out infinite' }} />
-              <p className="t-md fg-1" style={{ marginBottom: 10 }}>Evaluating your answer…</p>
-              <div style={{ display: 'flex', justifyContent: 'center', gap: 5 }}>
-                {[0, 1, 2].map((i) => (
-                  <span key={i} style={{
-                    width: 6, height: 6, borderRadius: '50%',
-                    background: 'var(--accent)',
-                    animation: `blink 1.2s ease-in-out ${i * 0.2}s infinite`,
-                  }} />
-                ))}
+            <div style={{ ...S.card, ...S.fadeIn, textAlign: 'center' }}>
+              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+                <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'var(--paper-2)', display: 'grid', placeItems: 'center' }}>
+                  <Icon name="sparkle" size={20} style={{ color: 'var(--accent)', animation: 'pulse-soft 1.2s ease-in-out infinite' }} />
+                </div>
               </div>
+              <p className="t-md fg-0" style={{ marginBottom: 6, fontWeight: 500 }}>Evaluating your answer</p>
+              <p className="t-sm fg-3">Checking key concepts and depth…</p>
             </div>
           )}
 
           {/* ── Per-question feedback ─────────────────────────────────────── */}
           {phase === 'feedback' && currentEval && (
-            <div style={PANEL}>
+            <div style={{ ...S.card, ...S.fadeIn }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                 <span className="t-sm fg-2" style={{ fontWeight: 500 }}>Q{currentQIdx + 1} result</span>
                 <Badge tone={currentEval.score >= 7 ? 'pos' : currentEval.score >= 5 ? 'warn' : 'neg'} size="sm">
@@ -819,33 +800,31 @@ export default function ModuleInterviewPage() {
                 </Badge>
               </div>
 
-              {/* Transcribed answer */}
-              <div style={{ background: 'var(--paper-2)', borderRadius: 'var(--r-2)', padding: '10px 14px', marginBottom: 12 }}>
-                <div className="t-xs fg-3" style={{ marginBottom: 4 }}>Your answer (transcribed)</div>
-                <div className="t-sm fg-1" style={{ fontStyle: 'italic', lineHeight: 1.55 }}>"{currentEval.answer_text}"</div>
+              {/* Transcribed answer (handle code vs verbal) */}
+              <div style={{ background: 'var(--paper-2)', borderRadius: 8, padding: '10px 14px', marginBottom: 14 }}>
+                <div className="t-xs fg-3" style={{ marginBottom: 4 }}>Your answer</div>
+                {currentEval.answer_text.startsWith('[Code Answer]') ? (
+                  <pre style={{ margin: 0, fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--ink-1)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 140, overflowY: 'auto' }}>
+                    {currentEval.answer_text.replace('[Code Answer]\n', '')}
+                  </pre>
+                ) : (
+                  <div className="t-sm fg-1" style={{ fontStyle: 'italic', lineHeight: 1.6, wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>"{currentEval.answer_text}"</div>
+                )}
               </div>
 
               {/* AI feedback */}
-              <div style={{
-                background: 'color-mix(in srgb, var(--accent) 8%, var(--paper-1))',
-                border: '1px solid color-mix(in srgb, var(--accent) 20%, transparent)',
-                borderRadius: 'var(--r-2)', padding: '12px 14px', marginBottom: 16,
-              }}>
-                <div className="t-xs" style={{ color: 'var(--accent)', marginBottom: 4, fontWeight: 500 }}>Quick feedback</div>
-                <div className="t-sm fg-1" style={{ lineHeight: 1.6 }}>{currentEval.feedback}</div>
+              <div style={{ background: 'color-mix(in srgb, var(--accent) 8%, var(--paper-1))', border: '1px solid color-mix(in srgb, var(--accent) 20%, transparent)', borderRadius: 8, padding: '12px 14px', marginBottom: 16 }}>
+                <div className="t-xs" style={{ color: 'var(--accent)', marginBottom: 4, fontWeight: 500 }}>Feedback</div>
+                <div className="t-sm fg-1" style={{ lineHeight: 1.65 }}>{currentEval.feedback}</div>
                 {currentEval.key_points_covered?.length > 0 && (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 10 }}>
-                    {currentEval.key_points_covered.map((kp) => (
-                      <Badge key={kp} tone="pos" size="xs">{kp}</Badge>
-                    ))}
+                    {currentEval.key_points_covered.map((kp) => <Badge key={kp} tone="pos" size="xs">{kp}</Badge>)}
                   </div>
                 )}
               </div>
 
               <Button variant="primary" full iconRight="arrow" onClick={handleNext}>
-                {currentQIdx < (interview?.questions.length ?? 0) - 1
-                  ? 'Next Question'
-                  : 'Submit for Final Scoring'}
+                {currentQIdx < (interview?.questions.length ?? 0) - 1 ? 'Next Question' : 'Submit for Final Scoring'}
               </Button>
             </div>
           )}
@@ -853,30 +832,10 @@ export default function ModuleInterviewPage() {
         </div>
       </div>
 
-      {/* ── Progress dots ────────────────────────────────────────────────────── */}
-      {interview && !['intro', 'loading'].includes(phase) && (
-        <div style={{
-          padding: '10px 0',
-          display: 'flex',
-          justifyContent: 'center',
-          gap: 6,
-          borderTop: '1px solid var(--line-1)',
-          background: 'var(--paper-1)',
-          flexShrink: 0,
-        }}>
-          {interview.questions.map((_, i) => (
-            <div key={i} style={{
-              height: 6,
-              width: i === currentQIdx ? 22 : 6,
-              borderRadius: 3,
-              background: i < currentQIdx
-                ? 'var(--pos)'
-                : i === currentQIdx
-                  ? 'var(--ink-0)'
-                  : 'var(--paper-3)',
-              transition: 'all 0.35s var(--ease-spring)',
-            }} />
-          ))}
+      {/* ── Footer: step dots ─────────────────────────────────────────────────── */}
+      {interview && !['intro', 'loading', 'scoring', 'complete'].includes(phase) && (
+        <div style={{ flexShrink: 0, padding: '10px 18px', borderTop: '1px solid var(--line-1)', background: 'var(--paper-1)', display: 'flex', justifyContent: 'center' }}>
+          <StepDots total={totalQ} current={currentQIdx} evals={evalHistory} />
         </div>
       )}
     </div>
