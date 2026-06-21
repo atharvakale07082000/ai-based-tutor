@@ -15,6 +15,7 @@ import asyncio
 import json
 import re
 import time
+from functools import cached_property, lru_cache
 from typing import AsyncIterator
 
 import structlog
@@ -31,13 +32,26 @@ log = structlog.get_logger()
 _HF_SEMAPHORE = asyncio.Semaphore(40)
 
 
+@lru_cache(maxsize=16)
+def _streaming_system_prompt(agent_name: str) -> str:
+    """Return the streaming-answer system prompt for a given agent name, cached per name."""
+    return (
+        f"You are {agent_name}, a warm and knowledgeable tutor. "
+        "Deliver this answer conversationally — like a brilliant friend explaining something. "
+        "Use markdown: **bold** for key terms, `code` for code, numbered lists for steps. "
+        "Keep paragraphs short. Never say 'Certainly!' or 'Great question!'. Just answer directly and warmly."
+    )
+
+
 class BaseAgent:
     name: str = "BaseAgent"
     role_description: str = ""
     tool_names: list[str] = []
     max_steps: int = 6
 
-    def build_system_prompt(self) -> str:
+    @cached_property
+    def _system_prompt(self) -> str:
+        """Build the ReAct system prompt once per agent instance."""
         tools_desc = tool_registry.describe_tools(self.tool_names)
         return (
             f"You are {self.name}, {self.role_description}\n\n"
@@ -115,15 +129,7 @@ class BaseAgent:
         model_id = model_cfg["model_id"]
 
         stream_messages = [
-            {
-                "role": "system",
-                "content": (
-                    f"You are {self.name}, a warm and knowledgeable tutor. "
-                    f"Deliver this answer conversationally — like a brilliant friend explaining something. "
-                    f"Use markdown: **bold** for key terms, `code` for code, numbered lists for steps. "
-                    f"Keep paragraphs short. Never say 'Certainly!' or 'Great question!'. Just answer directly and warmly."
-                ),
-            },
+            {"role": "system", "content": _streaming_system_prompt(self.name)},
             {"role": "user", "content": final_answer},
         ]
 
@@ -189,7 +195,7 @@ class BaseAgent:
         self._current_context = context
         start_time = time.monotonic()
 
-        system_prompt = self.build_system_prompt()
+        system_prompt = self._system_prompt
         context_str = json.dumps(
             {k: v for k, v in context.items() if k != "history"},
             default=str,

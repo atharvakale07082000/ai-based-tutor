@@ -1,4 +1,5 @@
 import asyncio
+from functools import lru_cache
 from typing import AsyncIterator
 
 import structlog
@@ -9,6 +10,24 @@ from app.hf.utils import truncate_history
 from app.prompts.loader import get_doubt_limits, get_system_prompt
 
 log = structlog.get_logger()
+
+
+@lru_cache(maxsize=128)
+def _cached_doubt_system_prompt(topic_context: str, bloom_level: str) -> str:
+    """Render the doubt-solver system prompt for a (topic, bloom_level) pair, cached.
+
+    In practice the set of unique (topic, bloom_level) pairs per server process
+    is small (~dozens), so lru_cache eliminates the YAML template render on the
+    hot path while keeping the system message byte-identical across calls with
+    the same args — enabling provider-side KV prefix cache hits.
+    """
+    return get_system_prompt(
+        "doubt_solver",
+        topic_context=topic_context,
+        bloom_level=bloom_level,
+        curriculum_context="",
+    )
+
 
 # Hard cap on tokens streamed back to prevent runaway responses
 _MAX_STREAM_TOKENS = 800
@@ -31,11 +50,9 @@ async def stream_doubt_response(
     limits = get_doubt_limits()
     history = history or []
 
-    system_content = get_system_prompt(
-        "doubt_solver",
+    system_content = _cached_doubt_system_prompt(
         topic_context=context or "General",
         bloom_level=bloom_level or "understand",
-        curriculum_context="",
     )
 
     messages = [{"role": "system", "content": system_content}]

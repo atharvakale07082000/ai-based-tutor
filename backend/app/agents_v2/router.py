@@ -18,6 +18,14 @@ from app.hf.models import HF_MODELS
 
 log = structlog.get_logger()
 
+# Module-level constant — identical prefix on every routing call enables
+# provider-side KV cache hits without any in-flight token re-processing.
+_ROUTING_SYSTEM_PROMPT = (
+    "You route user queries to the correct agent. "
+    "Agents: quiz, curriculum, progress, doubt, assistant. "
+    'Reply ONLY with JSON: {"agent": "name", "reason": "one sentence"}'
+)
+
 
 class AgentRouter:
     _KEYWORD_MAP: dict[str, set[str]] = {
@@ -71,12 +79,6 @@ class AgentRouter:
         provider = model_cfg["provider"]
         model_id = model_cfg["model_id"]
 
-        system_content = (
-            "You route user queries to the correct agent. "
-            "Agents: quiz, curriculum, progress, doubt, assistant. "
-            'Reply ONLY with JSON: {"agent": "name", "reason": "one sentence"}'
-        )
-
         try:
             client = get_hf_client(provider=provider)
             response = await asyncio.wait_for(
@@ -84,7 +86,7 @@ class AgentRouter:
                     client.chat_completion,
                     model=model_id,
                     messages=[
-                        {"role": "system", "content": system_content},
+                        {"role": "system", "content": _ROUTING_SYSTEM_PROMPT},
                         {"role": "user", "content": query},
                     ],
                     max_tokens=60,

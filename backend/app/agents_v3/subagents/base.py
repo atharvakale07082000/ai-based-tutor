@@ -14,6 +14,7 @@ import asyncio
 import json
 import re
 import time
+from functools import cached_property
 
 import structlog
 
@@ -50,8 +51,9 @@ class BaseSubAgent:
         """Inject the middleware chain used by pre/post processing hooks."""
         self._middleware = middleware
 
-    def _build_system_prompt(self) -> str:
-        """Render the agent's system prompt with tool descriptions and CoT instructions."""
+    @cached_property
+    def _system_prompt(self) -> str:
+        """Build the system prompt once per agent instance — class attrs are constants."""
         tools_desc = tool_registry.describe_tools(self.tool_names)
         display = AGENT_DISPLAY_NAMES.get(self.name, self.name)
         return (
@@ -129,7 +131,7 @@ class BaseSubAgent:
             learner_id=context.get("learner_id", "unknown"),
             query=query,
             context=context,
-            system_prompt=self._build_system_prompt(),
+            system_prompt=self._system_prompt,
         )
 
         # Pre-process (CoT injection, guardrail check, observability start)

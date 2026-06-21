@@ -38,6 +38,14 @@ from app.hf.models import HF_MODELS, TOKEN_BUDGETS
 
 log = structlog.get_logger()
 
+# Hoisted as a module-level constant so the provider KV cache hits on every
+# routing call — the prefix is byte-identical across all requests.
+_ROUTING_SYSTEM_PROMPT = (
+    "Route the learner query to the correct agent. "
+    "Agents: quiz, curriculum, progress, doubt, assistant. "
+    'Reply ONLY with JSON: {"agent": "<name>", "reason": "<one sentence>"}'
+)
+
 # ---------------------------------------------------------------------------
 # Keyword routing — same logic as v2 AgentRouter (no LLM call)
 # ---------------------------------------------------------------------------
@@ -75,11 +83,6 @@ async def _llm_route(query: str) -> tuple[str, str]:
     model_cfg = HF_MODELS["DOUBT_SOLVER"]
     provider = model_cfg["provider"]
     model_id = model_cfg["model_id"]
-    system_content = (
-        "Route the learner query to the correct agent. "
-        "Agents: quiz, curriculum, progress, doubt, assistant. "
-        'Reply ONLY with JSON: {"agent": "<name>", "reason": "<one sentence>"}'
-    )
     try:
         client = get_hf_client(provider=provider)
         response = await asyncio.wait_for(
@@ -87,7 +90,7 @@ async def _llm_route(query: str) -> tuple[str, str]:
                 client.chat_completion,
                 model=model_id,
                 messages=[
-                    {"role": "system", "content": system_content},
+                    {"role": "system", "content": _ROUTING_SYSTEM_PROMPT},
                     {"role": "user", "content": query},
                 ],
                 max_tokens=TOKEN_BUDGETS["routing"],
