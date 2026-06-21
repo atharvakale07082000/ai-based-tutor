@@ -9,6 +9,7 @@ import { Icon } from '@/components/ui/Icon'
 import { Avatar } from '@/components/ui/Avatar'
 import { MarkdownMessage } from '@/components/ui/MarkdownMessage'
 import { StreamTrace, type AgentStep } from '@/components/agents/StreamTrace'
+import { useSpeechInput } from '@/hooks/useSpeechInput'
 
 interface ActionCard {
   kind: string
@@ -94,6 +95,11 @@ export default function AtelierV2Page() {
   const [streaming, setStreaming] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  const { isListening, isSupported: isSpeechSupported, toggle: toggleVoice } = useSpeechInput({
+    onInterim: (text) => setInput(text),
+    onFinal: (text) => { setInput(text); toast.success('Heard you!', { icon: '🎤', duration: 2000 }) },
+  })
 
   useEffect(() => {
     if (prefill) inputRef.current?.focus()
@@ -412,6 +418,17 @@ export default function AtelierV2Page() {
                 }}
               />
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                {isSpeechSupported && (
+                  <Button
+                    size="xs"
+                    variant={isListening ? 'secondary' : 'ghost'}
+                    icon="mic"
+                    onClick={toggleVoice}
+                    style={isListening ? { color: 'var(--neg)', animation: 'pulse 1s ease-in-out infinite' } : undefined}
+                  >
+                    {isListening ? 'Listening…' : 'Voice'}
+                  </Button>
+                )}
                 <span style={{ flex: 1 }} />
                 {input.length > 1600 && (
                   <span className="t-xs" style={{ color: input.length > 1900 ? 'var(--neg)' : 'var(--ink-3)' }}>

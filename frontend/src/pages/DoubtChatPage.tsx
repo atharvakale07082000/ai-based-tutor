@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { doubtsAPI } from '@/lib/api'
-import { runSpeechToText, runSentiment } from '@/lib/hf'
+import { runSentiment } from '@/lib/hf'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Icon } from '@/components/ui/Icon'
@@ -10,6 +10,7 @@ import { Avatar } from '@/components/ui/Avatar'
 import { ChatBubbleSkeleton } from '@/components/ui/Skeleton'
 import { MarkdownMessage } from '@/components/ui/MarkdownMessage'
 import { useLearnerStore } from '@/stores/learnerStore'
+import { useSpeechInput } from '@/hooks/useSpeechInput'
 import toast from 'react-hot-toast'
 
 interface Message {
@@ -19,9 +20,6 @@ interface Message {
   timestamp: Date
 }
 
-let mediaRecorder: MediaRecorder | null = null
-let recordedChunks: BlobPart[] = []
-
 export default function DoubtChatPage() {
   const location = useLocation()
   const state = location.state as { prefill?: string; topic?: string } | null
@@ -30,8 +28,12 @@ export default function DoubtChatPage() {
   const [input, setInput] = useState(state?.prefill ?? '')
   const [topicContext, setTopicContext] = useState(state?.topic ?? '')
   const [isStreaming, setIsStreaming] = useState(false)
-  const [isRecording, setIsRecording] = useState(false)
   const [sessionTimer, setSessionTimer] = useState(0)
+
+  const { isListening: isRecording, isSupported: isSpeechSupported, toggle: toggleVoice } = useSpeechInput({
+    onInterim: (text) => setInput(text),
+    onFinal: (text) => { setInput(text); toast.success('Got it — send whenever you\'re ready!', { icon: '🎤', duration: 2500 }) },
+  })
   const [sessionId] = useState(() => crypto.randomUUID())
   const [showHistory, setShowHistory] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -127,31 +129,6 @@ export default function DoubtChatPage() {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(input) }
   }
 
-  const handleVoice = async () => {
-    if (isRecording) { mediaRecorder?.stop(); setIsRecording(false); return }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      recordedChunks = []
-      mediaRecorder = new MediaRecorder(stream)
-      mediaRecorder.ondataavailable = (e) => recordedChunks.push(e.data)
-      mediaRecorder.onstop = async () => {
-        const blob = new Blob(recordedChunks, { type: 'audio/webm' })
-        stream.getTracks().forEach((t) => t.stop())
-        try {
-          const transcript = await runSpeechToText(blob)
-          setInput(transcript)
-          toast.success('Transcription complete')
-        } catch {
-          try {
-            const { data } = await doubtsAPI.transcribe(blob)
-            setInput(data.transcript)
-          } catch { toast.error('Transcription failed') }
-        }
-      }
-      mediaRecorder.start()
-      setIsRecording(true)
-    } catch { toast.error('Microphone permission denied') }
-  }
 
   const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp'])
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -295,19 +272,23 @@ export default function DoubtChatPage() {
                 style={{ width: '100%', background: 'transparent', border: 0, outline: 'none', resize: 'none', fontSize: 14, color: 'var(--ink-0)', fontFamily: 'inherit', lineHeight: 1.5 }}
               />
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
-                <button
-                  onClick={handleVoice}
-                  aria-label={isRecording ? 'Stop voice recording' : 'Start voice recording'}
-                  className="min-h-11 min-w-11 sm:min-h-0 sm:min-w-0 inline-flex items-center justify-center"
-                  style={{
-                    padding: '4px 6px', borderRadius: 'var(--r-1)', border: 0,
-                    background: isRecording ? 'color-mix(in srgb, var(--neg) 15%, var(--paper-1))' : 'transparent',
-                    color: isRecording ? 'var(--neg)' : 'var(--ink-3)',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <Icon name="mic" size={13} />
-                </button>
+                {isSpeechSupported && (
+                  <button
+                    onClick={toggleVoice}
+                    aria-label={isRecording ? 'Stop listening' : 'Start voice input'}
+                    title={isRecording ? 'Stop (click to finish)' : 'Speak your question'}
+                    className="min-h-11 min-w-11 sm:min-h-0 sm:min-w-0 inline-flex items-center justify-center"
+                    style={{
+                      padding: '4px 8px', borderRadius: 'var(--r-1)', border: 0, gap: 5, display: 'flex', alignItems: 'center',
+                      background: isRecording ? 'color-mix(in srgb, var(--neg) 12%, var(--paper-1))' : 'transparent',
+                      color: isRecording ? 'var(--neg)' : 'var(--ink-3)',
+                      cursor: 'pointer', transition: 'all 0.15s ease',
+                    }}
+                  >
+                    <Icon name="mic" size={13} style={isRecording ? { animation: 'pulse 1s ease-in-out infinite' } : undefined} />
+                    {isRecording && <span style={{ fontSize: 11, fontWeight: 500 }}>Listening…</span>}
+                  </button>
+                )}
                 <label aria-label="Upload an image" className="min-h-11 min-w-11 sm:min-h-0 sm:min-w-0 inline-flex items-center justify-center" style={{ padding: '4px 6px', borderRadius: 'var(--r-1)', cursor: 'pointer', color: 'var(--ink-3)' }}>
                   <Icon name="upload" size={13} />
                   <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleImageUpload} />

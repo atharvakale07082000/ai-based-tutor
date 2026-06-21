@@ -10,6 +10,7 @@ import { Avatar } from '@/components/ui/Avatar'
 import { AgentPill } from '@/components/ui/AgentPill'
 import { MarkdownMessage } from '@/components/ui/MarkdownMessage'
 import { useAgentStore } from '@/stores/agentStore'
+import { useSpeechInput } from '@/hooks/useSpeechInput'
 
 interface ActionCard {
   kind: string
@@ -81,6 +82,11 @@ export default function AssistantPage() {
   const [streaming, setStreaming] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  const { isListening, isSupported: isSpeechSupported, toggle: toggleVoice } = useSpeechInput({
+    onInterim: (text) => setInput(text),
+    onFinal: (text) => { setInput(text); toast.success('Heard you!', { icon: '🎤', duration: 2000 }) },
+  })
 
   // Focus input and auto-send when pre-filled from a trend chip
   useEffect(() => {
@@ -261,7 +267,17 @@ export default function AssistantPage() {
               />
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
                 <Button size="xs" variant="ghost" icon="upload">Attach</Button>
-                <Button size="xs" variant="ghost" icon="mic">Voice</Button>
+                {isSpeechSupported && (
+                  <Button
+                    size="xs"
+                    variant={isListening ? 'secondary' : 'ghost'}
+                    icon="mic"
+                    onClick={toggleVoice}
+                    style={isListening ? { color: 'var(--neg)', animation: 'pulse 1s ease-in-out infinite' } : undefined}
+                  >
+                    {isListening ? 'Listening…' : 'Voice'}
+                  </Button>
+                )}
                 <span style={{ flex: 1 }} />
                 {input.length > 1600 && (
                   <span className="t-xs" style={{ color: input.length > 1900 ? 'var(--neg)' : 'var(--ink-3)' }}>
