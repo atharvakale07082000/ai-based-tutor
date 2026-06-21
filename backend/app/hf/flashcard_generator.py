@@ -14,7 +14,7 @@ import uuid
 import structlog
 
 from app.hf.client import get_hf_client
-from app.hf.models import HF_MODELS
+from app.hf.models import HF_MODELS, TOKEN_BUDGETS
 
 log = structlog.get_logger()
 
@@ -59,7 +59,7 @@ Topic: {topic}"""
             client.chat_completion,
             model=model_cfg["model_id"],
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=1200,
+            max_tokens=TOKEN_BUDGETS["flashcard"],
             temperature=0.6,
         )
         text = result.choices[0].message.content.strip()

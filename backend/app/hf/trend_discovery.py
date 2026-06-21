@@ -20,7 +20,7 @@ import structlog
 from ddgs import DDGS
 
 from app.hf.client import get_hf_client
-from app.hf.models import HF_MODELS
+from app.hf.models import HF_MODELS, TOKEN_BUDGETS
 
 log = structlog.get_logger()
 
@@ -152,7 +152,7 @@ Rules:
         resp = client.chat_completion(
             model=model_cfg["model_id"],
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=1800,
+            max_tokens=TOKEN_BUDGETS["trend_discovery"],
             temperature=0.3,
         )
         text = resp.choices[0].message.content.strip()

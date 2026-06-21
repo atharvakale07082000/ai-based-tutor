@@ -252,6 +252,8 @@ export default function ModuleInterviewPage() {
     queryKey: ['course', planId],
     queryFn: () => coursesAPI.get(planId!).then((r) => r.data),
     enabled: !!planId,
+    staleTime: 1000 * 60 * 5,   // same key as CourseDetailPage — shares cache
+    gcTime: 1000 * 60 * 15,
   })
   const module = plan?.modules.find((m) => m.id === moduleId)
 

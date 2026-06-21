@@ -42,6 +42,8 @@ export default function DoubtChatPage() {
   const { data: sessions } = useQuery({
     queryKey: ['doubts', 'sessions'],
     queryFn: () => doubtsAPI.getSessions().then((r) => r.data),
+    staleTime: 1000 * 30,       // session list: 30 s
+    gcTime: 1000 * 60 * 5,
   })
 
   useEffect(() => {

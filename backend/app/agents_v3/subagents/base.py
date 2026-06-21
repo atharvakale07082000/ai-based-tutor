@@ -28,7 +28,7 @@ from app.agents_v3.schemas import (
     ToolCallRecord,
 )
 from app.hf.client import hf_chat_completion_with_resilience, record_auth_failure, record_auth_success
-from app.hf.models import HF_MODELS
+from app.hf.models import HF_MODELS, TOKEN_BUDGETS
 from app.resilience import CircuitOpenError
 from app.tools import tool_registry
 
@@ -79,13 +79,15 @@ class BaseSubAgent:
         model_cfg = HF_MODELS["DOUBT_SOLVER"]
         provider = model_cfg["provider"]
         model_id = model_cfg["model_id"]
+        # Use the agent-specific token budget, falling back to cot_step for intermediate steps
+        budget = TOKEN_BUDGETS.get(self.name, TOKEN_BUDGETS["cot_step"])
         try:
             async with _HF_SEMAPHORE:
                 raw = await hf_chat_completion_with_resilience(
                     provider=provider,
                     model_id=model_id,
                     messages=messages,
-                    max_tokens=400,
+                    max_tokens=budget,
                     temperature=0.1,
                     timeout_s=20.0,
                 )

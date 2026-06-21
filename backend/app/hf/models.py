@@ -6,6 +6,26 @@ Generation tasks default to HF Together with NVIDIA NIM as fallback.
 Inference tasks (classification, embeddings, etc.) use dedicated HF endpoints.
 """
 
+# Per-task token budgets — right-sized so the LLM stops as soon as it has
+# enough tokens rather than burning the full 512 default every call.
+# Agent keys match BaseSubAgent.name exactly; non-agent tasks use descriptive keys.
+TOKEN_BUDGETS: dict[str, int] = {
+    # Agent names (match BaseSubAgent.name) ─────────────────────────────────
+    "doubt": 450,  # conversational explanation; rarely needs more
+    "quiz": 800,  # 5 MCQ objects in JSON
+    "curriculum": 500,  # ordered topic list
+    "progress": 200,  # short delta / elo update summary
+    "assistant": 400,  # general assistant reply
+    # Non-agent generation tasks ─────────────────────────────────────────────
+    "routing": 60,  # {"agent":…,"reason":…}
+    "cot_step": 120,  # intermediate ReAct thought
+    "flashcard": 700,  # N front/back card pairs in JSON
+    "content_body": 1200,  # full article body
+    "trend_discovery": 1800,  # batch topic + feed-item JSON
+    "course_plan": 600,  # module list
+    "interview_eval": 300,  # score + feedback JSON
+}
+
 HF_MODELS: dict[str, dict] = {
     # ── Generation tasks (provider: together, NVIDIA NIM fallback) ────────────
     "DOUBT_SOLVER": {

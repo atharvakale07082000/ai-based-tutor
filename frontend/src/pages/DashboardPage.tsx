@@ -54,11 +54,15 @@ export default function DashboardPage() {
   const { data: contentData, isLoading: contentLoading } = useQuery({
     queryKey: ['content', 'feed', {}],
     queryFn: () => contentAPI.list({ limit: 6 }).then((r) => r.data),
+    staleTime: 1000 * 60 * 2,   // content list: 2 min
+    gcTime: 1000 * 60 * 10,
   })
 
   const { data: sessionsData } = useQuery({
     queryKey: ['doubts', 'sessions'],
     queryFn: () => doubtsAPI.getSessions().then((r) => r.data),
+    staleTime: 1000 * 30,        // doubt sessions: 30 s
+    gcTime: 1000 * 60 * 5,
   })
 
   const { data: dueTopicsData } = useQuery({
@@ -70,7 +74,8 @@ export default function DashboardPage() {
   const { data: leaderboardData } = useQuery({
     queryKey: ['leaderboard'],
     queryFn: () => leaderboardAPI.get().then((r) => r.data),
-    staleTime: 1000 * 60 * 2,
+    staleTime: 1000 * 60 * 2,   // leaderboard: 2 min
+    gcTime: 1000 * 60 * 10,
   })
 
   const handleStartQuiz = async () => {

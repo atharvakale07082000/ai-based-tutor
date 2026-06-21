@@ -66,6 +66,8 @@ export default function CoursePlannerPage() {
   const { data: plans, refetch } = useQuery({
     queryKey: ['courses'],
     queryFn: () => coursesAPI.list().then((r) => r.data),
+    staleTime: 1000 * 60 * 2,   // course plans: 2 min
+    gcTime: 1000 * 60 * 10,
   })
 
   const handlePlan = async () => {

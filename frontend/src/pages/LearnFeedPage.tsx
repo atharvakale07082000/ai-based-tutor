@@ -324,6 +324,8 @@ export default function LearnFeedPage() {
       }).then((r) => r.data),
     getNextPageParam: (last) => last.has_more ? last.page + 1 : undefined,
     initialPageParam: 1,
+    staleTime: 1000 * 30,       // feed: 30 s (snooze/schedule mutations invalidate anyway)
+    gcTime: 1000 * 60 * 5,
   })
 
   // Trending topics

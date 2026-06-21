@@ -143,7 +143,9 @@ export default function CourseDetailPage() {
     queryKey: ['course', planId],
     queryFn: () => coursesAPI.get(planId!).then((r) => r.data),
     enabled: !!planId,
-    refetchInterval: 5000,
+    staleTime: 1000 * 60 * 5,   // course detail: 5 min (stable once generated)
+    gcTime: 1000 * 60 * 15,
+    refetchInterval: 5000,       // keeps polling until generation completes
   })
 
   if (isLoading) {

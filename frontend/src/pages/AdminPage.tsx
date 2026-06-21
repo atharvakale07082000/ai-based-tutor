@@ -30,6 +30,8 @@ function AdminOverview() {
   const { data: learners, isLoading } = useQuery({
     queryKey: ['admin', 'learners', search],
     queryFn: () => adminAPI.getLearners(search, 1).then((r) => r.data),
+    staleTime: 1000 * 60,       // learner list: 1 min
+    gcTime: 1000 * 60 * 5,
   })
 
   const configMutation = useMutation({

@@ -3,6 +3,7 @@ import asyncio
 import structlog
 
 from app.hf.client import get_hf_client
+from app.hf.models import TOKEN_BUDGETS
 
 log = structlog.get_logger()
 
@@ -110,7 +111,7 @@ async def generate_content_body(
                 {"role": "system", "content": _SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt},
             ],
-            max_tokens=1500,
+            max_tokens=TOKEN_BUDGETS["content_body"],
             temperature=0.6,
         )
         body = (result.choices[0].message.content or "").strip()

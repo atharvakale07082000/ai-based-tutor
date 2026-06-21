@@ -34,7 +34,7 @@ from app.agents_v3.subagents.doubt import DoubtSubAgent
 from app.agents_v3.subagents.progress import ProgressSubAgent
 from app.agents_v3.subagents.quiz import QuizSubAgent
 from app.hf.client import get_hf_client, record_auth_failure, record_auth_success
-from app.hf.models import HF_MODELS
+from app.hf.models import HF_MODELS, TOKEN_BUDGETS
 
 log = structlog.get_logger()
 
@@ -90,7 +90,7 @@ async def _llm_route(query: str) -> tuple[str, str]:
                     {"role": "system", "content": system_content},
                     {"role": "user", "content": query},
                 ],
-                max_tokens=60,
+                max_tokens=TOKEN_BUDGETS["routing"],
                 temperature=0.0,
             ),
             timeout=5.0,

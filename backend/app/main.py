@@ -9,6 +9,7 @@ import socketio
 import structlog
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.gzip import GZipMiddleware
 from structlog.contextvars import bind_contextvars, clear_contextvars
 
 from app.config import settings
@@ -69,10 +70,6 @@ async def lifespan(app: FastAPI):
     await ensure_indexes()
     log.info("mongo_indexes_ensured")
 
-    # Register activity-logging middleware here so it can be toggled or skipped
-    # in tests that override the lifespan — must happen before first request.
-    app.add_middleware(ActivityLoggingMiddleware)
-
     task = asyncio.create_task(_mongo_keepalive())
     yield
     task.cancel()
@@ -93,6 +90,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# ActivityLoggingMiddleware must be registered at module level — Starlette freezes
+# the middleware stack on first request and raises RuntimeError if add_middleware()
+# is called inside lifespan. Toggle via ACTIVITY_LOGGING_ENABLED env var instead.
+app.add_middleware(ActivityLoggingMiddleware)
+# GZip compress responses ≥ 500 bytes — typically 30–60% size reduction on JSON.
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 # Build version — set APP_VERSION env var in your deployment pipeline (e.g. git SHA).
 # Changes on every deploy, which the frontend uses to detect redeploys and auto-logout.

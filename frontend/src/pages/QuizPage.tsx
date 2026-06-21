@@ -45,6 +45,8 @@ export default function QuizPage() {
     queryKey: ['quiz', quizId],
     queryFn: () => quizAPI.get(quizId!).then((r) => r.data),
     enabled: !!quizId && quizId !== 'new',
+    staleTime: Infinity,        // quiz questions are immutable once created
+    gcTime: 1000 * 60 * 30,
   })
 
   const currentQuestion = quiz?.questions[currentIdx]
