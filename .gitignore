@@ -72,6 +72,7 @@ memory/
 # ------------------------------------------------------------
 backend/app/agents/
 backend/app/agents_v2/
+backend/data/agents_v2/
 
 # ------------------------------------------------------------
 # Miscellaneous
