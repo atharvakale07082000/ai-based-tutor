@@ -21,7 +21,7 @@ from typing import AsyncIterator
 import structlog
 
 from app.hf.client import get_hf_client, record_auth_failure, record_auth_success
-from app.hf.models import HF_MODELS
+from app.hf.models import HF_MODELS, TOKEN_BUDGETS
 from app.tools import tool_registry
 
 log = structlog.get_logger()
@@ -70,8 +70,20 @@ class BaseAgent:
             f"- Maximum {self.max_steps} steps before you must give a final_answer."
         )
 
-    async def decide_step(self, messages: list[dict]) -> dict:
-        """Non-streaming call to Qwen2.5-7B-Instruct via Together. Returns parsed JSON dict."""
+    @cached_property
+    def _synthesis_budget(self) -> int:
+        """Token budget for final-answer synthesis steps — agent-specific ceiling."""
+        budget_key = self.name.lower().removesuffix("agent")
+        return TOKEN_BUDGETS.get(budget_key, TOKEN_BUDGETS["cot_step"])
+
+    async def decide_step(self, messages: list[dict], *, synthesis: bool = False) -> dict:
+        """Non-streaming LLM call for one ReAct step.
+
+        Args:
+            synthesis: True when all tool calls are done and the next step is
+                       expected to produce final_answer — uses the full agent budget.
+                       False (default) uses the cheaper cot_step budget for action dispatch.
+        """
         from app.hf.client import hf_chat_completion_with_resilience
         from app.resilience import CircuitOpenError
 
@@ -79,13 +91,16 @@ class BaseAgent:
         provider = model_cfg["provider"]
         model_id = model_cfg["model_id"]
 
+        # Action-dispatch steps produce short JSON (~80-120 tokens); synthesis steps
+        # need the full agent budget to write the final answer without truncation.
+        budget = self._synthesis_budget if synthesis else TOKEN_BUDGETS["cot_step"]
         try:
             async with _HF_SEMAPHORE:
                 raw = await hf_chat_completion_with_resilience(
                     provider=provider,
                     model_id=model_id,
                     messages=messages,
-                    max_tokens=300,
+                    max_tokens=budget,
                     temperature=0.1,
                     timeout_s=20.0,
                 )
@@ -210,7 +225,10 @@ class BaseAgent:
         for step in range(self.max_steps):
             step_num = step + 1
 
-            step_result = await self.decide_step(messages)
+            # Always use the agent-specific synthesis budget — max_tokens is a ceiling,
+            # not a target. Action steps naturally produce ~80 tokens and stop early.
+            # Using cot_step for later steps would truncate final_answer responses.
+            step_result = await self.decide_step(messages, synthesis=True)
 
             thought = step_result.get("thought", "")
             yield {"type": "thought", "step": step_num, "content": thought}

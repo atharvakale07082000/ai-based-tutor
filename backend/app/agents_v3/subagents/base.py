@@ -76,13 +76,22 @@ class BaseSubAgent:
             f"Rules: valid JSON only, no markdown fences, use listed tools only, max {self.max_steps} steps."
         )
 
-    async def _decide_step(self, messages: list[dict]) -> dict:
-        """Call the LLM for one ReAct step; return parsed JSON or a safe error fallback."""
+    @cached_property
+    def _synthesis_budget(self) -> int:
+        """Token budget for final-answer synthesis — per-agent ceiling."""
+        return TOKEN_BUDGETS.get(self.name, TOKEN_BUDGETS["cot_step"])
+
+    async def _decide_step(self, messages: list[dict], *, synthesis: bool = False) -> dict:
+        """Call the LLM for one ReAct step; return parsed JSON or a safe error fallback.
+
+        Args:
+            synthesis: True when tool calls are done and final_answer is expected.
+                       Uses full agent budget. False (default) uses cot_step (120 tokens).
+        """
         model_cfg = HF_MODELS["DOUBT_SOLVER"]
         provider = model_cfg["provider"]
         model_id = model_cfg["model_id"]
-        # Use the agent-specific token budget, falling back to cot_step for intermediate steps
-        budget = TOKEN_BUDGETS.get(self.name, TOKEN_BUDGETS["cot_step"])
+        budget = self._synthesis_budget if synthesis else TOKEN_BUDGETS["cot_step"]
         try:
             async with _HF_SEMAPHORE:
                 raw = await hf_chat_completion_with_resilience(
@@ -163,9 +172,10 @@ class BaseSubAgent:
         tool_calls: list[ToolCallRecord] = []
         side_effects: list[SideEffect] = []
         result_text = ""
-
         for step in range(1, self.max_steps + 1):
-            step_result = await self._decide_step(messages)
+            # Always use synthesis budget — max_tokens is a ceiling, not a target.
+            # Action steps produce ~80 tokens naturally; final_answer steps need the full budget.
+            step_result = await self._decide_step(messages, synthesis=True)
 
             # Extract CoT steps from this iteration
             cot_chain.extend(extract_cot_steps(step_result, step))
