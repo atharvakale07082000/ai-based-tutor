@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Icon } from '@/components/ui/Icon'
 import { ValueBar } from '@/components/ui/Progress'
+import { EmptyState } from '@/components/ui/EmptyState'
 
 function Stat({ label, value, change, sub, icon }: { label: string; value: string; change?: string; sub?: string; icon?: string }) {
   return (
@@ -43,7 +44,7 @@ function HeatCell({ v }: { v: number }) {
   return <div style={{ width: 10, height: 10, background: colors[v] || colors[0], borderRadius: 1.5, border: v === 0 ? '1px solid var(--line-1)' : 'none' }} />
 }
 
-const HEATMAP = Array.from({ length: 26 }, () => Array.from({ length: 7 }, () => Math.floor(Math.random() * 5)))
+const HEATMAP = Array.from({ length: 26 }, () => Array.from({ length: 7 }, () => 0))
 
 export default function DashboardPage() {
   const navigate = useNavigate()
@@ -134,12 +135,11 @@ export default function DashboardPage() {
         <Stat
           label="Job Readiness"
           value={learnerProfile?.job_readiness_score != null ? `${Math.round(learnerProfile.job_readiness_score)}%` : `${Math.min(Math.round((Object.keys(topicProficiency).length / 10) * 100), 100)}%`}
-          change="+4% this week"
           icon="target"
         />
         <Stat label="Streak" value={String(streak)} sub="days · keep going!" icon="flame" />
-        <Stat label="XP" value={xp.toLocaleString()} change="+120 today" icon="bolt" />
-        <Stat label="Coaching" value={String(sessions.length || 0)} sub="sessions total" icon="chat" />
+        <Stat label="XP" value={xp.toLocaleString()} icon="bolt" />
+        <Stat label="Coaching sessions" value={String(sessions.length || 0)} sub="total" icon="chat" />
         <Stat label="Skills" value={String(Object.keys(topicProficiency).length)} sub="topics tracked" icon="book" />
       </div>
 
@@ -237,19 +237,31 @@ export default function DashboardPage() {
             <span className="caps" style={{ color: 'var(--ink-2)' }}>Recent coaching sessions</span>
             <a className="t-sm fg-2" style={{ cursor: 'pointer' }} onClick={() => navigate('/doubts')}>All sessions →</a>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
-            {sessions.slice(0, 4).map((s: any) => (
-              <Card key={s.id} hover padding="sm" style={{ cursor: 'pointer' }} onClick={() => navigate('/doubts')}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                  <Badge size="xs" tone={s.sentiment_mood === 'POSITIVE' ? 'pos' : s.sentiment_mood === 'NEGATIVE' ? 'neg' : 'neutral'} dot>
-                    {(s.sentiment_mood ?? 'neutral').toLowerCase()}
-                  </Badge>
-                  <span className="t-xs fg-3">{new Date(s.started_at).toLocaleDateString()}</span>
-                </div>
-                <div className="t-sm fg-0" style={{ fontWeight: 500, marginBottom: 2 }}>{s.topic_context ?? 'General question'}</div>
-              </Card>
-            ))}
-          </div>
+          {sessions.length === 0 ? (
+            <Card padding="none">
+              <EmptyState
+                icon="chat"
+                title="No coaching sessions yet"
+                body="Ask your career coach a question to get started."
+                action={{ label: 'Open coach', onClick: () => navigate('/doubts') }}
+                size="sm"
+              />
+            </Card>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
+              {sessions.slice(0, 4).map((s: any) => (
+                <Card key={s.id} hover padding="sm" style={{ cursor: 'pointer' }} onClick={() => navigate('/doubts')}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <Badge size="xs" tone={s.sentiment_mood === 'POSITIVE' ? 'pos' : s.sentiment_mood === 'NEGATIVE' ? 'neg' : 'neutral'} dot>
+                      {(s.sentiment_mood ?? 'neutral').toLowerCase()}
+                    </Badge>
+                    <span className="t-xs fg-3">{new Date(s.started_at).toLocaleDateString()}</span>
+                  </div>
+                  <div className="t-sm fg-0" style={{ fontWeight: 500, marginBottom: 2 }}>{s.topic_context ?? 'General question'}</div>
+                </Card>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Column 2 */}
@@ -343,11 +355,11 @@ export default function DashboardPage() {
                   {entry.name}{entry.is_you ? ' (you)' : ''}
                 </span>
                 <span className="t-xs fg-3 mono">{entry.xp.toLocaleString()} xp</span>
-                {entry.streak > 0 && <span className="t-xs fg-2">{entry.streak}🔥</span>}
+                {entry.streak > 0 && <span className="t-xs fg-2" style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}><Icon name="flame" size={10} />{entry.streak}</span>}
               </div>
             ))}
             {board.length === 0 && (
-              <div className="t-xs fg-3" style={{ padding: '16px 14px', textAlign: 'center' }}>Loading leaderboard…</div>
+              <EmptyState icon="target" title="Leaderboard loading…" body="Rankings update after quiz sessions." size="sm" />
             )}
           </Card>
         </div>
