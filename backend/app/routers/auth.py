@@ -11,8 +11,10 @@ import uuid
 from datetime import datetime, timezone
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pymongo.errors import DuplicateKeyError
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from app.auth.jwt import create_access_token, create_refresh_token, get_current_user_id, hash_password, verify_password
 from app.db.mongo import col_learners, col_users
@@ -20,12 +22,14 @@ from app.schemas.auth import LoginRequest, LoginResponse, RefreshResponse, UserS
 
 router = APIRouter()
 log = structlog.get_logger()
+limiter = Limiter(key_func=get_remote_address)
 
 PROJ = {"_id": 0}
 
 
 @router.post("/login", response_model=LoginResponse)
-async def login(body: LoginRequest):
+@limiter.limit("20/minute")
+async def login(request: Request, body: LoginRequest):
     """Auto-register on first call; verify password on subsequent calls. Returns JWT pair."""
     user = await col_users().find_one({"email": body.email}, PROJ)
 

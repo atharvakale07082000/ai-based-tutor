@@ -11,23 +11,52 @@ import asyncio
 
 import structlog
 
-from app.hf.embeddings import cosine_similarity, get_embeddings
-from app.hf.utils import BoundedCache
+from app.hf.client import get_hf_client
+from app.hf.embeddings import _embed_cache, _embed_lock, cosine_similarity
+from app.hf.models import HF_MODELS
 
 log = structlog.get_logger()
 
-# Thread-safe LRU embedding cache (max 512 entries ≈ 200 MB)
-_embed_cache: BoundedCache = BoundedCache(max_size=512)
 
+async def _batch_embeddings(texts: list[str]) -> list[list[float]]:
+    """Return embeddings for a batch of texts, using the process-wide TTLCache.
 
-async def _cached_embed(text: str) -> list[float]:
-    """Return an embedding vector from the LRU cache, computing it on a miss."""
-    cached = _embed_cache.get(text)
-    if cached is not None:
-        return cached
-    result = await get_embeddings(text)
-    _embed_cache.set(text, result)
-    return result
+    Cache hits are served immediately; only the uncached texts go to the HF API
+    in a single batched request (one round-trip instead of N sequential calls).
+    """
+    results: list[list[float] | None] = [None] * len(texts)
+    miss_indices: list[int] = []
+    miss_texts: list[str] = []
+
+    with _embed_lock:
+        for i, text in enumerate(texts):
+            cached = _embed_cache.get(text)
+            if cached is not None:
+                results[i] = cached
+            else:
+                miss_indices.append(i)
+                miss_texts.append(text)
+
+    if miss_texts:
+        client = get_hf_client()
+        model_id = HF_MODELS["EMBEDDINGS"]["model_id"]
+        raw = await asyncio.to_thread(client.feature_extraction, miss_texts, model=model_id)
+
+        # raw may be a 2-D numpy array [batch, dim] or list of lists
+        if hasattr(raw, "ndim") and raw.ndim == 2:
+            batch_vectors = [[float(x) for x in row.tolist()] for row in raw]
+        elif isinstance(raw, list) and raw and isinstance(raw[0], list):
+            batch_vectors = [[float(x) for x in row] for row in raw]
+        else:
+            # Fallback: treat as single vector (single text edge case)
+            batch_vectors = [[float(x) for x in raw]]
+
+        with _embed_lock:
+            for idx, text, vector in zip(miss_indices, miss_texts, batch_vectors):
+                _embed_cache[text] = vector
+                results[idx] = vector
+
+    return [r for r in results if r is not None]
 
 
 def _build_learner_query(
@@ -74,15 +103,15 @@ async def rank_content_for_learner(
     log.info("recommendation_agent_start", query=learner_query[:80], n_items=len(content_items))
 
     try:
-        learner_emb = await _cached_embed(learner_query)
-
-        # Embed all items concurrently (cap at 20 for latency)
+        # Build all texts (learner query + item texts) and batch-embed in one API call
         items_to_score = content_items[:20]
         item_texts = [
             f"{item.get('title', '')} {item.get('topic', '')} {item.get('subtopic', '')}" for item in items_to_score
         ]
-
-        embeddings = await asyncio.gather(*[_cached_embed(t) for t in item_texts])
+        all_texts = [learner_query] + item_texts
+        all_embeddings = await _batch_embeddings(all_texts)
+        learner_emb = all_embeddings[0]
+        embeddings = all_embeddings[1:]
 
         scored: list[tuple[int, float]] = []
         for idx, emb in enumerate(embeddings):

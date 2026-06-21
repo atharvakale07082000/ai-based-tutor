@@ -11,6 +11,8 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from structlog.contextvars import bind_contextvars
 
 from app.agents_v3.deep_agent import create_deep_agent
@@ -19,6 +21,7 @@ from app.db.mongo import col_learners
 
 router = APIRouter()
 log = structlog.get_logger()
+limiter = Limiter(key_func=get_remote_address)
 
 
 class HistoryMessage(BaseModel):
@@ -33,9 +36,10 @@ class ChatRequest(BaseModel):
 
 
 @router.post("/chat")
+@limiter.limit("60/minute")
 async def v3_chat(
-    body: ChatRequest,
     request: Request,
+    body: ChatRequest,
     user_id: str = Depends(get_current_user_id),
 ):
     """

@@ -10,6 +10,9 @@ import structlog
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 from starlette.middleware.gzip import GZipMiddleware
 from structlog.contextvars import bind_contextvars, clear_contextvars
 
@@ -47,6 +50,10 @@ log = structlog.get_logger()
 
 VERSION = "1.0.0"
 
+# Rate limiter — uses client IP by default (no Redis required for in-memory).
+# Attach `limiter` to the FastAPI app state so slowapi decorators on routers work.
+limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
+
 
 async def _mongo_keepalive():
     while True:
@@ -83,6 +90,10 @@ app = FastAPI(
     description="Multi-agent AI tutoring platform with LangGraph + Hugging Face",
     lifespan=lifespan,
 )
+
+# Expose limiter on app.state so slowapi route decorators can resolve it
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
