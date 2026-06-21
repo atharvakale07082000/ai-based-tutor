@@ -2,6 +2,7 @@ import { Suspense, lazy, useState, useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'react-hot-toast'
+import { setQueryClientForInvalidation } from '@/lib/api'
 import { useLearnerStore } from '@/stores/learnerStore'
 import { useThemeStore } from '@/stores/themeStore'
 import { Sidebar } from '@/components/layout/Sidebar'
@@ -32,12 +33,16 @@ const ProfilePage        = lazy(() => import('@/pages/ProfilePage'))
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 0,     // always re-fetch on mount — no stale data ever served
-      gcTime: 1000 * 60 * 2, // keep in memory 2 min while navigating between pages
+      staleTime: 0,
+      gcTime: 1000 * 60 * 2,
       retry: 2,
     },
   },
 })
+
+// Wire QueryClient into the axios interceptor so every successful
+// POST/PUT/PATCH/DELETE auto-invalidates the relevant cached queries.
+setQueryClientForInvalidation(queryClient)
 
 function PageLoader() {
   return (

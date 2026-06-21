@@ -1,7 +1,65 @@
+import type { QueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import toast from 'react-hot-toast'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1'
+
+// ── Central auto-invalidation ─────────────────────────────────────────────────
+// Call setQueryClientForInvalidation(queryClient) once at app root.
+// After every successful mutating request (POST/PUT/PATCH/DELETE) the
+// interceptor below fires invalidation based on the endpoint that was called.
+
+let _qc: QueryClient | null = null
+
+export function setQueryClientForInvalidation(qc: QueryClient) {
+  _qc = qc
+}
+
+// URL pattern → query key arrays to invalidate.
+// Checked in order; ALL matching entries fire (not just the first).
+const INVALIDATION_MAP: Array<{ pattern: RegExp; keys: string[][] }> = [
+  // Learner profile / onboarding
+  { pattern: /\/learner\/onboard/, keys: [['learner'], ['curriculum'], ['progress']] },
+  { pattern: /\/learner\/profile/, keys: [['learner'], ['progress']] },
+  // Curriculum
+  { pattern: /\/curriculum\/generate/, keys: [['curriculum']] },
+  // Content
+  { pattern: /\/content\/.*\/regenerate/, keys: [['content']] },
+  // Quiz submission → affects progress + ELO
+  { pattern: /\/quiz\/.*\/submit/, keys: [['progress'], ['learner'], ['leaderboard']] },
+  // Course creation
+  { pattern: /\/courses\/plan/, keys: [['courses']] },
+  // Interview complete → unlock next module + update score
+  { pattern: /\/interview\/.*\/complete/, keys: [['courses'], ['course'], ['progress']] },
+  // Interview start → mark module in_progress
+  { pattern: /\/interview\/start/, keys: [['course']] },
+  // Study session recording (Pomodoro etc.)
+  { pattern: /\/progress\/study-session/, keys: [['progress'], ['leaderboard'], ['learner']] },
+  // Feed mutations
+  { pattern: /\/feed\/run-discovery/, keys: [['feed'], ['trending']] },
+  { pattern: /\/feed\/.*\/snooze/, keys: [['feed']] },
+  { pattern: /\/feed\/.*\/schedule/, keys: [['feed'], ['scheduled']] },
+  { pattern: /\/feed\/.*\/interaction/, keys: [['feed']] },
+  // Activity logs (DELETE clear)
+  { pattern: /\/profile\/activity-logs/, keys: [['activityLogs'], ['activityStats']] },
+  // HF model test
+  { pattern: /\/hf\/test\//, keys: [['hfStatus']] },
+  // Admin config
+  { pattern: /\/admin\/config/, keys: [['adminConfig']] },
+]
+
+const MUTATING_METHODS = new Set(['post', 'put', 'patch', 'delete'])
+
+function _autoInvalidate(method: string, url: string) {
+  if (!_qc || !MUTATING_METHODS.has(method.toLowerCase())) return
+  for (const { pattern, keys } of INVALIDATION_MAP) {
+    if (pattern.test(url)) {
+      for (const key of keys) {
+        _qc.invalidateQueries({ queryKey: key })
+      }
+    }
+  }
+}
 
 export const api = axios.create({
   baseURL: BASE_URL,
@@ -65,11 +123,12 @@ function _onVersionChange(incoming: string) {
   if (typeof localStorage !== 'undefined') localStorage.setItem(VERSION_KEY, incoming)
 }
 
-// Auto-refresh on 401; version check on every success
+// Auto-refresh on 401; version check + auto-invalidation on every success
 api.interceptors.response.use(
   (res) => {
     const v = res.headers['x-app-version'] as string | undefined
     if (v) _onVersionChange(v)
+    _autoInvalidate(res.config.method ?? '', res.config.url ?? '')
     return res
   },
   async (error) => {
