@@ -37,7 +37,7 @@ async def chat(
                 yield f"data: {json.dumps(event)}\n\n"
         except Exception as e:
             log.error("assistant_chat_error", error=str(e)[:500], session_id=session_id)
-            yield f"data: {json.dumps({'type': 'error', 'message': 'An internal error occurred. Please try again.'})}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'message': 'Something went wrong on my end — send your question again and I will be right back.'})}\n\n"
             yield f"data: {json.dumps({'type': 'done', 'agent': 'error'})}\n\n"
 
     return StreamingResponse(

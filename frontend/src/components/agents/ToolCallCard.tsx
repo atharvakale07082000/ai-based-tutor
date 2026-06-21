@@ -91,7 +91,7 @@ export function ToolCallCard({ name, args, result, latency_ms, isLoading }: Tool
 
       {/* Args block */}
       <div style={{ padding: '6px 10px' }}>
-        <div className="caps" style={{ fontSize: 9, color: 'var(--ink-3)', marginBottom: 3, letterSpacing: '0.06em' }}>args</div>
+        <div className="caps" style={{ fontSize: 9, color: 'var(--ink-3)', marginBottom: 3, letterSpacing: '0.06em' }}>checking</div>
         <pre
           style={{
             margin: 0,
@@ -116,7 +116,7 @@ export function ToolCallCard({ name, args, result, latency_ms, isLoading }: Tool
             borderTop: '1px solid color-mix(in srgb, var(--pos) 15%, transparent)',
           }}
         >
-          <div className="caps" style={{ fontSize: 9, color: 'var(--pos)', marginBottom: 3, letterSpacing: '0.06em' }}>result</div>
+          <div className="caps" style={{ fontSize: 9, color: 'var(--pos)', marginBottom: 3, letterSpacing: '0.06em' }}>found</div>
           <pre
             style={{
               margin: 0,

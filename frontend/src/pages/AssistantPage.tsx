@@ -85,7 +85,7 @@ export default function AssistantPage() {
   const sendMessage = useCallback(async () => {
     const text = input.trim()
     if (!text || streaming) return
-    if (text.length > 2000) { toast.error('Message too long (max 2000 characters).'); return }
+    if (text.length > 2000) { toast.error("Let's keep it under 2,000 characters — try breaking it into a shorter question."); return }
     setInput('')
     const userMsg: Message = { id: crypto.randomUUID(), role: 'user', content: text }
     setMessages((m) => [...m, userMsg])
@@ -135,9 +135,9 @@ export default function AssistantPage() {
 
   const agentList = [
     { kind: 'curr'  as const, label: 'Curriculum', status: agents.curriculum?.status },
-    { kind: 'quiz'  as const, label: 'Quiz Gen',   status: agents.quiz?.status },
-    { kind: 'prog'  as const, label: 'Progress',   status: agents.progress?.status },
-    { kind: 'doubt' as const, label: 'Doubt-Solver', status: agents.doubt?.status },
+    { kind: 'quiz'  as const, label: 'Quiz Creator',       status: agents.quiz?.status },
+    { kind: 'prog'  as const, label: 'Progress',           status: agents.progress?.status },
+    { kind: 'doubt' as const, label: 'Learning Assistant', status: agents.doubt?.status },
   ]
 
   return (
@@ -149,18 +149,18 @@ export default function AssistantPage() {
           <div key={a.kind} style={{ padding: 10, borderRadius: 'var(--r-2)', background: 'var(--paper-0)', border: '1px solid var(--line-1)', marginBottom: 6 }}>
             <AgentPill kind={a.kind} state={a.status === 'active' ? 'active' : 'idle'} />
             <div className="t-xs fg-3" style={{ marginTop: 4 }}>
-              {a.status === 'active' ? 'Working…' : a.status === 'processing' ? 'Thinking…' : 'Standby'}
+              {a.status === 'active' ? 'Working…' : a.status === 'processing' ? 'Thinking…' : 'Ready'}
             </div>
           </div>
         ))}
 
         <div className="caps" style={{ color: 'var(--ink-3)', margin: '16px 0 8px' }}>Try asking</div>
         {[
-          'Quiz me on PCA',
-          'Plan a Python course',
-          'Explain gradient descent',
-          'Show my progress',
-          'What topics should I study?',
+          'Help me understand PCA',
+          'Build me a Python learning plan',
+          'Can you break down gradient descent?',
+          'How am I doing so far?',
+          'What should I learn next?',
         ].map((t) => (
           <button
             key={t}
@@ -188,8 +188,8 @@ export default function AssistantPage() {
           {messages.length === 0 && (
             <div style={{ textAlign: 'center', paddingTop: 80 }}>
               <div style={{ width: 40, height: 40, borderRadius: 'var(--r-pill)', background: 'var(--ink-0)', color: 'var(--paper-0)', display: 'grid', placeItems: 'center', fontFamily: 'var(--font-serif)', fontSize: 20, fontStyle: 'italic', margin: '0 auto 16px' }}>æ</div>
-              <div className="serif" style={{ fontSize: 24, color: 'var(--ink-0)' }}>How can I help you today?</div>
-              <div className="t-md fg-3" style={{ marginTop: 8 }}>Ask anything — plan a course, generate a quiz, or clarify a concept.</div>
+              <div className="serif" style={{ fontSize: 24, color: 'var(--ink-0)' }}>What would you like to learn?</div>
+              <div className="t-md fg-3" style={{ marginTop: 8 }}>Plan a course, take a quiz, or dive into any concept — I'm here for all of it.</div>
             </div>
           )}
 
@@ -203,7 +203,7 @@ export default function AssistantPage() {
               <div style={{ flex: 1 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                   <span className="t-sm fg-0" style={{ fontWeight: 500 }}>{msg.role === 'user' ? (name || 'You') : 'Atelier'}</span>
-                  {msg.streaming && <Badge tone="pos" size="xs" dot>streaming</Badge>}
+                  {msg.streaming && <Badge tone="pos" size="xs" dot>Writing…</Badge>}
                 </div>
                 {msg.role === 'user' ? (
                   <div className="t-md fg-1" style={{ lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>
@@ -245,7 +245,7 @@ export default function AssistantPage() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Ask the agents anything — plan, quiz, debug, explain…"
+                placeholder="Ask me anything — I'll figure out the best way to help."
                 rows={3}
                 maxLength={2000}
                 style={{ width: '100%', background: 'transparent', border: 0, outline: 'none', resize: 'none', fontSize: 14, color: 'var(--ink-0)', fontFamily: 'inherit', lineHeight: 1.5 }}
@@ -263,7 +263,7 @@ export default function AssistantPage() {
                 <Button size="sm" variant="primary" icon="send" onClick={sendMessage} loading={streaming}>Send</Button>
               </div>
             </div>
-            <div className="t-xs fg-3" style={{ textAlign: 'center', marginTop: 6 }}>Atelier may make mistakes. Verify citations before taking action.</div>
+            <div className="t-xs fg-3" style={{ textAlign: 'center', marginTop: 6 }}>Always verify important facts with authoritative sources before acting on them.</div>
           </div>
         </div>
       </div>

@@ -34,6 +34,7 @@ from app.routers import (
     session,
 )
 from app.routers.v2 import chat as chat_v2
+from app.routers.v3 import chat as chat_v3
 from app.websocket import sio
 
 # Configure structured JSON logging before the first log call.
@@ -145,6 +146,7 @@ app.include_router(feed.router, prefix="/api/v1/feed", tags=["feed"])
 app.include_router(leaderboard.router, prefix="/api/v1/leaderboard", tags=["leaderboard"])
 app.include_router(profile.router, prefix="/api/v1/profile", tags=["profile"])
 app.include_router(chat_v2.router, prefix="/api/v2", tags=["v2"])
+app.include_router(chat_v3.router, prefix="/api/v3", tags=["v3"])
 
 
 # ── Health endpoints ──────────────────────────────────────────────────────────

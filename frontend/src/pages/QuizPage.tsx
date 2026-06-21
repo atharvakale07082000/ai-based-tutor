@@ -216,7 +216,7 @@ export default function QuizPage() {
           </div>
 
           <div style={{ display: 'flex', gap: 8 }}>
-            <Button variant="primary" full onClick={() => navigate('/doubts', { state: { topic: quiz.topic } })}>Ask Doubt-Solver</Button>
+            <Button variant="primary" full onClick={() => navigate('/doubts', { state: { topic: quiz.topic } })}>Ask AI Tutor</Button>
             <Button variant="secondary" full onClick={() => navigate('/progress')}>View Progress</Button>
           </div>
         </div>

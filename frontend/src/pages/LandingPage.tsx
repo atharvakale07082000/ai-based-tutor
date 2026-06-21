@@ -233,7 +233,7 @@ export default function LandingPage() {
           <span style={{ fontStyle: 'italic', color: 'var(--accent)' }}>how you learn.</span>
         </h1>
         <p className="t-lg fg-2" style={{ maxWidth: 580, marginTop: 24, lineHeight: 1.65 }}>
-          Four specialised agents — Curriculum, Quiz, Progress, and Doubt-Solver — collaborate to plan your week, generate questions on demand, track every concept, and answer your doubts with full context.
+          Your personalised AI tutor — plans your week, generates practice questions, tracks every concept, and answers your doubts with full context awareness.
         </p>
         <div style={{ marginTop: 28, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
           <Button size="lg" variant="primary" iconRight="arrow" onClick={() => navigate('/onboarding')}>
@@ -253,7 +253,7 @@ export default function LandingPage() {
               { kind: 'curr',  name: 'Curriculum Planner', desc: 'Sketches your week, adapts on Sunday.' },
               { kind: 'quiz',  name: 'Quiz Generator',     desc: 'Questions calibrated to your retention.' },
               { kind: 'prog',  name: 'Progress Tracker',   desc: 'Tracks 32 sub-skills. Surfaces gaps.' },
-              { kind: 'doubt', name: 'Doubt-Solver',       desc: 'Cites your materials when answering.' },
+              { kind: 'doubt', name: 'Learning Assistant',  desc: 'Cites your materials when answering.' },
             ] as const).map((a) => (
               <div key={a.kind}>
                 <AgentPill kind={a.kind} state="active" />

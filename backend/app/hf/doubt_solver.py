@@ -60,14 +60,14 @@ async def stream_doubt_response(
             record_auth_success(provider)
         except asyncio.TimeoutError:
             log.error("doubt_solver_timeout", question=question[:60])
-            yield "Sorry, the response timed out. Please try again."
+            yield "I'm taking a bit longer than usual — go ahead and ask again and I'll come back quickly."
             return
         except Exception as e:
             err = str(e)
             if "401" in err or "403" in err:
                 record_auth_failure(provider)
             log.error("doubt_solver_stream_error", error=err)
-            yield "An error occurred. Please try again."
+            yield "Something interrupted my answer — please send your question once more and I'll get it right."
             return
 
         token_count = 0

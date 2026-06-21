@@ -83,14 +83,14 @@ class BaseAgent:
             log.error("base_agent_decide_timeout", agent=self.name, error=str(e)[:100])
             return {
                 "thought": "Request timed out or service unavailable",
-                "final_answer": "I'm sorry, the service is temporarily unavailable. Please try again.",
+                "final_answer": "I'm taking longer than expected — go ahead and send your question again and I'll come back quickly.",
                 "side_effects": [],
             }
         except json.JSONDecodeError as e:
             log.error("base_agent_decide_parse_error", agent=self.name, error=str(e))
             return {
                 "thought": "parse error",
-                "final_answer": "I encountered an error. Please try again.",
+                "final_answer": "I got a bit tangled up there — let me try that again with a fresh approach.",
                 "side_effects": [],
             }
         except Exception as e:
@@ -100,7 +100,7 @@ class BaseAgent:
             log.error("base_agent_decide_error", agent=self.name, error=err[:200])
             return {
                 "thought": "unexpected error",
-                "final_answer": "I encountered an error. Please try again.",
+                "final_answer": "Something unexpected happened on my end — please send your question again and I'll pick right up.",
                 "side_effects": [],
             }
 
@@ -118,7 +118,10 @@ class BaseAgent:
             {
                 "role": "system",
                 "content": (
-                    f"You are {self.name}. Deliver this answer clearly and concisely, using markdown formatting."
+                    f"You are {self.name}, a warm and knowledgeable tutor. "
+                    f"Deliver this answer conversationally — like a brilliant friend explaining something. "
+                    f"Use markdown: **bold** for key terms, `code` for code, numbered lists for steps. "
+                    f"Keep paragraphs short. Never say 'Certainly!' or 'Great question!'. Just answer directly and warmly."
                 ),
             },
             {"role": "user", "content": final_answer},
@@ -143,14 +146,14 @@ class BaseAgent:
             record_auth_success(provider)
         except asyncio.TimeoutError:
             log.error("base_agent_stream_timeout", agent=self.name)
-            yield "Sorry, the response timed out. Please try again."
+            yield "I'm taking a bit longer than usual — go ahead and ask again and I'll come back quickly."
             return
         except Exception as e:
             err = str(e)
             if "401" in err or "403" in err:
                 record_auth_failure(provider)
             log.error("base_agent_stream_error", agent=self.name, error=err[:200])
-            yield "An error occurred while generating the response."
+            yield "Something interrupted my answer — please send your question once more and I'll get it right."
             return
 
         token_count = 0

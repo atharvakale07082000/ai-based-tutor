@@ -171,7 +171,7 @@ export default function OnboardingPage() {
             { kind: 'curr',  label: 'Curriculum Planner', desc: 'Mapping your 8-week journey' },
             { kind: 'quiz',  label: 'Quiz Generator',     desc: 'Calibrating question difficulty' },
             { kind: 'prog',  label: 'Progress Tracker',   desc: 'Setting baseline proficiency' },
-            { kind: 'doubt', label: 'Doubt-Solver',       desc: 'Loading topic context' },
+            { kind: 'doubt', label: 'Learning Assistant',  desc: 'Loading topic context' },
           ] as const).map((a, i) => (
             <div key={a.kind} style={{ textAlign: 'center', animation: `blink 1.6s ease-in-out ${i * 0.2}s infinite`, padding: '12px 16px', background: 'var(--paper-1)', border: '1px solid var(--line-1)', borderRadius: 'var(--r-3)', minWidth: 160 }}>
               <AgentPill kind={a.kind} state="thinking" />
@@ -212,7 +212,7 @@ export default function OnboardingPage() {
         <p className="t-lg fg-2" style={{ marginTop: 20, maxWidth: 380, lineHeight: 1.65 }}>
           {step === 0 && (authMode === 'signup' ? 'No credit card required. Your account is created instantly with your email and password.' : 'Enter your credentials to continue where you left off.')}
           {step === 1 && 'Your tutor addresses you by name. Choose anything you like — change it any time from settings.'}
-          {step === 2 && 'Pick three to seven topics. The Curriculum agent will weave a personalised plan around them.'}
+          {step === 2 && 'Pick three to seven topics. We\'ll weave a personalised learning path around them.'}
           {step === 3 && 'We pace your modules to fit your schedule. You can always do more.'}
           {step === 4 && 'Three strategies, each calibrated to a different appetite for challenge. You can switch any time.'}
         </p>
@@ -357,7 +357,7 @@ export default function OnboardingPage() {
                 <div style={{ marginTop: 20, padding: 12, background: 'var(--accent-soft)', borderRadius: 'var(--r-2)', display: 'flex', gap: 8, border: '1px solid var(--accent-line)' }}>
                   <Icon name="sparkle" size={13} style={{ color: 'var(--accent)', marginTop: 2, flexShrink: 0 }} />
                   <div className="t-sm fg-1">
-                    <strong style={{ color: 'var(--accent)' }}>{goals.length} topic{goals.length > 1 ? 's' : ''} selected.</strong> The Curriculum agent will connect them into a learning path.
+                    <strong style={{ color: 'var(--accent)' }}>{goals.length} topic{goals.length > 1 ? 's' : ''} selected.</strong> We'll connect them into a personalised learning path.
                   </div>
                 </div>
               )}

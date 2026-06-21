@@ -188,7 +188,7 @@ export default function ModulePlayerPage() {
                   style={{ width: '100%', background: 'var(--paper-2)', border: '1px solid var(--line-2)', borderRadius: 'var(--r-2)', padding: '10px 12px', fontSize: 13, color: 'var(--ink-0)', fontFamily: 'inherit', outline: 'none', resize: 'none', height: 80 }}
                 />
                 <Button size="sm" style={{ marginTop: 6 }} onClick={() => navigate('/doubts', { state: { prefill: doubtInput, topic: module.topic } })}>
-                  Ask Doubt-Solver
+                  Ask AI Tutor
                 </Button>
               </div>
             )}
@@ -238,7 +238,7 @@ export default function ModulePlayerPage() {
               <Icon name="sparkle" size={12} style={{ color: 'var(--accent)' }} />
               <span className="t-sm fg-0" style={{ fontWeight: 500 }}>Got a doubt?</span>
             </div>
-            <p className="t-xs fg-2" style={{ marginBottom: 10, lineHeight: 1.5 }}>Ask the Doubt-Solver AI agent for instant, context-aware answers.</p>
+            <p className="t-xs fg-2" style={{ marginBottom: 10, lineHeight: 1.5 }}>Ask your AI tutor for instant, context-aware answers.</p>
             <Button size="sm" variant="secondary" full onClick={() => navigate('/doubts', { state: { topic: module?.topic } })}>
               Open Doubt Chat
             </Button>

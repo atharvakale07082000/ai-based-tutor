@@ -46,4 +46,4 @@ class DoubtAgent(BaseAgent):
                 yield token
         except Exception as e:
             log.error("doubt_agent_stream_error", error=str(e))
-            yield "An error occurred while generating the answer. Please try again."
+            yield "Something interrupted my answer — please send your question once more and I'll get it right."

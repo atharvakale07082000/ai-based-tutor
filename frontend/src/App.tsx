@@ -154,6 +154,7 @@ export default function App() {
               <Route path="/courses/:planId" element={<PrivateRoute><PageWrapper><CourseDetailPage /></PageWrapper></PrivateRoute>} />
               <Route path="/courses/:planId/modules/:moduleId/interview" element={<PrivateRoute><PageWrapper><ModuleInterviewPage /></PageWrapper></PrivateRoute>} />
               <Route path="/assistant" element={<PrivateRoute><PageWrapper><AssistantPage /></PageWrapper></PrivateRoute>} />
+              <Route path="/atelier" element={<PrivateRoute><PageWrapper><AtelierV2Page /></PageWrapper></PrivateRoute>} />
               <Route path="/assistant-v2" element={<PrivateRoute><PageWrapper><AtelierV2Page /></PageWrapper></PrivateRoute>} />
               <Route path="/flashcards" element={<PrivateRoute><PageWrapper><FlashcardsPage /></PageWrapper></PrivateRoute>} />
               <Route path="/profile" element={<PrivateRoute><PageWrapper><ProfilePage /></PageWrapper></PrivateRoute>} />

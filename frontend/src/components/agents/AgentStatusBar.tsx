@@ -2,10 +2,10 @@ import { useAgentStore } from '@/stores/agentStore'
 import { AgentPill } from '@/components/ui/AgentPill'
 
 const AGENT_ACTIVITY: Record<string, { kind: 'curr' | 'quiz' | 'prog' | 'doubt'; label: string }> = {
-  curriculum: { kind: 'curr',  label: 'Curriculum' },
-  quiz:       { kind: 'quiz',  label: 'Quiz Gen' },
+  curriculum: { kind: 'curr',  label: 'Learning Path' },
+  quiz:       { kind: 'quiz',  label: 'Quiz Creator' },
   progress:   { kind: 'prog',  label: 'Progress' },
-  doubt:      { kind: 'doubt', label: 'Doubt-Solver' },
+  doubt:      { kind: 'doubt', label: 'Learning Assistant' },
 }
 
 export function AgentStatusBar() {
@@ -18,7 +18,7 @@ export function AgentStatusBar() {
     const text =
       state === 'active' ? 'Working…' :
       state === 'thinking' ? 'Thinking…' :
-      'Standby'
+      'Ready'
     return { ...meta, state, text, latency: agent?.latencyMs }
   })
 

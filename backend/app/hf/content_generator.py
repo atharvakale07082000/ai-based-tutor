@@ -47,14 +47,14 @@ def _difficulty_label(difficulty: float) -> str:
 
 def _fallback_body(topic: str, subtopic: str) -> str:
     return f"""\
-## Introduction
+## {subtopic}
 
-This content covers **{subtopic}** within the topic of **{topic}**.
-Content generation is temporarily unavailable. Please try again later.
+We're putting the finishing touches on this lesson within **{topic}**.
+Come back in a moment — it'll be ready and waiting for you.
 
-## Core Concepts
+## Coming Up
 
-Key concepts for {subtopic} will appear here once the content is generated.
+Your personalised content for {subtopic} is being prepared now.
 
 ## Examples
 

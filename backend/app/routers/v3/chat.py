@@ -1,4 +1,4 @@
-"""POST /api/v2/chat — agentic SSE endpoint."""
+"""POST /api/v3/chat — DeepAgent SSE endpoint with CoT, middleware, and structured outputs."""
 
 from __future__ import annotations
 
@@ -13,27 +13,12 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from structlog.contextvars import bind_contextvars
 
-from app.agents_v2.assistant_agent import AssistantAgent
-from app.agents_v2.curriculum_agent import CurriculumAgent
-from app.agents_v2.doubt_agent import DoubtAgent
-from app.agents_v2.progress_agent import ProgressAgent
-from app.agents_v2.quiz_agent import QuizAgent
-from app.agents_v2.router import AgentRouter
-from app.agents_v3.schemas import AGENT_DISPLAY_NAMES
+from app.agents_v3.deep_agent import create_deep_agent
 from app.auth.jwt import get_current_user_id
 from app.db.mongo import col_learners
 
 router = APIRouter()
 log = structlog.get_logger()
-
-_agent_router = AgentRouter()
-_AGENTS: dict[str, object] = {
-    "curriculum": CurriculumAgent(),
-    "quiz": QuizAgent(),
-    "progress": ProgressAgent(),
-    "doubt": DoubtAgent(),
-    "assistant": AssistantAgent(),
-}
 
 
 class HistoryMessage(BaseModel):
@@ -48,20 +33,19 @@ class ChatRequest(BaseModel):
 
 
 @router.post("/chat")
-async def v2_chat(
+async def v3_chat(
     body: ChatRequest,
     request: Request,
     user_id: str = Depends(get_current_user_id),
 ):
     """
-    Agentic SSE endpoint.
+    DeepAgent SSE endpoint.
 
     1. Loads learner context from MongoDB.
-    2. Routes the query via AgentRouter (keyword-first, LLM fallback).
-    3. Streams structured agent events as Server-Sent Events.
+    2. Runs the LangGraph DeepAgent (orchestrator → middleware → subagent → synthesizer).
+    3. Streams typed events: routing / cot_step / tool_call / tool_result / token / action / done.
 
-    Error events sent to the client use generic messages; full details
-    are in server-side structured logs (never exposed to the caller).
+    v3 events superset v2: existing clients that ignore unknown event types are unaffected.
     """
     stripped = body.message.strip()
     if not stripped:
@@ -70,40 +54,33 @@ async def v2_chat(
     session_id = request.headers.get("X-Session-Id") or uuid.uuid4().hex
     correlation_id = request.headers.get("X-Correlation-Id") or uuid.uuid4().hex
 
-    bind_contextvars(session_id=session_id, user_id=user_id, agent="v2_chat")
+    bind_contextvars(session_id=session_id, user_id=user_id, agent="v3_chat")
 
     async def event_stream():
         start = time.perf_counter()
         had_error = False
-        agent_name = "assistant"
 
         try:
             PROJ = {"_id": 0}
             learner = await col_learners().find_one({"user_id": user_id}, PROJ) or {}
             context = {
-                "learner_id": learner.get("id", ""),
+                "learner_id": learner.get("id", user_id),
                 "current_topic": body.context.get("current_topic", ""),
                 "proficiency": learner.get("topic_proficiency_map") or {},
-                "history": body.history[-6:],
+                "history": [m.model_dump() for m in body.history[-6:]],
                 **body.context,
             }
 
-            agent_name, reason = await _agent_router.route(stripped, context)
-            display_name = AGENT_DISPLAY_NAMES.get(agent_name, "AI Tutor")
-            log.info("v2_chat_routed", agent=agent_name, reason=reason, session_id=session_id)
-            yield f"data: {json.dumps({'type': 'routing', 'agent': agent_name, 'display_name': display_name, 'reason': reason})}\n\n"
+            agent = create_deep_agent()
 
-            agent = _AGENTS.get(agent_name, _AGENTS["assistant"])
-            async for event in agent.run(stripped, context):
+            async for event in agent.astream(stripped, context):
                 yield f"data: {json.dumps(event)}\n\n"
 
         except Exception as e:
             had_error = True
-            # Log full details server-side; send a generic message to the client.
             log.error(
-                "v2_chat_error",
+                "v3_chat_error",
                 error=str(e)[:500],
-                agent=agent_name,
                 session_id=session_id,
                 user_id=user_id,
             )
@@ -112,8 +89,7 @@ async def v2_chat(
         finally:
             latency_ms = round((time.perf_counter() - start) * 1000)
             log.info(
-                "v2_chat_done",
-                agent=agent_name,
+                "v3_chat_done",
                 session_id=session_id,
                 latency_ms=latency_ms,
                 had_error=had_error,

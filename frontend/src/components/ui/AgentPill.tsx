@@ -10,10 +10,10 @@ const COLORS: Record<AgentKind, string> = {
 }
 
 const LABELS: Record<AgentKind, string> = {
-  curr:  'Curriculum',
-  quiz:  'Quiz Gen',
+  curr:  'Learning Path',
+  quiz:  'Quiz Creator',
   prog:  'Progress',
-  doubt: 'Doubt-Solver',
+  doubt: 'Learning Assistant',
 }
 
 interface AgentPillProps {

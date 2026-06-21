@@ -106,7 +106,7 @@ export default function ProgressPage() {
     <div style={{ padding: '24px 28px', maxWidth: 1240, margin: '0 auto' }}>
       <div style={{ marginBottom: 18, display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
         <div>
-          <div className="caps fg-3">Progress Agent · Live data</div>
+          <div className="caps fg-3">Live Progress · Updated now</div>
           <h1 className="serif" style={{ fontSize: 36, fontWeight: 400, margin: 0, letterSpacing: '-0.02em' }}>Progress</h1>
         </div>
         <Button

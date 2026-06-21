@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { ToolCallCard } from '@/components/agents/ToolCallCard'
+import { getAgentDisplayName } from '@/lib/agentNames'
 
 export interface AgentStep {
   step: number
@@ -9,7 +10,7 @@ export interface AgentStep {
 }
 
 interface StreamTraceProps {
-  routing?: { agent: string; reason: string }
+  routing?: { agent: string; display_name?: string; reason: string }
   steps: AgentStep[]
   streaming: boolean
 }
@@ -51,7 +52,7 @@ export function StreamTrace({ routing, steps, streaming }: StreamTraceProps) {
           }}
         >
           <span style={{ fontSize: 12 }}>→</span>
-          <span style={{ fontWeight: 600 }}>{routing.agent}</span>
+          <span style={{ fontWeight: 600 }}>{routing.display_name ?? getAgentDisplayName(routing.agent)}</span>
           <span style={{ color: 'var(--ink-3)', fontSize: 10 }}>·</span>
           <span style={{ color: 'var(--ink-2)', fontSize: 10 }}>{routing.reason}</span>
         </div>

@@ -60,8 +60,8 @@ export default function DoubtChatPage() {
   const sendMessage = useCallback(async (text: string) => {
     const trimmed = text.trim()
     if (!trimmed || isStreaming) return
-    if (trimmed.length < 3) { toast.error('Question must be at least 3 characters.'); return }
-    if (trimmed.length > 1500) { toast.error('Question is too long (max 1500 characters).'); return }
+    if (trimmed.length < 3) { toast.error('Give me a bit more to work with — try writing a complete question.'); return }
+    if (trimmed.length > 1500) { toast.error("That's a detailed one! Try breaking it into a shorter question."); return }
     setInput('')
     const userMsg: Message = { id: crypto.randomUUID(), role: 'user', content: text, timestamp: new Date() }
     setMessages((prev) => [...prev, userMsg])
@@ -116,7 +116,7 @@ export default function DoubtChatPage() {
         } catch { /* non-critical */ }
       }
     } catch {
-      toast.error('Doubt-Solver is unavailable. Please try again.')
+      toast.error('I hit a snag — send your question again and I\'ll come right back.')
       setMessages((prev) => prev.filter((m) => m.id !== assistantId))
     } finally {
       setIsStreaming(false)
@@ -233,7 +233,7 @@ export default function DoubtChatPage() {
             />
           )}
           <span style={{ flex: 1 }} />
-          <Badge tone="neutral" size="xs">Doubt-Solver</Badge>
+          <Badge tone="neutral" size="xs">Learning Assistant</Badge>
           <span className="t-xs fg-3 mono">{formatTime(sessionTimer)}</span>
         </div>
 
@@ -244,8 +244,8 @@ export default function DoubtChatPage() {
               <div style={{ width: 44, height: 44, borderRadius: 'var(--r-2)', background: 'var(--paper-2)', display: 'grid', placeItems: 'center', marginBottom: 16 }}>
                 <Icon name="sparkle" size={20} style={{ color: 'var(--accent)' }} />
               </div>
-              <div className="serif" style={{ fontSize: 22, marginBottom: 8 }}>Ask your Doubt-Solver</div>
-              <div className="t-md fg-3">Ask any question about your current topic — get instant, context-aware answers.</div>
+              <div className="serif" style={{ fontSize: 22, marginBottom: 8 }}>What would you like to understand?</div>
+              <div className="t-md fg-3">No question is too basic or too advanced — I'll meet you exactly where you are.</div>
             </div>
           )}
 
@@ -289,7 +289,7 @@ export default function DoubtChatPage() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Ask anything about your topic… (Enter to send, Shift+Enter for new line)"
+                placeholder="What's on your mind? (Enter to send)"
                 rows={2}
                 maxLength={1500}
                 style={{ width: '100%', background: 'transparent', border: 0, outline: 'none', resize: 'none', fontSize: 14, color: 'var(--ink-0)', fontFamily: 'inherit', lineHeight: 1.5 }}
@@ -322,7 +322,7 @@ export default function DoubtChatPage() {
                 <Button size="sm" variant="primary" icon="send" onClick={() => sendMessage(input)} loading={isStreaming}>Send</Button>
               </div>
             </div>
-            <div className="t-xs fg-3" style={{ textAlign: 'center', marginTop: 4 }}>AI-powered answers · Voice input · Image understanding</div>
+            <div className="t-xs fg-3" style={{ textAlign: 'center', marginTop: 4 }}>Every question you ask gets you one step closer to mastery.</div>
           </div>
         </div>
       </div>

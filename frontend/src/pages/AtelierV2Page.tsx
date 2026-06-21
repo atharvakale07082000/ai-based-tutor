@@ -100,7 +100,7 @@ export default function AtelierV2Page() {
   const sendMessage = useCallback(async () => {
     const text = input.trim()
     if (!text || streaming) return
-    if (text.length > 2000) { toast.error('Message too long (max 2000 characters).'); return }
+    if (text.length > 2000) { toast.error("Let's keep it under 2,000 characters — try breaking it into a shorter question."); return }
     setInput('')
 
     const userMsg: V2Message = { id: crypto.randomUUID(), role: 'user', content: text, steps: [], actions: [] }
@@ -193,7 +193,7 @@ export default function AtelierV2Page() {
         m.map((msg) => (msg.id === assistantId ? { ...msg, streaming: false } : msg))
       )
     } catch (err) {
-      toast.error('Agent v2 error — try again')
+      toast.error('Something went wrong — try again')
       setMessages((m) => m.filter((msg) => msg.id !== assistantId))
     } finally {
       setStreaming(false)
@@ -213,11 +213,11 @@ export default function AtelierV2Page() {
       <div className="hidden lg:block" style={{ borderRight: '1px solid var(--line-1)', background: 'var(--paper-1)', overflow: 'auto', padding: 14 }}>
         <div className="caps" style={{ color: 'var(--ink-3)', marginBottom: 8 }}>Try asking</div>
         {[
-          'Quiz me on transformers',
-          'Create a ML course plan',
-          'Explain backpropagation',
-          'Show my weak topics',
-          'What should I study next?',
+          'Help me understand transformers',
+          'Build me a machine learning course',
+          "I'm confused about backpropagation",
+          'What are my weakest topics?',
+          'Where should I focus next?',
         ].map((t) => (
           <button
             key={t}
@@ -241,9 +241,9 @@ export default function AtelierV2Page() {
           </button>
         ))}
 
-        <div className="caps" style={{ color: 'var(--ink-3)', margin: '20px 0 8px' }}>About v2</div>
+        <div className="caps" style={{ color: 'var(--ink-3)', margin: '20px 0 8px' }}>About Atelier</div>
         <div className="t-xs fg-3" style={{ lineHeight: 1.6, padding: '0 4px' }}>
-          Agent v2 exposes full reasoning traces — routing decisions, tool calls, and latencies — as your answer streams in.
+          Atelier exposes full reasoning traces — routing decisions, tool calls, and latencies — as your answer streams in.
         </div>
       </div>
 
@@ -252,7 +252,7 @@ export default function AtelierV2Page() {
         {/* Header */}
         <div style={{ padding: '12px 24px', borderBottom: '1px solid var(--line-1)', display: 'flex', alignItems: 'center', gap: 10 }}>
           <Icon name="sparkle" size={14} style={{ color: 'var(--accent)' }} />
-          <span className="t-md fg-0" style={{ fontWeight: 500 }}>Agent Atelier v2</span>
+          <span className="t-md fg-0" style={{ fontWeight: 500 }}>AI Atelier</span>
           <Badge tone="warn" size="xs">Beta</Badge>
           <Badge tone="pos" size="xs" dot>tool traces on</Badge>
           <span style={{ flex: 1 }} />
@@ -285,10 +285,10 @@ export default function AtelierV2Page() {
                 æ
               </div>
               <div className="serif" style={{ fontSize: 24, color: 'var(--ink-0)' }}>
-                Agent v2 — full trace mode
+                What would you like to learn?
               </div>
               <div className="t-md fg-3" style={{ marginTop: 8 }}>
-                Ask anything. Watch the agents think, call tools, and reason in real time.
+                Ask me anything — you'll see every step of my reasoning as I work through it.
               </div>
             </div>
           )}
@@ -321,9 +321,9 @@ export default function AtelierV2Page() {
                 {/* Name row */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
                   <span className="t-sm fg-0" style={{ fontWeight: 500 }}>
-                    {msg.role === 'user' ? name || 'You' : 'Atelier v2'}
+                    {msg.role === 'user' ? name || 'You' : 'Atelier'}
                   </span>
-                  {msg.streaming && <Badge tone="pos" size="xs" dot>streaming</Badge>}
+                  {msg.streaming && <Badge tone="pos" size="xs" dot>Writing…</Badge>}
                 </div>
 
                 {/* User message */}
@@ -390,7 +390,7 @@ export default function AtelierV2Page() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Ask the v2 agents anything — tool traces included…"
+                placeholder="What would you like to learn today?"
                 rows={3}
                 maxLength={2000}
                 style={{
@@ -421,7 +421,7 @@ export default function AtelierV2Page() {
               </div>
             </div>
             <div className="t-xs fg-3" style={{ textAlign: 'center', marginTop: 6 }}>
-              Agent v2 shows full reasoning traces. Results may vary.
+              You can always ask me to explain my reasoning in plain language.
             </div>
           </div>
         </div>

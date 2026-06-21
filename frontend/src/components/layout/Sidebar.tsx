@@ -22,7 +22,7 @@ const NAV_GROUPS: NavGroup[] = [
       { id: '/dashboard',  label: 'Dashboard',  icon: 'home',     kbd: 'D' },
       { id: '/learn',      label: 'Today',       icon: 'feed',     kbd: 'T' },
       { id: '/assistant',  label: 'Assistant',   icon: 'sparkle',  kbd: 'A' },
-      { id: '/assistant-v2', label: 'Agent v2', icon: 'sparkle', kbd: 'V' },
+      { id: '/atelier', label: 'Atelier', icon: 'sparkle', kbd: 'V' },
     ],
   },
   {
@@ -121,7 +121,7 @@ export function Sidebar() {
           </div>
           <div className="lg:hidden xl:block" style={{ flex: 1 }}>
             <div className="t-md" style={{ fontWeight: 600, color: 'var(--ink-0)', letterSpacing: '-0.01em' }}>Atelier</div>
-            <div className="t-xs fg-3">AI Tutor · v2</div>
+            <div className="t-xs fg-3">AI Tutor</div>
           </div>
           <button
             title="Toggle theme"

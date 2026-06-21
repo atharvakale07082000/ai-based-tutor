@@ -133,7 +133,7 @@ export default function DashboardPage() {
               </div>
               <div style={{ flex: 1 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span className="caps" style={{ color: 'var(--accent)' }}>Curriculum agent</span>
+                  <span className="caps" style={{ color: 'var(--accent)' }}>Learning Path</span>
                   <span className="t-xs fg-3">· just now</span>
                 </div>
                 <div className="t-md fg-0" style={{ fontWeight: 500, marginTop: 4 }}>Your derivative recall is dipping. A 9-min refresher will protect this week's progress.</div>
@@ -180,7 +180,7 @@ export default function DashboardPage() {
                 </div>
               ))}
               {items.length === 0 && (
-                <div className="t-sm fg-3" style={{ padding: '20px 14px', textAlign: 'center' }}>No content yet — the Curriculum agent is building your plan.</div>
+                <div className="t-sm fg-3" style={{ padding: '20px 14px', textAlign: 'center' }}>No content yet — building your learning path…</div>
               )}
             </Card>
           )}
@@ -217,7 +217,7 @@ export default function DashboardPage() {
               <SkillBar key={k} name={k.slice(0, 14)} value={v / 1000} />
             ))}
             {Object.keys(topicProficiency).length === 0 && (
-              <div className="t-xs fg-3" style={{ textAlign: 'center', padding: 8 }}>Progress agent tracking skills…</div>
+              <div className="t-xs fg-3" style={{ textAlign: 'center', padding: 8 }}>Tracking your skills…</div>
             )}
             <div className="t-xs fg-3" style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid var(--line-1)', display: 'flex', alignItems: 'center', gap: 6 }}>
               <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--agent-prog)', display: 'inline-block' }} />
