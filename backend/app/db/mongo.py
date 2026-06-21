@@ -22,7 +22,15 @@ def get_client() -> AsyncMongoClient:
     if _client is None:
         from app.config import settings
 
-        _client = AsyncMongoClient(settings.MONGO_URL, serverSelectionTimeoutMS=5000)
+        _client = AsyncMongoClient(
+            settings.MONGO_URL,
+            serverSelectionTimeoutMS=5000,
+            maxPoolSize=50,
+            minPoolSize=5,
+            maxIdleTimeMS=30_000,
+            compressors=["zlib"],
+            zlibCompressionLevel=3,
+        )
     return _client
 
 

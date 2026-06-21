@@ -9,6 +9,7 @@ import socketio
 import structlog
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from starlette.middleware.gzip import GZipMiddleware
 from structlog.contextvars import bind_contextvars, clear_contextvars
 
@@ -162,6 +163,30 @@ app.include_router(chat_v2.router, prefix="/api/v2", tags=["v2"])
 app.include_router(chat_v3.router, prefix="/api/v3", tags=["v3"])
 
 
+# ── Global exception handler ─────────────────────────────────────────────────
+
+
+@app.exception_handler(Exception)
+async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Catch any unhandled exception and return a structured 500 instead of leaking tracebacks."""
+    correlation_id = request.headers.get("X-Correlation-Id", "unknown")
+    log.error(
+        "unhandled_exception",
+        path=request.url.path,
+        method=request.method,
+        correlation_id=correlation_id,
+        error=str(exc)[:500],
+        exc_info=True,
+    )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": "An unexpected error occurred. Please try again.",
+            "correlation_id": correlation_id,
+        },
+    )
+
+
 # ── Health endpoints ──────────────────────────────────────────────────────────
 
 
@@ -176,8 +201,6 @@ async def agent_card():
     # Inject runtime base URL
     base_url = "http://0.0.0.0:8000"
     card["url"] = base_url
-    from fastapi.responses import JSONResponse
-
     return JSONResponse(content=card)
 
 

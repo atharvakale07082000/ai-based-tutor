@@ -21,7 +21,15 @@ def get_client() -> MongoClient:
     if _client is None:
         from app.config import settings
 
-        _client = MongoClient(settings.MONGO_URL, serverSelectionTimeoutMS=5000)
+        _client = MongoClient(
+            settings.MONGO_URL,
+            serverSelectionTimeoutMS=5000,
+            maxPoolSize=10,
+            minPoolSize=2,
+            maxIdleTimeMS=30_000,
+            compressors=["zlib"],
+            zlibCompressionLevel=3,
+        )
     return _client
 
 
