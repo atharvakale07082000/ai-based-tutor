@@ -123,6 +123,22 @@ function _onVersionChange(incoming: string) {
   if (typeof localStorage !== 'undefined') localStorage.setItem(VERSION_KEY, incoming)
 }
 
+function _forceLogout() {
+  setAccessToken(null)
+  if (typeof localStorage !== 'undefined') {
+    localStorage.removeItem('ai-tutor-learner')
+    localStorage.removeItem(VERSION_KEY)
+  }
+  _qc?.clear()
+  toast.error('Session expired. Please log in again.')
+  window.location.href = '/'
+}
+
+// Auth endpoints where we skip the refresh-retry (login 401 = wrong password, not expired session)
+const SKIP_REFRESH = /\/auth\/(login|reset-request|reset-confirm)/
+// Auth endpoints where a 401 means the session is truly dead → force logout
+const FORCE_LOGOUT_ON_401 = /\/auth\/(logout|refresh)/
+
 // Auto-refresh on 401; version check + auto-invalidation on every success
 api.interceptors.response.use(
   (res) => {
@@ -133,17 +149,22 @@ api.interceptors.response.use(
   },
   async (error) => {
     const original = error.config
-    if (error.response?.status === 401 && !original._retry) {
-      original._retry = true
-      try {
-        const { data } = await axios.post(`${BASE_URL}/auth/refresh`, {}, { withCredentials: true })
-        setAccessToken(data.access_token)
-        original.headers.Authorization = `Bearer ${data.access_token}`
-        return api(original)
-      } catch {
-        setAccessToken(null)
-        toast.error('Session expired. Please log in again.')
-        window.location.href = '/'
+    const url = original?.url ?? ''
+    if (error.response?.status === 401) {
+      if (FORCE_LOGOUT_ON_401.test(url)) {
+        // logout or refresh returned 401 — session is dead, clear everything
+        _forceLogout()
+      } else if (!original._retry && !SKIP_REFRESH.test(url)) {
+        // Protected endpoint — try to silently refresh once
+        original._retry = true
+        try {
+          const { data } = await axios.post(`${BASE_URL}/auth/refresh`, {}, { withCredentials: true })
+          setAccessToken(data.access_token)
+          original.headers.Authorization = `Bearer ${data.access_token}`
+          return api(original)
+        } catch {
+          _forceLogout()
+        }
       }
     }
     return Promise.reject(error)
