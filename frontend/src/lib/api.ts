@@ -181,13 +181,32 @@ export interface LearnerProfileAPI {
   xp: number
   streak: number
   curriculum_version: number
+  // Job-seeker fields
+  target_role?: string
+  current_role?: string
+  years_of_experience?: number
+  job_search_urgency?: 'actively_looking' | 'exploring' | 'not_yet'
+  preferred_companies?: string[]
+  job_readiness_score?: number
+}
+
+export interface OnboardPayload {
+  name: string
+  goals?: string[]
+  hoursPerWeek?: number
+  difficulty?: string
+  target_role?: string
+  current_role?: string
+  years_of_experience?: number
+  job_search_urgency?: string
+  preferred_companies?: string[]
 }
 
 export const learnerAPI = {
   getProfile: () => api.get<LearnerProfileAPI>('/learner/profile'),
   updateProfile: (data: Partial<LearnerProfileAPI>) => api.put<LearnerProfileAPI>('/learner/profile', data),
-  onboard: (data: { name: string; goals: string[]; hoursPerWeek: number; difficulty: string }) =>
-    api.post<{ name: string }>('/learner/onboard', data),
+  onboard: (data: OnboardPayload) => api.post<{ name: string }>('/learner/onboard', data),
+  getRoles: () => api.get<{ roles: string[] }>('/learner/roles'),
 }
 
 // ─── Curriculum ──────────────────────────────────────────────────────────────

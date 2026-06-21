@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import toast from 'react-hot-toast'
-import { contentAPI, doubtsAPI, quizAPI, progressAPI, leaderboardAPI } from '@/lib/api'
+import { contentAPI, doubtsAPI, quizAPI, progressAPI, leaderboardAPI, learnerAPI } from '@/lib/api'
 import { useLearnerStore } from '@/stores/learnerStore'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
@@ -74,8 +74,14 @@ export default function DashboardPage() {
   const { data: leaderboardData } = useQuery({
     queryKey: ['leaderboard'],
     queryFn: () => leaderboardAPI.get().then((r) => r.data),
-    staleTime: 1000 * 60 * 2,   // leaderboard: 2 min
+    staleTime: 1000 * 60 * 2,
     gcTime: 1000 * 60 * 10,
+  })
+
+  const { data: learnerProfile } = useQuery({
+    queryKey: ['learner', 'profile'],
+    queryFn: () => learnerAPI.getProfile().then((r) => r.data),
+    staleTime: 1000 * 60 * 5,
   })
 
   const handleStartQuiz = async () => {
@@ -110,7 +116,11 @@ export default function DashboardPage() {
             Good {new Date().getHours() < 12 ? 'morning' : 'afternoon'},{' '}
             <span style={{ fontStyle: 'italic', color: 'var(--accent)' }}>{name || 'Learner'}</span>.
           </h1>
-          <p className="t-md fg-2" style={{ marginTop: 4 }}>You're on a {streak}-day streak. Three things on the docket today.</p>
+          <p className="t-md fg-2" style={{ marginTop: 4 }}>
+            {learnerProfile?.target_role
+              ? <>Targeting <strong>{learnerProfile.target_role}</strong> · {streak}-day streak.</>
+              : <>You're on a {streak}-day streak. Keep building your readiness.</>}
+          </p>
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
           <Button size="sm" variant="ghost" icon="calendar">Schedule</Button>
@@ -120,18 +130,23 @@ export default function DashboardPage() {
 
       {/* Stat row */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
+        <Stat
+          label="Job Readiness"
+          value={learnerProfile?.job_readiness_score != null ? `${Math.round(learnerProfile.job_readiness_score)}%` : `${Math.min(Math.round((Object.keys(topicProficiency).length / 10) * 100), 100)}%`}
+          change="+4% this week"
+          icon="target"
+        />
+        <Stat label="Streak" value={String(streak)} sub="days · keep going!" icon="flame" />
         <Stat label="XP" value={xp.toLocaleString()} change="+120 today" icon="bolt" />
-        <Stat label="Streak" value={String(streak)} sub="days · keep it up!" icon="flame" />
-        <Stat label="Mastery" value="48%" change="+4% this week" icon="target" />
-        <Stat label="Time" value="42h" sub="this month" icon="clock" />
-        <Stat label="Doubts" value={String(sessions.length || 38)} change="+6" icon="chat" />
+        <Stat label="Coaching" value={String(sessions.length || 0)} sub="sessions total" icon="chat" />
+        <Stat label="Skills" value={String(Object.keys(topicProficiency).length)} sub="topics tracked" icon="book" />
       </div>
 
       {/* Main grid */}
       <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 16 }}>
         {/* Column 1 */}
         <div>
-          {/* Curriculum suggestion */}
+          {/* Career next-step card */}
           <Card accent padding="md" style={{ marginBottom: 12 }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
               <div style={{ width: 32, height: 32, borderRadius: 'var(--r-2)', background: 'var(--accent)', color: '#fff', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
@@ -139,13 +154,23 @@ export default function DashboardPage() {
               </div>
               <div style={{ flex: 1 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span className="caps" style={{ color: 'var(--accent)' }}>Learning Path</span>
-                  <span className="t-xs fg-3">· just now</span>
+                  <span className="caps" style={{ color: 'var(--accent)' }}>
+                    {learnerProfile?.target_role ? `${learnerProfile.target_role} Prep` : 'Career Path'}
+                  </span>
+                  <span className="t-xs fg-3">· today's focus</span>
                 </div>
-                <div className="t-md fg-0" style={{ fontWeight: 500, marginTop: 4 }}>Your derivative recall is dipping. A 9-min refresher will protect this week's progress.</div>
+                <div className="t-md fg-0" style={{ fontWeight: 500, marginTop: 4 }}>
+                  {dueTopics[0]
+                    ? `${dueTopics[0].topic} is due for practice — reviewing it now will lift your readiness score.`
+                    : learnerProfile?.target_role
+                      ? `Start a mock interview or build a career path for ${learnerProfile.target_role}.`
+                      : 'Build your personalised career roadmap to start closing skill gaps.'}
+                </div>
                 <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                  <Button size="sm" variant="accent" iconRight="arrow" onClick={() => navigate('/learn')}>Take refresher</Button>
-                  <Button size="sm" variant="ghost">Snooze 1 day</Button>
+                  <Button size="sm" variant="accent" iconRight="arrow" onClick={() => navigate('/courses')}>
+                    {learnerProfile?.target_role ? 'Build career path' : 'Plan career path'}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => navigate('/atelier')}>Mock interview</Button>
                 </div>
               </div>
             </div>
@@ -153,8 +178,8 @@ export default function DashboardPage() {
 
           {/* Today's feed */}
           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 }}>
-            <span className="caps" style={{ color: 'var(--ink-2)' }}>Today's feed · {items.length} modules</span>
-            <a className="t-sm fg-2" style={{ cursor: 'pointer' }} onClick={() => navigate('/learn')}>Open feed →</a>
+            <span className="caps" style={{ color: 'var(--ink-2)' }}>Today's prep · {items.length} modules</span>
+            <a className="t-sm fg-2" style={{ cursor: 'pointer' }} onClick={() => navigate('/learn')}>Career feed →</a>
           </div>
 
           {contentLoading ? (
@@ -201,14 +226,14 @@ export default function DashboardPage() {
                 )
               })}
               {items.length === 0 && (
-                <div className="t-sm fg-3" style={{ padding: '20px 14px', textAlign: 'center' }}>No content yet — building your learning path…</div>
+                <div className="t-sm fg-3" style={{ padding: '20px 14px', textAlign: 'center' }}>No content yet — building your career path…</div>
               )}
             </Card>
           )}
 
-          {/* Recent doubts */}
+          {/* Recent coaching sessions */}
           <div style={{ marginTop: 20, display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 }}>
-            <span className="caps" style={{ color: 'var(--ink-2)' }}>Recent doubts</span>
+            <span className="caps" style={{ color: 'var(--ink-2)' }}>Recent coaching sessions</span>
             <a className="t-sm fg-2" style={{ cursor: 'pointer' }} onClick={() => navigate('/doubts')}>All sessions →</a>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
@@ -231,18 +256,20 @@ export default function DashboardPage() {
           {/* Skill map */}
           <Card padding="md">
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <span className="caps" style={{ color: 'var(--ink-2)' }}>Skill mastery</span>
+              <span className="caps" style={{ color: 'var(--ink-2)' }}>Role readiness by skill</span>
               <span className="t-xs fg-3 mono">{Object.keys(topicProficiency).length} tracked</span>
             </div>
             {Object.entries(topicProficiency).slice(0, 6).map(([k, v]) => (
               <SkillBar key={k} name={k.slice(0, 14)} value={v / 1000} />
             ))}
             {Object.keys(topicProficiency).length === 0 && (
-              <div className="t-xs fg-3" style={{ textAlign: 'center', padding: 8 }}>Tracking your skills…</div>
+              <div className="t-xs fg-3" style={{ textAlign: 'center', padding: 8 }}>
+                {learnerProfile?.target_role ? `Complete interviews to build your ${learnerProfile.target_role} readiness map.` : 'Tracking your skills…'}
+              </div>
             )}
             <div className="t-xs fg-3" style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid var(--line-1)', display: 'flex', alignItems: 'center', gap: 6 }}>
               <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--agent-prog)', display: 'inline-block' }} />
-              Updated by Progress agent
+              Updated after each interview · <a style={{ color: 'var(--accent)', cursor: 'pointer' }} onClick={() => navigate('/progress')}>View full readiness →</a>
             </div>
           </Card>
 
@@ -275,9 +302,9 @@ export default function DashboardPage() {
             {dueTopics.length > 0 ? dueTopics.map((t, i) => (
               <div key={t.topic} style={{ padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 10, borderTop: i ? '1px solid var(--line-1)' : 'none' }}>
                 <div className="t-sm fg-0" style={{ fontWeight: 500, flex: 1 }}>{t.topic}</div>
-                <span className="t-xs fg-3 mono">Elo {Math.round(t.elo)}</span>
+                <span className="t-xs fg-3 mono">{Math.round(t.elo)} ELO</span>
                 <Badge size="xs" tone={t.urgency >= 0.8 ? 'neg' : t.urgency >= 0.5 ? 'warn' : 'outline'}>
-                  {t.days_since_last_quiz === null ? 'New' : t.urgency >= 0.8 ? 'Urgent' : 'Due'}
+                  {t.days_since_last_quiz === null ? 'New' : t.urgency >= 0.8 ? 'Critical gap' : 'Practice due'}
                 </Badge>
               </div>
             )) : (
@@ -287,7 +314,7 @@ export default function DashboardPage() {
             )}
             <div style={{ padding: 10, borderTop: '1px solid var(--line-1)' }}>
               <Button size="sm" variant="primary" full iconRight="arrow" onClick={handleStartQuiz} loading={isGeneratingQuiz}>
-                {dueTopics[0] ? `Review ${dueTopics[0].topic}` : 'Start a quiz'}
+                {dueTopics[0] ? `Practice ${dueTopics[0].topic}` : 'Start skill practice'}
               </Button>
             </div>
           </Card>

@@ -2,7 +2,9 @@ import uuid
 from datetime import datetime, timezone
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from app.agents.progress_agent import calculate_elo_update
 from app.auth.jwt import get_current_user_id
@@ -17,6 +19,7 @@ from app.schemas.quiz import (
     QuizSubmitResult,
 )
 
+limiter = Limiter(key_func=get_remote_address)
 router = APIRouter()
 log = structlog.get_logger()
 
@@ -32,7 +35,9 @@ async def _get_learner_or_404(user_id: str) -> dict:
 
 
 @router.post("/generate", response_model=QuizSessionSchema)
+@limiter.limit("20/hour")
 async def generate_quiz(
+    request: Request,
     body: QuizGenerateRequest,
     user_id: str = Depends(get_current_user_id),
 ):

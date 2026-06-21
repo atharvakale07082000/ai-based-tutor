@@ -10,6 +10,7 @@ import { TopBar } from '@/components/layout/TopBar'
 import { AgentStatusBar } from '@/components/agents/AgentStatusBar'
 import { CommandPalette } from '@/components/layout/CommandPalette'
 import { PageWrapper } from '@/components/layout/PageWrapper'
+import { ErrorBoundary } from '@/components/layout/ErrorBoundary'
 import { PomodoroTimer } from '@/components/ui/PomodoroTimer'
 import { useAgentSocket } from '@/hooks/useAgentSocket'
 
@@ -156,22 +157,23 @@ export default function App() {
             <Routes>
               <Route path="/" element={<LandingPage />} />
               <Route path="/onboarding" element={<OnboardingPage />} />
-              <Route path="/dashboard" element={<PrivateRoute><PageWrapper><DashboardPage /></PageWrapper></PrivateRoute>} />
-              <Route path="/learn" element={<PrivateRoute><PageWrapper><LearnFeedPage /></PageWrapper></PrivateRoute>} />
-              <Route path="/learn/:moduleId" element={<PrivateRoute><PageWrapper><ModulePlayerPage /></PageWrapper></PrivateRoute>} />
-              <Route path="/doubts" element={<PrivateRoute><PageWrapper><DoubtChatPage /></PageWrapper></PrivateRoute>} />
-              <Route path="/quiz/:quizId" element={<PrivateRoute><PageWrapper><QuizPage /></PageWrapper></PrivateRoute>} />
-              <Route path="/progress" element={<PrivateRoute><PageWrapper><ProgressPage /></PageWrapper></PrivateRoute>} />
-              <Route path="/admin/*" element={<PrivateRoute><PageWrapper><AdminPage /></PageWrapper></PrivateRoute>} />
-              <Route path="/courses" element={<PrivateRoute><PageWrapper><CoursePlannerPage /></PageWrapper></PrivateRoute>} />
-              <Route path="/courses/:planId" element={<PrivateRoute><PageWrapper><CourseDetailPage /></PageWrapper></PrivateRoute>} />
-              <Route path="/courses/:planId/modules/:moduleId/interview" element={<PrivateRoute><PageWrapper><ModuleInterviewPage /></PageWrapper></PrivateRoute>} />
-              <Route path="/assistant" element={<PrivateRoute><PageWrapper><AssistantPage /></PageWrapper></PrivateRoute>} />
-              <Route path="/atelier" element={<PrivateRoute><PageWrapper><AtelierV2Page /></PageWrapper></PrivateRoute>} />
-              <Route path="/assistant-v2" element={<PrivateRoute><PageWrapper><AtelierV2Page /></PageWrapper></PrivateRoute>} />
-              <Route path="/flashcards" element={<PrivateRoute><PageWrapper><FlashcardsPage /></PageWrapper></PrivateRoute>} />
-              <Route path="/profile" element={<PrivateRoute><PageWrapper><ProfilePage /></PageWrapper></PrivateRoute>} />
+              <Route path="/dashboard" element={<PrivateRoute><ErrorBoundary fallbackRoute="/dashboard"><PageWrapper><DashboardPage /></PageWrapper></ErrorBoundary></PrivateRoute>} />
+              <Route path="/learn" element={<PrivateRoute><ErrorBoundary fallbackRoute="/dashboard"><PageWrapper><LearnFeedPage /></PageWrapper></ErrorBoundary></PrivateRoute>} />
+              <Route path="/learn/:moduleId" element={<PrivateRoute><ErrorBoundary fallbackRoute="/learn"><PageWrapper><ModulePlayerPage /></PageWrapper></ErrorBoundary></PrivateRoute>} />
+              <Route path="/doubts" element={<PrivateRoute><ErrorBoundary fallbackRoute="/dashboard"><PageWrapper><DoubtChatPage /></PageWrapper></ErrorBoundary></PrivateRoute>} />
+              <Route path="/quiz/:quizId" element={<PrivateRoute><ErrorBoundary fallbackRoute="/dashboard"><PageWrapper><QuizPage /></PageWrapper></ErrorBoundary></PrivateRoute>} />
+              <Route path="/progress" element={<PrivateRoute><ErrorBoundary fallbackRoute="/dashboard"><PageWrapper><ProgressPage /></PageWrapper></ErrorBoundary></PrivateRoute>} />
+              <Route path="/admin/*" element={<PrivateRoute><ErrorBoundary fallbackRoute="/dashboard"><PageWrapper><AdminPage /></PageWrapper></ErrorBoundary></PrivateRoute>} />
+              <Route path="/courses" element={<PrivateRoute><ErrorBoundary fallbackRoute="/dashboard"><PageWrapper><CoursePlannerPage /></PageWrapper></ErrorBoundary></PrivateRoute>} />
+              <Route path="/courses/:planId" element={<PrivateRoute><ErrorBoundary fallbackRoute="/courses"><PageWrapper><CourseDetailPage /></PageWrapper></ErrorBoundary></PrivateRoute>} />
+              <Route path="/courses/:planId/modules/:moduleId/interview" element={<PrivateRoute><ErrorBoundary fallbackRoute="/courses"><PageWrapper><ModuleInterviewPage /></PageWrapper></ErrorBoundary></PrivateRoute>} />
+              <Route path="/assistant" element={<PrivateRoute><ErrorBoundary fallbackRoute="/dashboard"><PageWrapper><AssistantPage /></PageWrapper></ErrorBoundary></PrivateRoute>} />
+              <Route path="/atelier" element={<PrivateRoute><ErrorBoundary fallbackRoute="/dashboard"><PageWrapper><AtelierV2Page /></PageWrapper></ErrorBoundary></PrivateRoute>} />
+              <Route path="/assistant-v2" element={<PrivateRoute><ErrorBoundary fallbackRoute="/dashboard"><PageWrapper><AtelierV2Page /></PageWrapper></ErrorBoundary></PrivateRoute>} />
+              <Route path="/flashcards" element={<PrivateRoute><ErrorBoundary fallbackRoute="/dashboard"><PageWrapper><FlashcardsPage /></PageWrapper></ErrorBoundary></PrivateRoute>} />
+              <Route path="/profile" element={<PrivateRoute><ErrorBoundary fallbackRoute="/dashboard"><PageWrapper><ProfilePage /></PageWrapper></ErrorBoundary></PrivateRoute>} />
               <Route path="/reset-password" element={<ResetPasswordPage />} />
+              <Route path="/tracker" element={<PrivateRoute><ErrorBoundary fallbackRoute="/dashboard"><PageWrapper><div style={{ padding: '48px 28px', textAlign: 'center' }}><h2 style={{ fontSize: 28, fontWeight: 400, marginBottom: 8 }}>Job Tracker</h2><p style={{ color: 'var(--ink-2)' }}>Application tracking board — coming soon in Phase 4.</p></div></PageWrapper></ErrorBoundary></PrivateRoute>} />
               <Route path="/login" element={<Navigate to="/" replace />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

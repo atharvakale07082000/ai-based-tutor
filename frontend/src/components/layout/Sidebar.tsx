@@ -19,23 +19,24 @@ const NAV_GROUPS: NavGroup[] = [
   {
     group: 'Workspace',
     items: [
-      { id: '/dashboard',  label: 'Dashboard',  icon: 'home',     kbd: 'D' },
-      { id: '/learn',      label: 'Today',       icon: 'feed',     kbd: 'T' },
-      { id: '/assistant',  label: 'Assistant',   icon: 'sparkle',  kbd: 'A' },
-      { id: '/atelier', label: 'Atelier', icon: 'sparkle', kbd: 'V' },
+      { id: '/dashboard',  label: 'Dashboard',         icon: 'home',     kbd: 'D' },
+      { id: '/learn',      label: 'Career Feed',        icon: 'feed',     kbd: 'T' },
+      { id: '/assistant',  label: 'Assistant',          icon: 'sparkle',  kbd: 'A' },
+      { id: '/atelier',    label: 'AI Interview Coach', icon: 'sparkle',  kbd: 'V' },
     ],
   },
   {
-    group: 'Learn',
+    group: 'Career Tools',
     items: [
-      { id: '/courses',   label: 'Courses',    icon: 'course' },
-      { id: '/doubts',    label: 'Doubts',     icon: 'chat' },
+      { id: '/courses',   label: 'Career Paths',    icon: 'course' },
+      { id: '/doubts',    label: 'Career Coach',    icon: 'chat' },
+      { id: '/tracker',   label: 'Job Tracker',     icon: 'progress' },
     ],
   },
   {
     group: 'Insights',
     items: [
-      { id: '/progress',   label: 'Progress',   icon: 'progress' },
+      { id: '/progress',   label: 'Readiness',  icon: 'progress' },
       { id: '/flashcards', label: 'Flashcards', icon: 'cards' },
     ],
   },

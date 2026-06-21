@@ -14,8 +14,10 @@ import uuid
 from datetime import datetime, timezone
 
 import structlog
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from app.auth.jwt import get_current_user_id
 from app.db.mongo import col_doubts, col_learners
@@ -24,6 +26,7 @@ from app.hf.image_captioner import caption_image
 from app.hf.speech_to_text import transcribe_audio
 from app.schemas.doubts import DoubtStreamRequest
 
+limiter = Limiter(key_func=get_remote_address)
 router = APIRouter()
 log = structlog.get_logger()
 
@@ -31,7 +34,9 @@ PROJ = {"_id": 0}
 
 
 @router.post("/stream")
+@limiter.limit("30/hour")
 async def stream_doubt(
+    request: Request,
     body: DoubtStreamRequest,
     user_id: str = Depends(get_current_user_id),
 ):

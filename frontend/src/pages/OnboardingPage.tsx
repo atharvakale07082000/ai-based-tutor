@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { authAPI, learnerAPI, curriculumAPI, setAccessToken, getAccessToken } from '@/lib/api'
@@ -9,17 +9,17 @@ import { AgentPill } from '@/components/ui/AgentPill'
 
 type AuthMode = 'signin' | 'signup'
 
-const GOAL_OPTIONS = [
-  'Machine Learning', 'Statistics', 'Python', 'Linear Algebra',
-  'Deep Learning', 'SQL', 'Probability', 'Calculus', 'Data Engineering',
-  'NLP', 'Computer Vision', 'Web Development',
-]
-
-const PACING = [
-  { v: 'gentle',     t: 'Gentle',     d: 'Build deep mastery before advancing. Lower friction, more time.' },
-  { v: 'balanced',   t: 'Balanced',   d: 'Push when you\'re ready, ease when you slip. Recommended for most.' },
-  { v: 'aggressive', t: 'Aggressive', d: 'Always one step ahead. Comfortable with friction and fast ramp-ups.' },
+const URGENCY_OPTIONS = [
+  { v: 'actively_looking', t: 'Actively looking',   d: 'I\'m applying now and want to move fast.' },
+  { v: 'exploring',        t: 'Exploring options',   d: 'Open to opportunities but not rushing.' },
+  { v: 'not_yet',          t: 'Preparing for later', d: 'Building skills for a future search.' },
 ] as const
+
+const PREFERRED_COMPANIES = [
+  'Google', 'Meta', 'Apple', 'Amazon', 'Microsoft', 'Netflix', 'Stripe', 'Airbnb',
+  'Uber', 'Lyft', 'Coinbase', 'Figma', 'Notion', 'Linear', 'Vercel', 'Anthropic',
+  'OpenAI', 'DeepMind', 'Palantir', 'Databricks',
+]
 
 const inputStyle: React.CSSProperties = {
   display: 'block', width: '100%', marginTop: 6,
@@ -29,16 +29,15 @@ const inputStyle: React.CSSProperties = {
   fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box',
 }
 
-// Total steps: 0=Auth, 1=Name, 2=Goals, 3=Hours, 4=Difficulty, 5=Building (loading)
-const TOTAL_STEPS = 4   // steps 1–4 (auth is step 0, building is step 5)
+// Total user-visible steps: 1=Name, 2=Target Role, 3=Urgency, 4=Experience
+const TOTAL_STEPS = 4
 
 export default function OnboardingPage() {
   const navigate   = useNavigate()
   const setLearner = useLearnerStore((s) => s.setLearner)
   const learnerId  = useLearnerStore((s) => s.id)
 
-  // If already authenticated, skip auth step (start at step 1)
-  const [step, setStep]   = useState(learnerId ? 1 : 0)
+  const [step, setStep]         = useState(learnerId ? 1 : 0)
   const [building, setBuilding] = useState(false)
 
   // Auth state
@@ -50,21 +49,38 @@ export default function OnboardingPage() {
   const [authLoading, setAuthLoading] = useState(false)
 
   // Onboarding state
-  const [name, setNameLocal]  = useState('')
-  const [goals, setGoals]     = useState<string[]>(['Machine Learning', 'Python'])
-  const [hours, setHours]     = useState(6)
-  const [diff, setDiff]       = useState<'gentle' | 'balanced' | 'aggressive'>('balanced')
+  const [name, setNameLocal]          = useState('')
+  const [targetRole, setTargetRole]   = useState('')
+  const [currentRole, setCurrentRole] = useState('')
+  const [yearsExp, setYearsExp]       = useState(0)
+  const [urgency, setUrgency]         = useState<'actively_looking' | 'exploring' | 'not_yet'>('exploring')
+  const [preferredCompanies, setPreferredCompanies] = useState<string[]>([])
+  const [roleQuery, setRoleQuery]     = useState('')
+  const [roleSuggestions, setRoleSuggestions] = useState<string[]>([])
+  const [allRoles, setAllRoles]       = useState<string[]>([])
+  const roleInputRef = useRef<HTMLInputElement>(null)
 
-  // If user navigates here already authenticated, skip to step 1
   useEffect(() => {
     if (learnerId && step === 0) setStep(1)
   }, [learnerId, step])
 
-  const toggleGoal = (g: string) =>
-    setGoals((prev) => {
-      if (prev.includes(g)) return prev.filter((x) => x !== g)
-      if (prev.length >= 10) { toast.error('Maximum 10 topics allowed.'); return prev }
-      return [...prev, g]
+  // Fetch canonical role list for autocomplete
+  useEffect(() => {
+    learnerAPI.getRoles().then((r) => setAllRoles(r.data.roles)).catch(() => { /* silent */ })
+  }, [])
+
+  // Role autocomplete
+  useEffect(() => {
+    if (!roleQuery.trim()) { setRoleSuggestions([]); return }
+    const q = roleQuery.toLowerCase()
+    setRoleSuggestions(allRoles.filter((r) => r.toLowerCase().includes(q)).slice(0, 5))
+  }, [roleQuery, allRoles])
+
+  const toggleCompany = (c: string) =>
+    setPreferredCompanies((prev) => {
+      if (prev.includes(c)) return prev.filter((x) => x !== c)
+      if (prev.length >= 5) { toast.error('Maximum 5 companies.'); return prev }
+      return [...prev, c]
     })
 
   // ── Step 0: Auth ─────────────────────────────────────────────────────────────
@@ -73,7 +89,6 @@ export default function OnboardingPage() {
     if (!authEmail.trim()) { toast.error('Email is required.'); return }
     if (authPass.length < 6) { toast.error('Password must be at least 6 characters.'); return }
     if (authPass.length > 128) { toast.error('Password must be under 128 characters.'); return }
-    if (authMode === 'signup' && authName.trim().length > 50) { toast.error('Name must be under 50 characters.'); return }
     setAuthLoading(true)
     try {
       const { data } = await authAPI.login(authEmail.trim().toLowerCase(), authPass)
@@ -83,18 +98,17 @@ export default function OnboardingPage() {
       setNameLocal(displayName)
 
       if (authMode === 'signin') {
-        // Returning user — check if already onboarded
         try {
           const prof = await learnerAPI.getProfile()
-          if ((prof.data.goal_vector?.length ?? 0) > 0) {
+          if (prof.data.target_role || (prof.data.goal_vector?.length ?? 0) > 0) {
             toast.success(`Welcome back, ${displayName}!`)
             navigate('/dashboard')
             return
           }
-        } catch { /* continue onboarding */ }
+        } catch { /* continue */ }
         toast.success(`Welcome, ${displayName}!`)
       } else {
-        toast.success(`Account created! Let's set up your plan.`)
+        toast.success('Account created! Let\'s set up your profile.')
       }
       setStep(1)
     } catch (err: unknown) {
@@ -109,53 +123,46 @@ export default function OnboardingPage() {
     if (step === 1) {
       const trimmed = name.trim()
       if (trimmed.length < 2) { toast.error('Name must be at least 2 characters.'); return }
-      if (trimmed.length > 50) { toast.error('Name must be under 50 characters.'); return }
     }
-    if (step === 2 && goals.length < 1) {
-      toast.error('Select at least 1 topic to continue.')
+    if (step === 2 && !targetRole.trim()) {
+      toast.error('Enter your target job role to continue.')
       return
     }
     if (step < TOTAL_STEPS) setStep((s) => s + 1)
     else handleComplete()
   }
 
-  // ── Final: build plan (call agents) ──────────────────────────────────────────
+  // ── Final: save profile & launch career path ─────────────────────────────────
   const handleComplete = async () => {
-    if (!getAccessToken()) {
-      toast.error('Not authenticated. Please sign in first.')
-      setStep(0)
-      return
-    }
+    if (!getAccessToken()) { toast.error('Not authenticated.'); setStep(0); return }
     setBuilding(true)
     try {
-      // Save onboarding preferences
       await learnerAPI.onboard({
-        name:        name.trim() || authName.trim() || 'Learner',
-        goals,
-        hoursPerWeek: hours,
-        difficulty:  diff,
+        name: name.trim() || authName.trim() || 'Job Seeker',
+        goals: [targetRole].filter(Boolean),
+        target_role: targetRole.trim(),
+        current_role: currentRole.trim(),
+        years_of_experience: yearsExp,
+        job_search_urgency: urgency,
+        preferred_companies: preferredCompanies,
       })
       setLearner({ name: name.trim() || authName.trim() })
-
-      // Kick off curriculum agent in background (don't block navigation)
       curriculumAPI.generate().catch(() => { /* silent */ })
-
-      // Short pause to show "building" screen
       await new Promise((r) => setTimeout(r, 2200))
       navigate('/dashboard')
-    } catch (err) {
-      toast.error('Could not save your plan. Please try again.')
+    } catch {
+      toast.error('Could not save your profile. Please try again.')
       setBuilding(false)
     }
   }
 
-  // ── "Building" loading screen ─────────────────────────────────────────────────
+  // ── Building screen ──────────────────────────────────────────────────────────
   if (building) {
     return (
       <div style={{ minHeight: '100%', background: 'var(--paper-0)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 32, padding: 32 }}>
         <div style={{ textAlign: 'center' }}>
           <div className="serif" style={{ fontSize: 36, color: 'var(--ink-0)', marginBottom: 8 }}>
-            Building your plan
+            Building your career plan
             <span style={{ display: 'inline-flex', gap: 3, marginLeft: 6, verticalAlign: 'middle' }}>
               {[0, 1, 2].map((i) => (
                 <span key={i} style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', display: 'inline-block', animation: `blink 1.2s ease-in-out ${i * 0.3}s infinite` }} />
@@ -163,15 +170,15 @@ export default function OnboardingPage() {
             </span>
           </div>
           <p className="t-md fg-2" style={{ maxWidth: 420, lineHeight: 1.6 }}>
-            Your agents are preparing a personalised curriculum based on your goals and pace.
+            Mapping the skills for <strong>{targetRole || 'your target role'}</strong> and preparing your personalised roadmap.
           </p>
         </div>
         <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', justifyContent: 'center' }}>
           {([
-            { kind: 'curr',  label: 'Curriculum Planner', desc: 'Mapping your 8-week journey' },
-            { kind: 'quiz',  label: 'Quiz Generator',     desc: 'Calibrating question difficulty' },
-            { kind: 'prog',  label: 'Progress Tracker',   desc: 'Setting baseline proficiency' },
-            { kind: 'doubt', label: 'Learning Assistant',  desc: 'Loading topic context' },
+            { kind: 'curr',  label: 'Career Planner',    desc: 'Mapping role requirements' },
+            { kind: 'quiz',  label: 'Interview Coach',   desc: 'Loading question banks' },
+            { kind: 'prog',  label: 'Readiness Tracker', desc: 'Setting skill baseline' },
+            { kind: 'doubt', label: 'Career Assistant',  desc: 'Preparing coaching context' },
           ] as const).map((a, i) => (
             <div key={a.kind} style={{ textAlign: 'center', animation: `blink 1.6s ease-in-out ${i * 0.2}s infinite`, padding: '12px 16px', background: 'var(--paper-1)', border: '1px solid var(--line-1)', borderRadius: 'var(--r-3)', minWidth: 160 }}>
               <AgentPill kind={a.kind} state="thinking" />
@@ -185,6 +192,26 @@ export default function OnboardingPage() {
   }
 
   const progress = step === 0 ? 0 : (step / TOTAL_STEPS) * 100
+
+  const leftHeadings: Record<number, React.ReactNode> = {
+    0: authMode === 'signup'
+      ? <><span>Land your next</span><br /><span style={{ fontStyle: 'italic', color: 'var(--accent)' }}>dream role.</span></>
+      : <><span>Welcome</span><br /><span style={{ fontStyle: 'italic', color: 'var(--accent)' }}>back.</span></>,
+    1: <><span>What should we</span><br /><span style={{ fontStyle: 'italic', color: 'var(--ink-2)' }}>call you?</span></>,
+    2: <><span>What role are</span><br /><span style={{ fontStyle: 'italic', color: 'var(--accent)' }}>you targeting?</span></>,
+    3: <><span>How urgently are</span><br /><span style={{ fontStyle: 'italic', color: 'var(--accent)' }}>you searching?</span></>,
+    4: <><span>Tell us about</span><br /><span style={{ fontStyle: 'italic', color: 'var(--accent)' }}>your background.</span></>,
+  }
+
+  const leftSubtext: Record<number, string> = {
+    0: authMode === 'signup'
+      ? 'AI-powered interview prep, skill gap analysis, and a personalised career roadmap — free to start.'
+      : 'Enter your credentials to continue your job search preparation.',
+    1: 'Your career coach addresses you by name. You can change it any time from your profile.',
+    2: 'We\'ll map the exact skills required for this role and build a gap-closing study plan around them.',
+    3: 'This sets your prep intensity and pacing. You can change it any time.',
+    4: 'We use your current background to focus prep on the skills that will move your readiness score the most.',
+  }
 
   return (
     <div style={{ minHeight: '100%', display: 'grid', gridTemplateColumns: '1fr 1fr', background: 'var(--paper-0)' }}>
@@ -202,20 +229,19 @@ export default function OnboardingPage() {
         )}
 
         <h1 className="serif" style={{ fontSize: 'clamp(28px,3.5vw,44px)', lineHeight: 1.05, fontWeight: 400, color: 'var(--ink-0)', margin: 0, letterSpacing: '-0.02em' }}>
-          {step === 0 && <>{authMode === 'signup' ? <>Create your<br /><span style={{ fontStyle: 'italic', color: 'var(--accent)' }}>free account.</span></> : <>Welcome<br /><span style={{ fontStyle: 'italic', color: 'var(--accent)' }}>back.</span></>}</>}
-          {step === 1 && <>Tell us your name.<br /><span style={{ fontStyle: 'italic', color: 'var(--ink-2)' }}>We'll keep it informal.</span></>}
-          {step === 2 && <>What do you want<br /><span style={{ fontStyle: 'italic', color: 'var(--accent)' }}>to learn?</span></>}
-          {step === 3 && <>How much time<br /><span style={{ fontStyle: 'italic', color: 'var(--accent)' }}>do you have?</span></>}
-          {step === 4 && <>Choose your<br /><span style={{ fontStyle: 'italic', color: 'var(--accent)' }}>pacing strategy.</span></>}
+          {leftHeadings[step]}
         </h1>
 
         <p className="t-lg fg-2" style={{ marginTop: 20, maxWidth: 380, lineHeight: 1.65 }}>
-          {step === 0 && (authMode === 'signup' ? 'No credit card required. Your account is created instantly with your email and password.' : 'Enter your credentials to continue where you left off.')}
-          {step === 1 && 'Your tutor addresses you by name. Choose anything you like — change it any time from settings.'}
-          {step === 2 && 'Pick three to seven topics. We\'ll weave a personalised learning path around them.'}
-          {step === 3 && 'We pace your modules to fit your schedule. You can always do more.'}
-          {step === 4 && 'Three strategies, each calibrated to a different appetite for challenge. You can switch any time.'}
+          {leftSubtext[step]}
         </p>
+
+        {step === 2 && targetRole && (
+          <div style={{ marginTop: 24, padding: '12px 16px', background: 'var(--accent-soft)', borderRadius: 'var(--r-2)', border: '1px solid var(--accent-line)' }}>
+            <div className="caps" style={{ color: 'var(--accent)', fontSize: 10, marginBottom: 4 }}>Target role</div>
+            <div className="t-md fg-0" style={{ fontWeight: 500 }}>{targetRole}</div>
+          </div>
+        )}
 
         {step > 0 && (
           <div style={{ marginTop: 'auto', paddingTop: 40 }}>
@@ -234,20 +260,15 @@ export default function OnboardingPage() {
           {/* Step 0: Auth */}
           {step === 0 && (
             <div>
-              {/* Tabs */}
               <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid var(--line-1)', marginBottom: 24 }}>
                 {(['signup', 'signin'] as AuthMode[]).map((m) => (
-                  <button
-                    key={m}
-                    onClick={() => setAuthMode(m)}
-                    style={{
-                      padding: '8px 16px', fontSize: 13, fontWeight: authMode === m ? 600 : 400,
-                      fontFamily: 'inherit', border: 0, background: 'none', cursor: 'pointer',
-                      color: authMode === m ? 'var(--ink-0)' : 'var(--ink-2)',
-                      borderBottom: authMode === m ? '2px solid var(--ink-0)' : '2px solid transparent',
-                      marginBottom: -1,
-                    }}
-                  >
+                  <button key={m} onClick={() => setAuthMode(m)} style={{
+                    padding: '8px 16px', fontSize: 13, fontWeight: authMode === m ? 600 : 400,
+                    fontFamily: 'inherit', border: 0, background: 'none', cursor: 'pointer',
+                    color: authMode === m ? 'var(--ink-0)' : 'var(--ink-2)',
+                    borderBottom: authMode === m ? '2px solid var(--ink-0)' : '2px solid transparent',
+                    marginBottom: -1,
+                  }}>
                     {m === 'signup' ? 'Create account' : 'Sign in'}
                   </button>
                 ))}
@@ -257,46 +278,27 @@ export default function OnboardingPage() {
                 {authMode === 'signup' && (
                   <div>
                     <label className="caps" style={{ color: 'var(--ink-2)', fontSize: 10 }}>Your name (optional)</label>
-                    <input
-                      value={authName}
-                      onChange={(e) => setAuthName(e.target.value)}
-                      placeholder="Mira"
-                      autoFocus
-                      style={inputStyle}
+                    <input value={authName} onChange={(e) => setAuthName(e.target.value)} placeholder="Mira" autoFocus style={inputStyle}
                       onFocus={(e) => (e.target.style.borderColor = 'var(--ink-1)')}
-                      onBlur={(e)  => (e.target.style.borderColor = 'var(--line-2)')}
-                    />
+                      onBlur={(e)  => (e.target.style.borderColor = 'var(--line-2)')} />
                   </div>
                 )}
                 <div>
                   <label className="caps" style={{ color: 'var(--ink-2)', fontSize: 10 }}>Email</label>
-                  <input
-                    type="email"
-                    value={authEmail}
-                    onChange={(e) => setAuthEmail(e.target.value)}
-                    placeholder="you@example.com"
-                    required
-                    autoComplete="email"
-                    autoFocus={authMode === 'signin'}
-                    style={inputStyle}
+                  <input type="email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} placeholder="you@example.com"
+                    required autoComplete="email" autoFocus={authMode === 'signin'} style={inputStyle}
                     onFocus={(e) => (e.target.style.borderColor = 'var(--ink-1)')}
-                    onBlur={(e)  => (e.target.style.borderColor = 'var(--line-2)')}
-                  />
+                    onBlur={(e)  => (e.target.style.borderColor = 'var(--line-2)')} />
                 </div>
                 <div>
                   <label className="caps" style={{ color: 'var(--ink-2)', fontSize: 10 }}>Password</label>
                   <div style={{ position: 'relative' }}>
-                    <input
-                      type={showPass ? 'text' : 'password'}
-                      value={authPass}
-                      onChange={(e) => setAuthPass(e.target.value)}
-                      placeholder="Min 6 characters"
-                      required minLength={6}
+                    <input type={showPass ? 'text' : 'password'} value={authPass} onChange={(e) => setAuthPass(e.target.value)}
+                      placeholder="Min 6 characters" required minLength={6}
                       autoComplete={authMode === 'signin' ? 'current-password' : 'new-password'}
                       style={{ ...inputStyle, paddingRight: 38 }}
                       onFocus={(e) => (e.target.style.borderColor = 'var(--ink-1)')}
-                      onBlur={(e)  => (e.target.style.borderColor = 'var(--line-2)')}
-                    />
+                      onBlur={(e)  => (e.target.style.borderColor = 'var(--line-2)')} />
                     <button type="button" tabIndex={-1} onClick={() => setShowPass((v) => !v)}
                       style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 0, cursor: 'pointer', padding: 2, color: 'var(--ink-3)' }}>
                       <Icon name={showPass ? 'eye-off' : 'eye'} size={14} />
@@ -309,12 +311,10 @@ export default function OnboardingPage() {
                     : (authMode === 'signup' ? 'Create account & continue' : 'Sign in & continue')}
                 </Button>
               </form>
-
               <p className="t-xs fg-3" style={{ marginTop: 16, textAlign: 'center' }}>
                 {authMode === 'signup'
                   ? <>Already have an account? <button type="button" onClick={() => setAuthMode('signin')} style={{ color: 'var(--accent)', background: 'none', border: 0, cursor: 'pointer', fontFamily: 'inherit', fontSize: 'inherit', padding: 0 }}>Sign in →</button></>
-                  : <>No account? <button type="button" onClick={() => setAuthMode('signup')} style={{ color: 'var(--accent)', background: 'none', border: 0, cursor: 'pointer', fontFamily: 'inherit', fontSize: 'inherit', padding: 0 }}>Create one free →</button></>
-                }
+                  : <>No account? <button type="button" onClick={() => setAuthMode('signup')} style={{ color: 'var(--accent)', background: 'none', border: 0, cursor: 'pointer', fontFamily: 'inherit', fontSize: 'inherit', padding: 0 }}>Create one free →</button></>}
               </p>
             </div>
           )}
@@ -330,70 +330,69 @@ export default function OnboardingPage() {
                 placeholder="Mira"
                 style={{ width: '100%', marginTop: 8, padding: '10px 0', fontSize: 32, fontFamily: 'var(--font-serif)', background: 'transparent', border: 0, borderBottom: '1px solid var(--line-2)', color: 'var(--ink-0)', outline: 'none' }}
               />
-              <div className="t-xs fg-3" style={{ marginTop: 8 }}>3–24 characters · change it any time</div>
+              <div className="t-xs fg-3" style={{ marginTop: 8 }}>2–50 characters · change it any time from your profile</div>
             </div>
           )}
 
-          {/* Step 2: Goals */}
+          {/* Step 2: Target Role */}
           {step === 2 && (
             <div>
-              <label className="caps" style={{ color: 'var(--ink-2)' }}>Topics — pick 3 to 7</label>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 12 }}>
-                {GOAL_OPTIONS.map((g) => {
-                  const active = goals.includes(g)
-                  return (
-                    <button key={g} onClick={() => toggleGoal(g)} style={{
-                      padding: '6px 14px', fontSize: 13, fontWeight: 500, cursor: 'pointer',
-                      background: active ? 'var(--ink-0)' : 'var(--paper-1)',
-                      color: active ? 'var(--paper-0)' : 'var(--ink-1)',
-                      border: `1px solid ${active ? 'var(--ink-0)' : 'var(--line-2)'}`,
-                      borderRadius: 'var(--r-pill)', fontFamily: 'inherit',
-                      transition: 'background var(--dur-fast)',
-                    }}>{g}</button>
-                  )
-                })}
-              </div>
-              {goals.length > 0 && (
-                <div style={{ marginTop: 20, padding: 12, background: 'var(--accent-soft)', borderRadius: 'var(--r-2)', display: 'flex', gap: 8, border: '1px solid var(--accent-line)' }}>
-                  <Icon name="sparkle" size={13} style={{ color: 'var(--accent)', marginTop: 2, flexShrink: 0 }} />
-                  <div className="t-sm fg-1">
-                    <strong style={{ color: 'var(--accent)' }}>{goals.length} topic{goals.length > 1 ? 's' : ''} selected.</strong> We'll connect them into a personalised learning path.
+              <label className="caps" style={{ color: 'var(--ink-2)' }}>Target role</label>
+              <div style={{ position: 'relative', marginTop: 8 }}>
+                <input
+                  ref={roleInputRef}
+                  value={roleQuery || targetRole}
+                  onChange={(e) => { setRoleQuery(e.target.value); setTargetRole(e.target.value) }}
+                  autoFocus
+                  placeholder="e.g. Senior Software Engineer"
+                  style={{ ...inputStyle, marginTop: 0 }}
+                  onFocus={(e) => { e.target.style.borderColor = 'var(--ink-1)'; setRoleQuery(targetRole) }}
+                  onBlur={(e)  => { setTimeout(() => setRoleSuggestions([]), 150); e.target.style.borderColor = 'var(--line-2)' }}
+                />
+                {roleSuggestions.length > 0 && (
+                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 10, background: 'var(--paper-1)', border: '1px solid var(--line-1)', borderRadius: 'var(--r-2)', overflow: 'hidden', boxShadow: 'var(--shadow-md)', marginTop: 2 }}>
+                    {roleSuggestions.map((r) => (
+                      <button key={r} onMouseDown={() => { setTargetRole(r); setRoleQuery(''); setRoleSuggestions([]) }}
+                        style={{ display: 'block', width: '100%', padding: '10px 14px', textAlign: 'left', background: 'none', border: 0, cursor: 'pointer', fontFamily: 'inherit', fontSize: 14, color: 'var(--ink-0)' }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--paper-2)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}>
+                        {r}
+                      </button>
+                    ))}
                   </div>
+                )}
+              </div>
+
+              <div style={{ marginTop: 24 }}>
+                <label className="caps" style={{ color: 'var(--ink-2)', fontSize: 10 }}>Dream companies (optional, max 5)</label>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+                  {PREFERRED_COMPANIES.map((c) => {
+                    const active = preferredCompanies.includes(c)
+                    return (
+                      <button key={c} onClick={() => toggleCompany(c)} style={{
+                        padding: '5px 12px', fontSize: 12, cursor: 'pointer',
+                        background: active ? 'var(--ink-0)' : 'var(--paper-1)',
+                        color: active ? 'var(--paper-0)' : 'var(--ink-1)',
+                        border: `1px solid ${active ? 'var(--ink-0)' : 'var(--line-2)'}`,
+                        borderRadius: 'var(--r-pill)', fontFamily: 'inherit',
+                        transition: 'background var(--dur-fast)',
+                      }}>{c}</button>
+                    )
+                  })}
                 </div>
-              )}
+              </div>
             </div>
           )}
 
-          {/* Step 3: Hours */}
+          {/* Step 3: Urgency */}
           {step === 3 && (
             <div>
-              <label className="caps" style={{ color: 'var(--ink-2)' }}>Hours per week</label>
-              <div style={{ marginTop: 16, display: 'flex', alignItems: 'baseline', gap: 6 }}>
-                <span className="serif" style={{ fontSize: 80, color: 'var(--ink-0)', fontWeight: 400, letterSpacing: '-0.03em' }}>{hours}</span>
-                <span className="t-lg fg-2">hours</span>
-              </div>
-              <input type="range" min={1} max={20} value={hours} onChange={(e) => setHours(+e.target.value)}
-                style={{ width: '100%', marginTop: 16, accentColor: 'var(--accent)' }} />
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
-                <span className="t-xs fg-3">Casual · 1h</span>
-                <span className="t-xs fg-3">Bootcamp · 20h</span>
-              </div>
-              <div style={{ marginTop: 24, padding: 14, background: 'var(--paper-1)', border: '1px solid var(--line-1)', borderRadius: 'var(--r-2)' }}>
-                <div className="t-sm fg-2">At {hours}h/week your plan covers</div>
-                <div className="t-md fg-0" style={{ marginTop: 4, fontWeight: 500 }}>{Math.round(hours * 4 * 0.6)} modules over 8 weeks</div>
-              </div>
-            </div>
-          )}
-
-          {/* Step 4: Difficulty — the THREE STRATEGIES */}
-          {step === 4 && (
-            <div>
-              <label className="caps" style={{ color: 'var(--ink-2)' }}>Difficulty pacing — choose one</label>
+              <label className="caps" style={{ color: 'var(--ink-2)' }}>Job search urgency</label>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 14 }}>
-                {PACING.map((o) => {
-                  const active = diff === o.v
+                {URGENCY_OPTIONS.map((o) => {
+                  const active = urgency === o.v
                   return (
-                    <button key={o.v} onClick={() => setDiff(o.v)} style={{
+                    <button key={o.v} onClick={() => setUrgency(o.v)} style={{
                       padding: 16, textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit',
                       border: `1.5px solid ${active ? 'var(--ink-0)' : 'var(--line-1)'}`,
                       background: active ? 'var(--paper-2)' : 'var(--paper-1)',
@@ -413,25 +412,65 @@ export default function OnboardingPage() {
               </div>
             </div>
           )}
+
+          {/* Step 4: Background (current role + years) */}
+          {step === 4 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+              <div>
+                <label className="caps" style={{ color: 'var(--ink-2)' }}>Current role (optional)</label>
+                <input
+                  value={currentRole}
+                  onChange={(e) => setCurrentRole(e.target.value)}
+                  autoFocus
+                  placeholder="e.g. Junior Developer, Student, Career changer"
+                  style={inputStyle}
+                  onFocus={(e) => (e.target.style.borderColor = 'var(--ink-1)')}
+                  onBlur={(e)  => (e.target.style.borderColor = 'var(--line-2)')}
+                />
+              </div>
+
+              <div>
+                <label className="caps" style={{ color: 'var(--ink-2)' }}>Years of experience</label>
+                <div style={{ marginTop: 16, display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                  <span className="serif" style={{ fontSize: 72, color: 'var(--ink-0)', fontWeight: 400, letterSpacing: '-0.03em' }}>{yearsExp}</span>
+                  <span className="t-lg fg-2">{yearsExp === 1 ? 'year' : 'years'}</span>
+                </div>
+                <input type="range" min={0} max={20} value={yearsExp} onChange={(e) => setYearsExp(+e.target.value)}
+                  style={{ width: '100%', marginTop: 12, accentColor: 'var(--accent)' }} />
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6 }}>
+                  <span className="t-xs fg-3">Student / Career changer</span>
+                  <span className="t-xs fg-3">20+ years</span>
+                </div>
+              </div>
+
+              <div style={{ padding: 14, background: 'var(--accent-soft)', borderRadius: 'var(--r-2)', border: '1px solid var(--accent-line)', display: 'flex', gap: 10 }}>
+                <Icon name="sparkle" size={13} style={{ color: 'var(--accent)', marginTop: 2, flexShrink: 0 }} />
+                <div className="t-sm fg-1">
+                  We'll focus your prep on the{' '}
+                  <strong style={{ color: 'var(--accent)' }}>highest-impact skill gaps</strong>{' '}
+                  for {targetRole || 'your target role'} at your experience level.
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Footer buttons (skip step 0 — it has its own submit button) */}
+        {/* Footer buttons */}
         {step > 0 && (
           <div style={{ display: 'flex', gap: 8, marginTop: 32, paddingTop: 20, borderTop: '1px solid var(--line-1)' }}>
-            <Button variant="ghost" onClick={() => setStep((s) => Math.max(0, s - 1))} disabled={step === 1}>
+            <Button variant="ghost" onClick={() => setStep((s) => Math.max(1, s - 1))} disabled={step === 1}>
               Back
             </Button>
             <span style={{ flex: 1 }} />
-            {step < TOTAL_STEPS && (
+            {step < TOTAL_STEPS && step !== 2 && (
               <Button variant="ghost" onClick={() => setStep((s) => s + 1)}>Skip</Button>
             )}
             <Button
               variant="primary"
               iconRight={step < TOTAL_STEPS ? 'arrow' : 'check'}
               onClick={handleContinue}
-              loading={false}
             >
-              {step < TOTAL_STEPS ? 'Continue' : 'Build my plan'}
+              {step < TOTAL_STEPS ? 'Continue' : 'Build my career plan'}
             </Button>
           </div>
         )}
