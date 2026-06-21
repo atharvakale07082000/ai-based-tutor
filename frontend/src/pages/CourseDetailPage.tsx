@@ -139,6 +139,7 @@ function ModuleRow({ module, index, planId, isUnlocked }: { module: CourseModule
     setQuizLoading(true)
     try {
       const { data } = await quizAPI.generate(primaryTopic)
+      toast.success('Quiz ready!', { duration: 2000 })
       navigate(`/quiz/${data.quiz_id}`)
     } catch {
       toast.error('Could not generate quiz')

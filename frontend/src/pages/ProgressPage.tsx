@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
+import toast from 'react-hot-toast'
 import { progressAPI } from '@/lib/api'
 import { useLearnerStore } from '@/stores/learnerStore'
 import { Card } from '@/components/ui/Card'
@@ -123,6 +124,7 @@ export default function ProgressPage() {
           variant="ghost"
           icon="download"
           onClick={async () => {
+            const tid = toast.loading('Preparing report…')
             try {
               const { data } = await progressAPI.downloadReport()
               const url = URL.createObjectURL(data as Blob)
@@ -131,7 +133,10 @@ export default function ProgressPage() {
               a.download = 'progress-report.json'
               a.click()
               URL.revokeObjectURL(url)
-            } catch { /* non-critical */ }
+              toast.success('Report downloaded', { id: tid })
+            } catch {
+              toast.error('Could not download report', { id: tid })
+            }
           }}
         >
           Export

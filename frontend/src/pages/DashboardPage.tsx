@@ -90,6 +90,7 @@ export default function DashboardPage() {
       const dueTopic = dueTopics[0]?.topic
       const topic = dueTopic ?? Object.keys(topicProficiency)[0] ?? 'Python'
       const { data } = await quizAPI.generate(topic)
+      toast.success('Quiz ready — good luck!', { duration: 2000 })
       navigate(`/quiz/${data.quiz_id}`)
     } catch {
       toast.error('Could not generate quiz')

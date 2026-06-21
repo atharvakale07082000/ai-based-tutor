@@ -147,8 +147,9 @@ export default function OnboardingPage() {
         preferred_companies: preferredCompanies,
       })
       setLearner({ name: name.trim() || authName.trim() })
-      curriculumAPI.generate().catch(() => { /* silent */ })
+      curriculumAPI.generate().catch(() => { /* non-critical, retry on dashboard */ })
       await new Promise((r) => setTimeout(r, 2200))
+      toast('Building your personalised curriculum in the background…', { icon: '⚙️', duration: 4000 })
       navigate('/dashboard')
     } catch {
       toast.error('Could not save your profile. Please try again.')
