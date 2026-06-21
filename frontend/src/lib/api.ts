@@ -37,9 +37,41 @@ api.interceptors.request.use((config) => {
   return config
 })
 
-// Auto-refresh on 401
+// ── Deploy-version detection ─────────────────────────────────────────────────
+// The backend stamps every response with X-App-Version (set via APP_VERSION env
+// var, defaults to startup timestamp). When the version changes mid-session the
+// backend was redeployed — we immediately clear auth and force a fresh login so
+// users never hit stale sessions or broken API contracts.
+
+const VERSION_KEY = 'ai_tutor_app_version'
+let _seenVersion: string | null =
+  typeof localStorage !== 'undefined' ? localStorage.getItem(VERSION_KEY) : null
+
+function _onVersionChange(incoming: string) {
+  if (_seenVersion && _seenVersion !== incoming) {
+    // Redeployed — clear everything
+    setAccessToken(null)
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem('ai-tutor-learner') // zustand persist store
+      localStorage.removeItem(VERSION_KEY)
+    }
+    toast('The platform was just updated. Please log in again.', {
+      icon: '🔄',
+      duration: 5000,
+    })
+    setTimeout(() => { window.location.href = '/' }, 1800)
+  }
+  _seenVersion = incoming
+  if (typeof localStorage !== 'undefined') localStorage.setItem(VERSION_KEY, incoming)
+}
+
+// Auto-refresh on 401; version check on every success
 api.interceptors.response.use(
-  (res) => res,
+  (res) => {
+    const v = res.headers['x-app-version'] as string | undefined
+    if (v) _onVersionChange(v)
+    return res
+  },
   async (error) => {
     const original = error.config
     if (error.response?.status === 401 && !original._retry) {

@@ -1,5 +1,6 @@
 import asyncio
 import concurrent.futures
+import os
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -92,6 +93,10 @@ app.add_middleware(
 app.add_middleware(ActivityLoggingMiddleware)
 
 
+# Build version — set APP_VERSION env var in your deployment pipeline (e.g. git SHA).
+# Changes on every deploy, which the frontend uses to detect redeploys and auto-logout.
+_APP_VERSION: str = os.environ.get("APP_VERSION") or str(int(time.time()))
+
 # ── Request correlation middleware ────────────────────────────────────────────
 
 
@@ -116,6 +121,10 @@ async def correlation_middleware(request: Request, call_next) -> Response:
 
     response.headers["X-Correlation-Id"] = correlation_id
     response.headers["X-Trace-Id"] = trace_id
+    response.headers["X-App-Version"] = _APP_VERSION
+    # Prevent browser HTTP cache from storing API responses
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
 
     log.info(
         "http_request",

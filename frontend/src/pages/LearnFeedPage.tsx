@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { feedAPI, type FeedItem, type TrendTopic } from '@/lib/api'
@@ -100,31 +100,53 @@ function ScheduleModal({ item, onClose, onSchedule }: {
 
 // ── Trending topic chip ───────────────────────────────────────────────────────
 
-function TrendChip({ topic }: { topic: TrendTopic }) {
+function TrendChip({ topic, onClick, isActive }: { topic: TrendTopic; onClick: () => void; isActive: boolean }) {
   return (
     <div
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(e) => e.key === 'Enter' && onClick()}
       style={{
         display: 'inline-flex', flexDirection: 'column', gap: 3,
         padding: '10px 14px', borderRadius: 'var(--r-2)',
-        border: '1px solid var(--line-1)', background: 'var(--paper-1)',
-        minWidth: 160, maxWidth: 220, cursor: 'default',
+        border: `1px solid ${isActive ? domainColor(topic.domain) : 'var(--line-1)'}`,
+        background: isActive ? `color-mix(in srgb, ${domainColor(topic.domain)} 8%, var(--paper-1))` : 'var(--paper-1)',
+        minWidth: 160, maxWidth: 220, cursor: 'pointer',
         borderLeft: `3px solid ${domainColor(topic.domain)}`,
+        transition: 'all 0.15s ease',
+        outline: 'none',
+        position: 'relative',
+        overflow: 'hidden',
+      }}
+      onMouseEnter={(e) => {
+        if (!isActive) {
+          e.currentTarget.style.background = 'var(--paper-2)'
+          e.currentTarget.style.borderColor = domainColor(topic.domain)
+        }
+      }}
+      onMouseLeave={(e) => {
+        if (!isActive) {
+          e.currentTarget.style.background = 'var(--paper-1)'
+          e.currentTarget.style.borderColor = 'var(--line-1)'
+        }
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <span
-          className="caps"
-          style={{ fontSize: 9, color: domainColor(topic.domain), letterSpacing: '0.08em' }}
-        >
+        <span className="caps" style={{ fontSize: 9, color: domainColor(topic.domain), letterSpacing: '0.08em' }}>
           {topic.domain}
         </span>
-        {topic._started && (
+        {isActive ? (
+          <Icon name="refresh" size={10} style={{ color: domainColor(topic.domain), animation: 'spin 0.8s linear infinite' }} />
+        ) : topic._started ? (
           <Icon name="check" size={10} style={{ color: 'var(--pos)' }} />
-        )}
+        ) : null}
       </div>
       <div className="t-sm fg-0" style={{ fontWeight: 500, lineHeight: 1.3 }}>{topic.subtopic}</div>
       {topic.description && (
-        <div className="t-xs fg-3" style={{ lineHeight: 1.4, marginTop: 2 }}>{topic.description.slice(0, 80)}</div>
+        <div className="t-xs fg-3" style={{ lineHeight: 1.4, marginTop: 2 }}>
+          {isActive ? 'Opening…' : topic.description.slice(0, 80)}
+        </div>
       )}
     </div>
   )
@@ -276,9 +298,11 @@ function FeedCard({ item, onSnooze, onSchedule, onClear }: {
 
 export default function LearnFeedPage() {
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const [domainFilter, setDomainFilter] = useState<string>('all')
   const [typeFilter, setTypeFilter] = useState<string>('all')
+  const [activeTrendId, setActiveTrendId] = useState<string | null>(null)
 
   // Apply topic from URL query param (e.g. from CourseDetailPage "Study" button)
   useEffect(() => {
@@ -346,6 +370,14 @@ export default function LearnFeedPage() {
     },
     onError: () => toast.error('Discovery failed'),
   })
+
+  const handleTrendClick = (topic: TrendTopic) => {
+    if (activeTrendId) return // debounce
+    setActiveTrendId(topic.id)
+    setTimeout(() => {
+      navigate('/assistant', { state: { prefill: `Help me understand ${topic.subtopic}` } })
+    }, 350)
+  }
 
   const DOMAINS = ['all', 'Data Engineering', 'DevOps', 'Cloud Computing', 'AI Engineering', 'Machine Learning', 'Data Science', 'Cybersecurity', 'Software Engineering']
   const TYPES = ['all', 'article', 'video', 'course', 'news']
@@ -421,7 +453,14 @@ export default function LearnFeedPage() {
               </div>
             ) : (
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                {topics.map((t) => <TrendChip key={t.id} topic={t} />)}
+                {topics.map((t) => (
+                  <TrendChip
+                    key={t.id}
+                    topic={t}
+                    isActive={activeTrendId === t.id}
+                    onClick={() => handleTrendClick(t)}
+                  />
+                ))}
               </div>
             )}
           </div>

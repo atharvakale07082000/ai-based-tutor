@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { assistantV2API } from '@/lib/api'
 import { useLearnerStore } from '@/stores/learnerStore'
@@ -86,12 +86,18 @@ function ActionCardView({ action, onNavigate }: { action: ActionCard; onNavigate
 
 export default function AtelierV2Page() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const prefill = (location.state as { prefill?: string } | null)?.prefill ?? ''
   const { name } = useLearnerStore()
   const [messages, setMessages] = useState<V2Message[]>([])
-  const [input, setInput] = useState('')
+  const [input, setInput] = useState(prefill)
   const [streaming, setStreaming] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    if (prefill) inputRef.current?.focus()
+  }, []) // intentionally only on mount
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })

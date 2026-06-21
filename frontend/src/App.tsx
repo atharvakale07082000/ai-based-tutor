@@ -30,7 +30,13 @@ const FlashcardsPage     = lazy(() => import('@/pages/FlashcardsPage'))
 const ProfilePage        = lazy(() => import('@/pages/ProfilePage'))
 
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { staleTime: 1000 * 60 * 2, retry: 2 } },
+  defaultOptions: {
+    queries: {
+      staleTime: 0,     // always re-fetch on mount — no stale data ever served
+      gcTime: 1000 * 60 * 2, // keep in memory 2 min while navigating between pages
+      retry: 2,
+    },
+  },
 })
 
 function PageLoader() {

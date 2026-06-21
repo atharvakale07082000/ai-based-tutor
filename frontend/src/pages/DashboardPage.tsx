@@ -49,6 +49,7 @@ export default function DashboardPage() {
   const navigate = useNavigate()
   const { name, xp, streak, topicProficiency } = useLearnerStore()
   const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false)
+  const [loadingModuleId, setLoadingModuleId] = useState<string | null>(null)
 
   const { data: contentData, isLoading: contentLoading } = useQuery({
     queryKey: ['content', 'feed', {}],
@@ -157,28 +158,38 @@ export default function DashboardPage() {
             </div>
           ) : (
             <Card padding="none">
-              {items.slice(0, 5).map((m: any, i: number) => (
-                <div
-                  key={m.id}
-                  style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 12, borderTop: i ? '1px solid var(--line-1)' : 'none', cursor: 'pointer' }}
-                  onClick={() => navigate(`/learn/${m.id}`)}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--paper-2)')}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                >
-                  <div style={{ width: 28, height: 28, borderRadius: 'var(--r-2)', background: 'var(--paper-3)', display: 'grid', placeItems: 'center' }}>
-                    <Icon name={m.content_type === 'video' ? 'play' : m.content_type === 'exercise' ? 'code' : 'book'} size={13} style={{ color: 'var(--ink-1)' }} />
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span className="t-md fg-0" style={{ fontWeight: 500 }}>{m.title}</span>
-                      {m.is_ai_recommended && <Badge tone="accent" size="xs">AI Pick</Badge>}
+              {items.slice(0, 5).map((m: any, i: number) => {
+                const isOpening = loadingModuleId === m.id
+                return (
+                  <div
+                    key={m.id}
+                    style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 12, borderTop: i ? '1px solid var(--line-1)' : 'none', cursor: 'pointer', transition: 'background 0.1s' }}
+                    onClick={() => {
+                      setLoadingModuleId(m.id)
+                      navigate(`/learn/${m.id}`)
+                    }}
+                    onMouseEnter={(e) => { if (!isOpening) e.currentTarget.style.background = 'var(--paper-2)' }}
+                    onMouseLeave={(e) => { if (!isOpening) e.currentTarget.style.background = 'transparent' }}
+                  >
+                    <div style={{ width: 28, height: 28, borderRadius: 'var(--r-2)', background: isOpening ? 'color-mix(in srgb, var(--accent) 12%, var(--paper-2))' : 'var(--paper-3)', display: 'grid', placeItems: 'center', transition: 'background 0.2s', flexShrink: 0 }}>
+                      {isOpening ? (
+                        <Icon name="refresh" size={13} style={{ color: 'var(--accent)', animation: 'spin 0.8s linear infinite' }} />
+                      ) : (
+                        <Icon name={m.content_type === 'video' ? 'play' : m.content_type === 'exercise' ? 'code' : 'book'} size={13} style={{ color: 'var(--ink-1)' }} />
+                      )}
                     </div>
-                    <div className="t-xs fg-3" style={{ marginTop: 2 }}>{m.topic} · {m.estimated_minutes}m</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span className="t-md fg-0" style={{ fontWeight: 500 }}>{m.title}</span>
+                        {m.is_ai_recommended && <Badge tone="accent" size="xs">AI Pick</Badge>}
+                      </div>
+                      <div className="t-xs fg-3" style={{ marginTop: 2 }}>{isOpening ? 'Loading your content…' : `${m.topic} · ${m.estimated_minutes}m`}</div>
+                    </div>
+                    <ValueBar value={Math.round((m.difficulty ?? 0.5) * 5)} segments={5} />
+                    <Icon name={isOpening ? 'chevR' : 'chevR'} size={14} style={{ color: isOpening ? 'var(--accent)' : 'var(--ink-3)' }} />
                   </div>
-                  <ValueBar value={Math.round((m.difficulty ?? 0.5) * 5)} segments={5} />
-                  <Icon name="chevR" size={14} style={{ color: 'var(--ink-3)' }} />
-                </div>
-              ))}
+                )
+              })}
               {items.length === 0 && (
                 <div className="t-sm fg-3" style={{ padding: '20px 14px', textAlign: 'center' }}>No content yet — building your learning path…</div>
               )}

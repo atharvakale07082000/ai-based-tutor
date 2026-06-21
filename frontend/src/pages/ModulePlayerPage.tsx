@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import ReactMarkdown from 'react-markdown'
@@ -25,8 +25,10 @@ export default function ModulePlayerPage() {
   const [showQuizPrompt, setShowQuizPrompt] = useState(false)
   const [doubtInput, setDoubtInput] = useState('')
   const [captionLoading, setCaptionLoading] = useState(false)
+  const [quizLoading, setQuizLoading] = useState(false)
   const dropRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
+  const wasGenerating = useRef(false)
 
   const { data: module, isLoading } = useQuery({
     queryKey: ['content', 'module', moduleId],
@@ -34,7 +36,22 @@ export default function ModulePlayerPage() {
     enabled: !!moduleId,
     staleTime: 0,
     refetchOnMount: true,
+    // Poll every 3 s while content is still generating; stop once it arrives
+    refetchInterval: (query) => {
+      const body = (query.state.data as { body?: string } | undefined)?.body
+      return !body || body.length < 400 ? 3000 : false
+    },
   })
+
+  // Notify the learner the moment content finishes generating
+  useEffect(() => {
+    if (!module) return
+    const isGenerating = !module.body || module.body.length < 400
+    if (wasGenerating.current && !isGenerating) {
+      toast.success('Your content is ready!', { icon: '✨', duration: 4000 })
+    }
+    wasGenerating.current = isGenerating
+  }, [module])
 
   const regenerateMutation = useMutation({
     mutationFn: () => contentAPI.regenerate(moduleId!),
@@ -60,11 +77,17 @@ export default function ModulePlayerPage() {
 
   const handleStartQuiz = async () => {
     if (!module) return
+    setQuizLoading(true)
+    const tid = toast.loading('Creating your quiz…')
     try {
       const { data } = await quizAPI.generate(module.topic)
+      toast.dismiss(tid)
       navigate(`/quiz/${data.quiz_id}`)
     } catch {
-      toast.error('Could not generate quiz')
+      toast.dismiss(tid)
+      toast.error('Could not generate quiz — try again')
+    } finally {
+      setQuizLoading(false)
     }
   }
 
@@ -124,7 +147,10 @@ export default function ModulePlayerPage() {
                 {[1, 2, 3].map((i) => <div key={i} className="skel" style={{ height: 14, borderRadius: 4 }} />)}
                 <div className="skel" style={{ height: 24, width: '38%', borderRadius: 4, marginTop: 12 }} />
                 {[1, 2, 3, 4].map((i) => <div key={i} className="skel" style={{ height: 14, borderRadius: 4 }} />)}
-                <div className="t-sm fg-3" style={{ marginTop: 8 }}>Generating content…</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 16, padding: '10px 14px', background: 'color-mix(in srgb, var(--accent) 8%, var(--paper-1))', border: '1px solid color-mix(in srgb, var(--accent) 20%, transparent)', borderRadius: 'var(--r-2)' }}>
+                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent)', animation: 'pulse 1.2s ease-in-out infinite', flexShrink: 0 }} />
+                  <span className="t-sm" style={{ color: 'var(--accent)' }}>Preparing your content — this takes about 10 seconds</span>
+                </div>
               </div>
             ) : (
               <div className="t-md fg-1" style={{ maxWidth: 680 }}>
@@ -259,7 +285,7 @@ export default function ModulePlayerPage() {
             <div className="t-sm fg-2">Ready to test your knowledge with a quiz?</div>
           </div>
           <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-            <Button size="sm" variant="primary" onClick={handleStartQuiz}>Take Quiz</Button>
+            <Button size="sm" variant="primary" onClick={handleStartQuiz} loading={quizLoading}>Take Quiz</Button>
             <Button size="sm" variant="ghost" onClick={() => setShowQuizPrompt(false)}>Later</Button>
           </div>
         </div>
