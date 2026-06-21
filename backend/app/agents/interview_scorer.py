@@ -96,11 +96,12 @@ Return ONLY a JSON array (one entry per question):
 ]
 Return ONLY the JSON array."""
 
-    text = _chat(prompt, 900, 0.1)
-    match = re.search(r"\[[\s\S]*\]", text)
     try:
+        text = _chat(prompt, 900, 0.1)
+        match = re.search(r"\[[\s\S]*\]", text)
         analyses = json.loads(match.group(0)) if match else []
-    except Exception:
+    except Exception as e:
+        log.error("scorer_analyze_failed", error=str(e)[:200])
         analyses = []
 
     log.info("scorer_analyzed", count=len(analyses))
@@ -150,12 +151,23 @@ Return ONLY a JSON array:
 ]
 Return ONLY the JSON array."""
 
-    text = _chat(prompt, 900, 0.1)
-    match = re.search(r"\[[\s\S]*\]", text)
     try:
+        text = _chat(prompt, 900, 0.1)
+        match = re.search(r"\[[\s\S]*\]", text)
         matrix = json.loads(match.group(0)) if match else []
-    except Exception:
-        matrix = []
+    except Exception as e:
+        log.error("scorer_matrix_failed", error=str(e)[:200])
+        # Degrade gracefully: assign mid-range score for each analysed entry
+        matrix = [
+            {
+                "question_id": a.get("question_id"),
+                "score": 5,
+                "justification": "Could not score — evaluation service temporarily unavailable.",
+                "concepts_covered": a.get("concepts_addressed", []),
+                "concepts_missed": a.get("key_gaps", []),
+            }
+            for a in state["analyses"]
+        ]
 
     log.info("scorer_matrix_built", entries=len(matrix))
     return {"scoring_matrix": matrix}
@@ -184,7 +196,11 @@ Write exactly 2 sentences: first sentence highlights what the candidate did well
 second sentence identifies the most important area to improve.
 Be specific and constructive. Return ONLY the 2 sentences."""
 
-    summary = _chat(prompt, 200, 0.3)
+    try:
+        summary = _chat(prompt, 200, 0.3)
+    except Exception as e:
+        log.error("scorer_summary_failed", error=str(e)[:200])
+        summary = f"Average score: {avg:.1f}/10. Keep practising the key concepts."
     final_score = round(avg, 1)
     passed = final_score >= 6.0
 
@@ -210,6 +226,9 @@ def _build_graph():
 _graph = _build_graph()
 
 
+_SCORING_TIMEOUT_S = 120  # hard cap so a hanging LLM call never blocks forever
+
+
 def run_scoring_agent(
     module_title: str,
     module_topics: list[str],
@@ -217,19 +236,34 @@ def run_scoring_agent(
     transcriptions: list[dict],
 ) -> dict:
     """Synchronous entry point — call via asyncio.to_thread in async contexts."""
-    result = _graph.invoke(
-        {
-            "module_title": module_title,
-            "module_topics": module_topics,
-            "questions": questions,
-            "transcriptions": transcriptions,
-            "analyses": [],
-            "scoring_matrix": [],
-            "final_score": 0.0,
-            "summary": "",
-            "passed": False,
-        }
-    )
+    import signal
+
+    def _timeout_handler(signum, frame):
+        raise TimeoutError(f"Scoring agent timed out after {_SCORING_TIMEOUT_S}s")
+
+    # Install alarm on Unix only; on Windows just run without timeout
+    if hasattr(signal, "SIGALRM"):
+        signal.signal(signal.SIGALRM, _timeout_handler)
+        signal.alarm(_SCORING_TIMEOUT_S)
+
+    try:
+        result = _graph.invoke(
+            {
+                "module_title": module_title,
+                "module_topics": module_topics,
+                "questions": questions,
+                "transcriptions": transcriptions,
+                "analyses": [],
+                "scoring_matrix": [],
+                "final_score": 0.0,
+                "summary": "",
+                "passed": False,
+            }
+        )
+    finally:
+        if hasattr(signal, "SIGALRM"):
+            signal.alarm(0)  # cancel any pending alarm
+
     return {
         "scoring_matrix": result["scoring_matrix"],
         "final_score": result["final_score"],

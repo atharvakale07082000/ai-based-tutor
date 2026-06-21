@@ -60,6 +60,14 @@ class Settings(BaseSettings):
             return json.loads(v)
         return [o.strip() for o in v.split(",") if o.strip()]
 
+    # Email (password reset, notifications)
+    SMTP_HOST: str = "smtp.gmail.com"
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = "Atelier AI Tutor <noreply@atelier.ai>"
+    APP_BASE_URL: str = "http://localhost:5173"
+
     # Langfuse — leave empty to disable tracing
     LANGFUSE_PUBLIC_KEY: str = ""
     LANGFUSE_SECRET_KEY: str = ""

@@ -44,6 +44,24 @@ async def generate_quiz(
     elo = proficiency.get(body.topic, 500.0)
     bloom_level = body.bloom_level or bloom_for_elo(elo)
 
+    # Ease difficulty if the learner has been consistently discouraged recently
+    if not body.bloom_level:
+        recent = (
+            await col_quizzes()
+            .find({"learner_id": learner["id"]}, {"sentiment_mood": 1})
+            .sort("started_at", -1)
+            .to_list(length=3)
+        )
+        negative_count = sum(1 for q in recent if q.get("sentiment_mood") == "negative")
+        if negative_count >= 2:
+            _bloom_order = ["remember", "understand", "apply", "analyze", "evaluate", "create"]
+            idx = _bloom_order.index(bloom_level) if bloom_level in _bloom_order else 2
+            if idx > 0:
+                bloom_level = _bloom_order[idx - 1]
+                log.info(
+                    "quiz_bloom_eased", learner_id=learner["id"], negative_moods=negative_count, bloom_level=bloom_level
+                )
+
     questions = await get_or_generate_quiz_questions(body.topic, bloom_level, count=5)
 
     quiz_id = str(uuid.uuid4())
@@ -102,11 +120,25 @@ async def submit_quiz(
 
     questions = quiz.get("questions") or []
     answers = body.answers or []
+
+    # Reject answer sets that don't match the question count
+    if len(answers) != len(questions):
+        raise HTTPException(
+            400,
+            f"Expected {len(questions)} answers, got {len(answers)}",
+        )
+
+    # Reject out-of-range option indices
+    for i, (ans, q) in enumerate(zip(answers, questions)):
+        n_opts = len(q.get("options", []))
+        if n_opts and not (0 <= ans < n_opts):
+            raise HTTPException(400, f"Answer for question {i + 1} is out of range (0–{n_opts - 1})")
+
     correct_count = 0
     weak_topics: list[str] = []
 
     for i, q in enumerate(questions):
-        user_answer = answers[i] if i < len(answers) else -1
+        user_answer = answers[i]
         if user_answer == q.get("correct_index", 0):
             correct_count += 1
         else:

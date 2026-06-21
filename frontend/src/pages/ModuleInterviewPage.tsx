@@ -366,6 +366,20 @@ export default function ModuleInterviewPage() {
     return () => { clearTimeout(t); window.speechSynthesis?.cancel(); setIsSpeaking(false) }
   }, [currentQIdx, phase, isCoding])
 
+  // Cleanup media resources when the component unmounts mid-interview
+  useEffect(() => {
+    return () => {
+      window.speechSynthesis?.cancel()
+      if (mediaRef.current && mediaRef.current.state !== 'inactive') {
+        try { mediaRef.current.stop() } catch { /* ignore */ }
+      }
+      if (recognitionRef.current) {
+        try { recognitionRef.current.stop() } catch { /* ignore */ }
+        recognitionRef.current = null
+      }
+    }
+  }, [])
+
   const updateTranscript = useCallback((upd: string | ((p: string) => string)) => {
     setTranscript((prev) => {
       const next = typeof upd === 'function' ? upd(prev) : upd

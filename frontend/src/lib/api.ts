@@ -163,6 +163,10 @@ export const authAPI = {
     api.post<LoginResponse>('/auth/login', { email, password }),
   refresh: () => api.post<{ access_token: string }>('/auth/refresh'),
   logout: () => api.post('/auth/logout'),
+  resetRequest: (email: string) =>
+    api.post<{ message: string }>('/auth/reset-request', { email }),
+  resetConfirm: (token: string, new_password: string) =>
+    api.post<{ message: string }>('/auth/reset-confirm', { token, new_password }),
 }
 
 // ─── Learner ─────────────────────────────────────────────────────────────────

@@ -25,3 +25,12 @@ class LoginResponse(BaseModel):
 class RefreshResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+class ResetRequestBody(BaseModel):
+    email: EmailStr
+
+
+class ResetConfirmBody(BaseModel):
+    token: str = Field(min_length=32, max_length=128)
+    new_password: str = Field(min_length=6, max_length=128)

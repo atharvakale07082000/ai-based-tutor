@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/Button'
 import { AgentPill } from '@/components/ui/AgentPill'
 import { Icon } from '@/components/ui/Icon'
 
-type AuthMode = 'signin' | 'signup'
+type AuthMode = 'signin' | 'signup' | 'forgot'
 
 function AuthOverlay({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate()
@@ -21,6 +21,23 @@ function AuthOverlay({ onClose }: { onClose: () => void }) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    // Forgot password flow
+    if (mode === 'forgot') {
+      if (!email.trim()) { toast.error('Email is required.'); return }
+      setLoading(true)
+      try {
+        await authAPI.resetRequest(email.trim().toLowerCase())
+        toast.success('Reset link sent — check your inbox.')
+        setMode('signin')
+      } catch {
+        toast.error('Could not send reset link. Try again.')
+      } finally {
+        setLoading(false)
+      }
+      return
+    }
+
     if (!email.trim()) { toast.error('Email is required.'); return }
     if (password.length < 6) { toast.error('Password must be at least 6 characters.'); return }
     if (password.length > 128) { toast.error('Password must be under 128 characters.'); return }
@@ -77,25 +94,34 @@ function AuthOverlay({ onClose }: { onClose: () => void }) {
       >
         {/* Tabs */}
         <div style={{ display: 'flex', borderBottom: '1px solid var(--line-1)' }}>
-          {(['signin', 'signup'] as AuthMode[]).map((m) => (
+          {mode === 'forgot' ? (
             <button
-              key={m}
-              onClick={() => setMode(m)}
-              style={{
-                flex: 1, padding: '14px 0', fontSize: 13, fontWeight: mode === m ? 600 : 400,
-                fontFamily: 'inherit', border: 0, cursor: 'pointer',
-                background: mode === m ? 'var(--paper-1)' : 'var(--paper-0)',
-                color: mode === m ? 'var(--ink-0)' : 'var(--ink-2)',
-                borderBottom: mode === m ? '2px solid var(--ink-0)' : '2px solid transparent',
-                transition: 'all var(--dur-fast)',
-              }}
+              onClick={() => setMode('signin')}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '14px 16px', background: 'none', border: 0, cursor: 'pointer', color: 'var(--ink-2)', fontSize: 13, fontFamily: 'inherit' }}
             >
-              {m === 'signin' ? 'Sign in' : 'Create account'}
+              <Icon name="arrow-left" size={12} /> Back to sign in
             </button>
-          ))}
+          ) : (
+            (['signin', 'signup'] as AuthMode[]).map((m) => (
+              <button
+                key={m}
+                onClick={() => setMode(m)}
+                style={{
+                  flex: 1, padding: '14px 0', fontSize: 13, fontWeight: mode === m ? 600 : 400,
+                  fontFamily: 'inherit', border: 0, cursor: 'pointer',
+                  background: mode === m ? 'var(--paper-1)' : 'var(--paper-0)',
+                  color: mode === m ? 'var(--ink-0)' : 'var(--ink-2)',
+                  borderBottom: mode === m ? '2px solid var(--ink-0)' : '2px solid transparent',
+                  transition: 'all var(--dur-fast)',
+                }}
+              >
+                {m === 'signin' ? 'Sign in' : 'Create account'}
+              </button>
+            ))
+          )}
           <button
             onClick={onClose}
-            style={{ padding: '14px 16px', background: 'none', border: 0, cursor: 'pointer', color: 'var(--ink-3)' }}
+            style={{ padding: '14px 16px', background: 'none', border: 0, cursor: 'pointer', color: 'var(--ink-3)', marginLeft: 'auto' }}
           >
             <Icon name="close" size={14} />
           </button>
@@ -105,12 +131,14 @@ function AuthOverlay({ onClose }: { onClose: () => void }) {
         <form onSubmit={handleSubmit} style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div>
             <h2 className="serif" style={{ fontSize: 22, fontWeight: 400, margin: '0 0 4px', color: 'var(--ink-0)' }}>
-              {mode === 'signin' ? 'Welcome back.' : 'Join Atelier.'}
+              {mode === 'signin' ? 'Welcome back.' : mode === 'signup' ? 'Join Atelier.' : 'Reset password.'}
             </h2>
             <p className="t-sm fg-2">
               {mode === 'signin'
                 ? 'Enter your credentials to continue learning.'
-                : 'Free to start. No card required.'}
+                : mode === 'signup'
+                  ? 'Free to start. No card required.'
+                  : "Enter your email and we'll send a reset link."}
             </p>
           </div>
 
@@ -146,42 +174,54 @@ function AuthOverlay({ onClose }: { onClose: () => void }) {
             />
           </div>
 
-          <div>
-            <label className="caps" style={{ color: 'var(--ink-2)', fontSize: 10 }}>Password</label>
-            <div style={{ position: 'relative', marginTop: 5 }}>
-              <input
-                type={showPass ? 'text' : 'password'}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Min 6 characters"
-                required
-                minLength={6}
-                maxLength={128}
-                autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
-                style={{ ...inputStyle, paddingRight: 38, marginTop: 0 }}
-                onFocus={(e) => (e.target.style.borderColor = 'var(--ink-1)')}
-                onBlur={(e)  => (e.target.style.borderColor = 'var(--line-2)')}
-              />
-              <button
-                type="button"
-                tabIndex={-1}
-                onClick={() => setShowPass((v) => !v)}
-                style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 0, cursor: 'pointer', padding: 2, color: 'var(--ink-3)' }}
-              >
-                <Icon name={showPass ? 'eye-off' : 'eye'} size={14} />
-              </button>
+          {mode !== 'forgot' && (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                <label className="caps" style={{ color: 'var(--ink-2)', fontSize: 10 }}>Password</label>
+                {mode === 'signin' && (
+                  <button type="button" onClick={() => setMode('forgot')} style={{ fontSize: 11, color: 'var(--ink-3)', background: 'none', border: 0, cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}>
+                    Forgot password?
+                  </button>
+                )}
+              </div>
+              <div style={{ position: 'relative', marginTop: 5 }}>
+                <input
+                  type={showPass ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Min 6 characters"
+                  required
+                  minLength={6}
+                  maxLength={128}
+                  autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
+                  style={{ ...inputStyle, paddingRight: 38, marginTop: 0 }}
+                  onFocus={(e) => (e.target.style.borderColor = 'var(--ink-1)')}
+                  onBlur={(e)  => (e.target.style.borderColor = 'var(--line-2)')}
+                />
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onClick={() => setShowPass((v) => !v)}
+                  style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 0, cursor: 'pointer', padding: 2, color: 'var(--ink-3)' }}
+                >
+                  <Icon name={showPass ? 'eye-off' : 'eye'} size={14} />
+                </button>
+              </div>
             </div>
-          </div>
+          )}
 
           <Button type="submit" variant="primary" loading={loading} style={{ width: '100%', marginTop: 4 }}>
-            {loading ? (mode === 'signin' ? 'Signing in…' : 'Creating account…') : (mode === 'signin' ? 'Sign in' : 'Create account & continue')}
+            {loading
+              ? (mode === 'forgot' ? 'Sending…' : mode === 'signin' ? 'Signing in…' : 'Creating account…')
+              : (mode === 'forgot' ? 'Send reset link' : mode === 'signin' ? 'Sign in' : 'Create account & continue')}
           </Button>
 
           <p className="t-xs fg-3" style={{ textAlign: 'center', marginTop: 4 }}>
             {mode === 'signin'
               ? <>No account? <button type="button" onClick={() => setMode('signup')} style={{ color: 'var(--accent)', background: 'none', border: 0, cursor: 'pointer', fontFamily: 'inherit', fontSize: 'inherit', padding: 0 }}>Create one free →</button></>
-              : <>Already have one? <button type="button" onClick={() => setMode('signin')} style={{ color: 'var(--accent)', background: 'none', border: 0, cursor: 'pointer', fontFamily: 'inherit', fontSize: 'inherit', padding: 0 }}>Sign in →</button></>
-            }
+              : mode === 'signup'
+                ? <>Already have one? <button type="button" onClick={() => setMode('signin')} style={{ color: 'var(--accent)', background: 'none', border: 0, cursor: 'pointer', fontFamily: 'inherit', fontSize: 'inherit', padding: 0 }}>Sign in →</button></>
+                : null}
           </p>
         </form>
       </div>

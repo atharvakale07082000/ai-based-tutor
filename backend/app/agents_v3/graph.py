@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import time
 
 import structlog
 from langchain_core.messages import HumanMessage
@@ -158,6 +159,10 @@ def _make_subagent_node(subagent_cls):
 
     async def node(state: DeepAgentState) -> dict:
         """Run the domain subagent with 3-tier resilience: domain → assistant fallback → failsafe."""
+        agent_name = getattr(subagent_cls, "name", "?")
+        t0 = time.perf_counter()
+        log.info("v3.node_enter", agent=agent_name, query_preview=state["query"][:60])
+
         chain = MiddlewareChain([CoTMiddleware(), GuardrailMiddleware(), ObservabilityMiddleware()])
 
         # Tier 1: domain agent
@@ -165,10 +170,11 @@ def _make_subagent_node(subagent_cls):
             agent = subagent_cls(chain)
             report: AgentReport = await agent.run(state["query"], state["context"])
             if report.result and len(report.result.strip()) > 10 and "unavailable" not in report.result.lower():
+                log.info("v3.node_exit", agent=agent_name, tier=1, latency_ms=round((time.perf_counter() - t0) * 1000))
                 return {"agent_reports": [report]}
-            log.warning("v3.subagent_empty_result", agent=subagent_cls.name)
+            log.warning("v3.subagent_empty_result", agent=agent_name)
         except Exception as e:
-            log.error("v3.subagent_failed", agent=getattr(subagent_cls, "name", "?"), error=str(e)[:200])
+            log.error("v3.subagent_failed", agent=agent_name, error=str(e)[:200])
 
         # Tier 2: assistant fallback
         try:
@@ -176,14 +182,15 @@ def _make_subagent_node(subagent_cls):
             fallback = AssistantSubAgent(fallback_chain)
             fb_report: AgentReport = await fallback.run(state["query"], state["context"])
             if fb_report.result and len(fb_report.result.strip()) > 10:
-                log.info("v3.subagent_fallback_used", primary=getattr(subagent_cls, "name", "?"))
+                log.info("v3.node_exit", agent=agent_name, tier=2, latency_ms=round((time.perf_counter() - t0) * 1000))
+                log.info("v3.subagent_fallback_used", primary=agent_name)
                 return {"agent_reports": [fb_report]}
         except Exception as e:
             log.error("v3.fallback_agent_failed", error=str(e)[:200])
 
         # Tier 3: warm failsafe message (never a cold "error")
-
-        display = AGENT_DISPLAY_NAMES.get(getattr(subagent_cls, "name", "assistant"), "AI Tutor")
+        log.warning("v3.node_failsafe", agent=agent_name, latency_ms=round((time.perf_counter() - t0) * 1000))
+        display = AGENT_DISPLAY_NAMES.get(agent_name, "AI Tutor")
         failsafe = AgentReport(
             agent_name=getattr(subagent_cls, "name", "assistant"),
             display_name=display,

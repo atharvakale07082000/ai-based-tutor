@@ -29,6 +29,7 @@ const AssistantPage      = lazy(() => import('@/pages/AssistantPage'))
 const AtelierV2Page      = lazy(() => import('@/pages/AtelierV2Page'))
 const FlashcardsPage     = lazy(() => import('@/pages/FlashcardsPage'))
 const ProfilePage        = lazy(() => import('@/pages/ProfilePage'))
+const ResetPasswordPage  = lazy(() => import('@/pages/ResetPasswordPage'))
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -102,7 +103,7 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
 }
 
 // Pages that skip the shell entirely
-const PUBLIC_ROUTES = ['/', '/onboarding', '/login']
+const PUBLIC_ROUTES = ['/', '/onboarding', '/login', '/reset-password']
 
 function AppShell({ children }: { children: React.ReactNode }) {
   const location = useLocation()
@@ -170,6 +171,7 @@ export default function App() {
               <Route path="/assistant-v2" element={<PrivateRoute><PageWrapper><AtelierV2Page /></PageWrapper></PrivateRoute>} />
               <Route path="/flashcards" element={<PrivateRoute><PageWrapper><FlashcardsPage /></PageWrapper></PrivateRoute>} />
               <Route path="/profile" element={<PrivateRoute><PageWrapper><ProfilePage /></PageWrapper></PrivateRoute>} />
+              <Route path="/reset-password" element={<ResetPasswordPage />} />
               <Route path="/login" element={<Navigate to="/" replace />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

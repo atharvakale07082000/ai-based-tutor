@@ -63,7 +63,7 @@ export default function CoursePlannerPage() {
   const [isPlanning, setIsPlanning] = useState(false)
   const [planStep, setPlanStep] = useState(0)
 
-  const { data: plans, refetch } = useQuery({
+  const { data: plans, refetch, isError: plansError } = useQuery({
     queryKey: ['courses'],
     queryFn: () => coursesAPI.list().then((r) => r.data),
     staleTime: 1000 * 60 * 2,   // course plans: 2 min
@@ -156,7 +156,14 @@ export default function CoursePlannerPage() {
       </Card>
 
       {/* Existing plans */}
-      {plans && plans.length > 0 && (
+      {plansError && (
+        <div style={{ textAlign: 'center', padding: '32px 0' }}>
+          <p className="t-sm fg-2" style={{ marginBottom: 8 }}>Could not load your plans.</p>
+          <button onClick={() => refetch()} style={{ fontSize: 13, color: 'var(--accent)', background: 'none', border: 0, cursor: 'pointer', fontFamily: 'inherit' }}>Retry →</button>
+        </div>
+      )}
+
+      {!plansError && plans && plans.length > 0 && (
         <>
           <div className="caps fg-2" style={{ marginBottom: 10 }}>Your learning plans · {plans.length}</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>

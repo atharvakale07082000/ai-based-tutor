@@ -60,7 +60,7 @@ export default function ProgressPage() {
   const navigate = useNavigate()
   const { xp: storedXp, streak: storedStreak, topicProficiency: storedProficiency } = useLearnerStore()
 
-  const { data: progress, isLoading: loadingProgress } = useQuery({
+  const { data: progress, isLoading: loadingProgress, isError: progressError, refetch: refetchProgress } = useQuery({
     queryKey: ['progress'],
     queryFn: () => progressAPI.get().then((r) => r.data),
     staleTime: 60_000,
@@ -101,6 +101,15 @@ export default function ProgressPage() {
   const recentMoods = moodTimeline.slice(-5).reverse()
 
   const statsLoading = loadingProgress
+
+  if (progressError) {
+    return (
+      <div style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, marginTop: 80 }}>
+        <p className="t-sm fg-2">Could not load your progress data.</p>
+        <button onClick={() => refetchProgress()} style={{ fontSize: 13, color: 'var(--accent)', background: 'none', border: 0, cursor: 'pointer', fontFamily: 'inherit' }}>Retry →</button>
+      </div>
+    )
+  }
 
   return (
     <div style={{ padding: '24px 28px', maxWidth: 1240, margin: '0 auto' }}>

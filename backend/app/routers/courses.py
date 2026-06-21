@@ -4,8 +4,11 @@ import asyncio
 import subprocess
 import sys
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+import structlog
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, Field
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from app.agents.course_planner import (
     complete_interview,
@@ -19,36 +22,42 @@ from app.agents.course_planner import (
 from app.auth.jwt import get_current_user_id
 
 router = APIRouter()
+limiter = Limiter(key_func=get_remote_address)
+log = structlog.get_logger()
 
 _MAX_OUTPUT = 4000  # chars
 _CODE_TIMEOUT = 10  # seconds
+_MEM_LIMIT_BYTES = 128 * 1024 * 1024  # 128 MB virtual memory per subprocess
+_CPU_LIMIT_S = 8  # seconds CPU time (< _CODE_TIMEOUT so it fires first)
 
 
 # ─── Schemas ──────────────────────────────────────────────────────────────────
 
 
 class PlanRequest(BaseModel):
-    goal: str
+    goal: str = Field(min_length=2, max_length=500)
 
 
 class AnswerRequest(BaseModel):
-    question_id: int
-    answer_text: str
+    question_id: int = Field(ge=1, le=100)
+    answer_text: str = Field(min_length=1, max_length=5_000)
 
 
 class RunCodeRequest(BaseModel):
-    code: str
-    language: str = "python"
+    code: str = Field(max_length=10_000)
+    language: str = Field(default="python", max_length=20)
 
 
 # ─── Course plan endpoints ────────────────────────────────────────────────────
 
 
 @router.post("/plan")
-async def plan_course(body: PlanRequest, user_id: str = Depends(get_current_user_id)):
+@limiter.limit("3/hour")
+async def plan_course(request: Request, body: PlanRequest, user_id: str = Depends(get_current_user_id)):
     """Generate an AI course plan from a learning goal and persist it."""
     if not body.goal.strip():
         raise HTTPException(400, "Goal cannot be empty")
+    log.info("course_plan_generate", user_id=user_id, goal=body.goal[:80])
     try:
         plan = await create_course_plan(body.goal.strip(), user_id)
         return plan
@@ -138,6 +147,16 @@ async def run_code(
     if not code:
         return {"stdout": "", "stderr": "", "exit_code": 0}
 
+    def _preexec_limits() -> None:
+        """Apply OS-level resource limits inside the child process (Unix only)."""
+        try:
+            import resource
+
+            resource.setrlimit(resource.RLIMIT_AS, (_MEM_LIMIT_BYTES, _MEM_LIMIT_BYTES))
+            resource.setrlimit(resource.RLIMIT_CPU, (_CPU_LIMIT_S, _CPU_LIMIT_S))
+        except Exception:
+            pass  # Windows or no resource module — skip silently
+
     def _run() -> dict:
         try:
             proc = subprocess.run(
@@ -145,8 +164,7 @@ async def run_code(
                 capture_output=True,
                 text=True,
                 timeout=_CODE_TIMEOUT,
-                # Restrict environment — no network, limited memory via ulimit is OS-specific;
-                # for an educational single-tenant deployment this subprocess approach is sufficient.
+                preexec_fn=_preexec_limits if sys.platform != "win32" else None,
             )
             return {
                 "stdout": proc.stdout[:_MAX_OUTPUT],

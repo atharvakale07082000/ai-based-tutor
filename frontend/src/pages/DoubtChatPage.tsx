@@ -39,7 +39,7 @@ export default function DoubtChatPage() {
   const bottomRef = useRef<HTMLDivElement>(null)
   const addDoubtSession = useLearnerStore((s) => s.addDoubtSession)
 
-  const { data: sessions } = useQuery({
+  const { data: sessions, isError: sessionsError, refetch: refetchSessions } = useQuery({
     queryKey: ['doubts', 'sessions'],
     queryFn: () => doubtsAPI.getSessions().then((r) => r.data),
     staleTime: 1000 * 30,       // session list: 30 s
@@ -169,6 +169,12 @@ export default function DoubtChatPage() {
               <span className="caps fg-2">Session history</span>
             </div>
             <div style={{ flex: 1, overflowY: 'auto', padding: 8 }}>
+              {sessionsError && (
+                <div style={{ padding: '12px', textAlign: 'center' }}>
+                  <p className="t-xs fg-3" style={{ marginBottom: 6 }}>Could not load history.</p>
+                  <button onClick={() => refetchSessions()} style={{ fontSize: 12, color: 'var(--accent)', background: 'none', border: 0, cursor: 'pointer', fontFamily: 'inherit' }}>Retry</button>
+                </div>
+              )}
               {(sessions ?? []).map((s) => (
                 <div key={s.id} className="row-i" style={{ padding: '8px 10px 8px 14px', borderRadius: 'var(--r-2)', cursor: 'pointer', marginBottom: 4 }}
                   onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--paper-2)')}

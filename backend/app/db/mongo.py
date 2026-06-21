@@ -117,6 +117,10 @@ def col_activity_logs() -> AsyncCollection:
     return get_db()["activity_logs"]
 
 
+def col_reset_tokens() -> AsyncCollection:
+    return get_db()["password_reset_tokens"]
+
+
 # ─── Startup ──────────────────────────────────────────────────────────────────
 
 
@@ -144,3 +148,6 @@ async def ensure_indexes() -> None:
     await col_activity_logs().create_index([("timestamp", DESCENDING)])
     await col_activity_logs().create_index([("user_id", ASCENDING), ("timestamp", DESCENDING)])
     await col_activity_logs().create_index("timestamp", expireAfterSeconds=90 * 24 * 3600)
+    # Reset tokens expire automatically after 1 hour via MongoDB TTL index
+    await col_reset_tokens().create_index("created_at", expireAfterSeconds=3600)
+    await col_reset_tokens().create_index("token", unique=True)

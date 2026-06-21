@@ -7,8 +7,13 @@ Endpoints:
   POST /auth/logout  — client-side logout (stateless; tokens expire naturally)
 """
 
+import asyncio
+import secrets
+import smtplib
 import uuid
 from datetime import datetime, timezone
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -17,8 +22,16 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from app.auth.jwt import create_access_token, create_refresh_token, get_current_user_id, hash_password, verify_password
-from app.db.mongo import col_learners, col_users
-from app.schemas.auth import LoginRequest, LoginResponse, RefreshResponse, UserSchema
+from app.config import settings
+from app.db.mongo import col_learners, col_reset_tokens, col_users
+from app.schemas.auth import (
+    LoginRequest,
+    LoginResponse,
+    RefreshResponse,
+    ResetConfirmBody,
+    ResetRequestBody,
+    UserSchema,
+)
 
 router = APIRouter()
 log = structlog.get_logger()
@@ -107,3 +120,83 @@ async def refresh(user_id: str = Depends(get_current_user_id)):
 async def logout():
     """Stateless logout — clients must discard their tokens; server cannot invalidate JWTs."""
     return {"message": "Logged out"}
+
+
+# ─── Password reset ───────────────────────────────────────────────────────────
+
+
+def _send_reset_email(to_email: str, token: str) -> None:
+    """Send a password-reset email via SMTP (runs in a thread)."""
+    reset_url = f"{settings.APP_BASE_URL}/reset-password?token={token}"
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = "Reset your Atelier password"
+    msg["From"] = settings.SMTP_FROM
+    msg["To"] = to_email
+
+    plain = f"Click this link to reset your password (expires in 1 hour):\n\n{reset_url}\n\nIf you did not request this, ignore this email."
+    html = f"""
+<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px 24px">
+  <h2 style="font-size:22px;font-weight:400;margin-bottom:8px">Reset your password</h2>
+  <p style="color:#555;margin-bottom:24px">Click the button below. This link expires in 1 hour.</p>
+  <a href="{reset_url}" style="display:inline-block;padding:12px 24px;background:#111;color:#fff;text-decoration:none;border-radius:8px;font-size:14px">Reset password</a>
+  <p style="margin-top:24px;color:#888;font-size:12px">If you didn't request this, you can safely ignore this email.</p>
+</div>"""
+
+    msg.attach(MIMEText(plain, "plain"))
+    msg.attach(MIMEText(html, "html"))
+
+    with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
+        server.starttls()
+        server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+        server.sendmail(settings.SMTP_FROM, to_email, msg.as_string())
+
+
+@router.post("/reset-request")
+@limiter.limit("5/hour")
+async def request_password_reset(request: Request, body: ResetRequestBody):
+    """Send a one-time password-reset link to the given email address."""
+    user = await col_users().find_one({"email": body.email}, {"_id": 0})
+    # Always return 200 to avoid leaking which emails are registered
+    if not user:
+        return {"message": "If that email is registered you will receive a reset link."}
+
+    token = secrets.token_urlsafe(48)
+    await col_reset_tokens().insert_one(
+        {
+            "token": token,
+            "user_id": user["id"],
+            "email": body.email,
+            "created_at": datetime.now(timezone.utc),
+        }
+    )
+
+    if settings.SMTP_USER and settings.SMTP_PASSWORD:
+        try:
+            await asyncio.to_thread(_send_reset_email, body.email, token)
+            log.info("reset_email_sent", email=body.email)
+        except Exception as e:
+            log.error("reset_email_failed", error=str(e)[:200])
+    else:
+        log.warning("reset_email_skipped", reason="SMTP not configured", token_preview=token[:8])
+
+    return {"message": "If that email is registered you will receive a reset link."}
+
+
+@router.post("/reset-confirm")
+async def confirm_password_reset(body: ResetConfirmBody):
+    """Validate a reset token and update the user's password."""
+    record = await col_reset_tokens().find_one({"token": body.token}, {"_id": 0})
+    if not record:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid or expired reset token.")
+
+    new_hash = hash_password(body.new_password)
+    await col_users().update_one(
+        {"id": record["user_id"]},
+        {"$set": {"hashed_password": new_hash}},
+    )
+    # Consume the token immediately so it can't be reused
+    await col_reset_tokens().delete_one({"token": body.token})
+
+    log.info("password_reset_complete", user_id=record["user_id"])
+    return {"message": "Password updated. You can now sign in with your new password."}

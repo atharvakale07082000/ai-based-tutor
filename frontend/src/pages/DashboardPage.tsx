@@ -51,7 +51,7 @@ export default function DashboardPage() {
   const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false)
   const [loadingModuleId, setLoadingModuleId] = useState<string | null>(null)
 
-  const { data: contentData, isLoading: contentLoading } = useQuery({
+  const { data: contentData, isLoading: contentLoading, isError: contentError, refetch: refetchContent } = useQuery({
     queryKey: ['content', 'feed', {}],
     queryFn: () => contentAPI.list({ limit: 6 }).then((r) => r.data),
     staleTime: 1000 * 60 * 2,   // content list: 2 min
@@ -160,6 +160,11 @@ export default function DashboardPage() {
           {contentLoading ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
               {[0, 1, 2].map((i) => <div key={i} className="skel" style={{ height: 48, borderRadius: 'var(--r-2)', marginBottom: 1 }} />)}
+            </div>
+          ) : contentError ? (
+            <div style={{ padding: '16px', textAlign: 'center' }}>
+              <p className="t-sm fg-2" style={{ marginBottom: 8 }}>Could not load lessons.</p>
+              <button onClick={() => refetchContent()} style={{ fontSize: 13, color: 'var(--accent)', background: 'none', border: 0, cursor: 'pointer', fontFamily: 'inherit' }}>Retry →</button>
             </div>
           ) : (
             <Card padding="none">
