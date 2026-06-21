@@ -17,18 +17,18 @@ const TYPE_ICON: Record<string, string> = {
 }
 
 const DOMAIN_COLOR: Record<string, string> = {
-  'Data Engineering': 'var(--amber)',
-  'DevOps': 'var(--blue)',
-  'Cloud Computing': 'var(--teal)',
-  'AI Engineering': 'var(--purple)',
-  'Machine Learning': 'var(--violet)',
-  'Deep Learning': 'var(--violet)',
-  'Data Science': 'var(--green)',
-  'Cybersecurity': 'var(--red)',
-  'Software Engineering': 'var(--ink-1)',
-  'Natural Language Processing': 'var(--purple)',
-  'Statistics': 'var(--green)',
-  'Mathematics': 'var(--ink-1)',
+  'Data Engineering':          'var(--warn)',
+  'DevOps':                    'var(--info)',
+  'Cloud Computing':           'var(--info)',
+  'AI Engineering':            'var(--agent-curr)',
+  'Machine Learning':          'var(--agent-curr)',
+  'Deep Learning':             'var(--agent-curr)',
+  'Data Science':              'var(--pos)',
+  'Cybersecurity':             'var(--neg)',
+  'Software Engineering':      'var(--ink-1)',
+  'Natural Language Processing': 'var(--agent-curr)',
+  'Statistics':                'var(--pos)',
+  'Mathematics':               'var(--ink-1)',
 }
 
 function domainColor(domain: string) {

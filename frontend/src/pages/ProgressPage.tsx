@@ -11,7 +11,6 @@ import { Icon } from '@/components/ui/Icon'
 import { Skeleton } from '@/components/ui/Skeleton'
 
 const MASTERY_THRESHOLD = 700
-const MOOD_EMOJI: Record<string, string> = { POSITIVE: '😊', NEGATIVE: '😟', NEUTRAL: '😐' }
 const MOOD_TONE: Record<string, 'pos' | 'neg' | 'neutral'> = { POSITIVE: 'pos', NEGATIVE: 'neg', NEUTRAL: 'neutral' }
 
 function eloToPercent(elo: number) {
@@ -147,7 +146,7 @@ export default function ProgressPage() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', border: '1px solid var(--line-1)', borderRadius: 'var(--r-3)', overflow: 'hidden', background: 'var(--paper-1)', marginBottom: 16 }}>
         {[
           { l: 'XP earned',    v: statsLoading ? null : xp.toLocaleString(),                      s: 'lifetime' },
-          { l: 'Sub-skills',   v: statsLoading ? null : String(skills.length),                    s: `${masteredCount} mastered` },
+          { l: 'Skills',       v: statsLoading ? null : String(skills.length),                    s: `${masteredCount} mastered` },
           { l: 'Quiz accuracy',v: statsLoading ? null : `${Math.round(quizAccuracy * 100)}%`,     s: 'avg score' },
           { l: 'Doubts',       v: statsLoading ? null : String(doubtsResolved),                   s: 'resolved' },
           { l: 'Time',         v: statsLoading ? null : totalMinutes >= 60 ? `${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m` : `${totalMinutes}m`, s: 'total studied' },
@@ -169,7 +168,7 @@ export default function ProgressPage() {
         <Card padding="md">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
             <span className="caps fg-2">
-              Skill mastery · {loadingProgress ? '…' : `${skills.length} sub-skills`}
+              Skill mastery · {loadingProgress ? '…' : `${skills.length} skills`}
             </span>
             {!loadingProgress && skills.length === 0 && (
               <span className="t-xs fg-3">Complete a quiz to see Elo data</span>
@@ -306,8 +305,7 @@ export default function ProgressPage() {
                   alignItems: 'center',
                 }}
               >
-                <span style={{ fontSize: 13 }}>{MOOD_EMOJI[m.mood?.toUpperCase()] ?? '💬'}</span>
-                <Badge size="xs" tone={MOOD_TONE[m.mood?.toUpperCase()] ?? 'neutral'}>
+                <Badge size="xs" tone={MOOD_TONE[m.mood?.toUpperCase()] ?? 'neutral'} dot>
                   {m.mood?.toLowerCase() ?? 'unknown'}
                 </Badge>
                 <span className="t-xs fg-3" style={{ flex: 1, textAlign: 'right' }}>

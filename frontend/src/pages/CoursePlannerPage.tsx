@@ -6,6 +6,8 @@ import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Icon } from '@/components/ui/Icon'
+import { Input } from '@/components/ui/Input'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { coursesAPI, type CoursePlan } from '@/lib/api'
 
 const SUGGESTIONS = [
@@ -101,17 +103,14 @@ export default function CoursePlannerPage() {
       <Card padding="md" style={{ marginBottom: 20 }}>
         <div className="caps fg-2" style={{ marginBottom: 10 }}>What do you want to learn?</div>
         <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-          <input
+          <Input
             value={goal}
             onChange={(e) => setGoal(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && !isPlanning && handlePlan()}
+            onKeyDown={(e: React.KeyboardEvent) => e.key === 'Enter' && !isPlanning && handlePlan()}
             placeholder="e.g. Machine learning from zero to production…"
             disabled={isPlanning}
-            style={{
-              flex: 1, background: 'var(--paper-2)', border: '1px solid var(--line-2)',
-              borderRadius: 'var(--r-2)', padding: '8px 12px', fontSize: 14,
-              color: 'var(--ink-0)', fontFamily: 'inherit', outline: 'none',
-            }}
+            inputSize="lg"
+            style={{ flex: 1 }}
           />
           <Button variant="primary" icon="sparkle" onClick={handlePlan} loading={isPlanning}>Build Plan</Button>
         </div>
@@ -173,10 +172,13 @@ export default function CoursePlannerPage() {
       )}
 
       {plans?.length === 0 && !isPlanning && (
-        <div style={{ textAlign: 'center', padding: '64px 0' }}>
-          <Icon name="book" size={28} style={{ color: 'var(--ink-3)', marginBottom: 12 }} />
-          <div className="t-md fg-2">No plans yet. Create your first learning roadmap above.</div>
-        </div>
+        <Card padding="none">
+          <EmptyState
+            icon="course"
+            title="No paths yet"
+            body="Describe a skill or role above and Atelier will research, structure, and build your complete learning roadmap."
+          />
+        </Card>
       )}
     </div>
   )

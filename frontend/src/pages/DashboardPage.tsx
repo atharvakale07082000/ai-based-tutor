@@ -39,12 +39,6 @@ function SkillBar({ name, value }: { name: string; value: number }) {
   )
 }
 
-function HeatCell({ v }: { v: number }) {
-  const colors = ['transparent', '#E2DBC8', '#C6A988', '#A8553A', '#7E3F2A']
-  return <div style={{ width: 10, height: 10, background: colors[v] || colors[0], borderRadius: 1.5, border: v === 0 ? '1px solid var(--line-1)' : 'none' }} />
-}
-
-const HEATMAP = Array.from({ length: 26 }, () => Array.from({ length: 7 }, () => 0))
 
 export default function DashboardPage() {
   const navigate = useNavigate()
@@ -286,24 +280,24 @@ export default function DashboardPage() {
             </div>
           </Card>
 
-          {/* Activity heatmap */}
+          {/* Streak & activity */}
           <Card padding="md">
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <span className="caps" style={{ color: 'var(--ink-2)' }}>Activity · last 26 weeks</span>
-              <span className="t-xs fg-3">{streak} day streak</span>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <span className="caps" style={{ color: 'var(--ink-2)' }}>Your streak</span>
+              <a className="t-xs fg-2" style={{ cursor: 'pointer' }} onClick={() => navigate('/progress')}>Full activity →</a>
             </div>
-            <div style={{ display: 'flex', gap: 2, overflowX: 'auto' }}>
-              {HEATMAP.map((col, i) => (
-                <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  {col.map((v, j) => <HeatCell key={j} v={v} />)}
-                </div>
-              ))}
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 6 }}>
+              <span className="serif" style={{ fontSize: 40, letterSpacing: '-0.02em', color: streak > 0 ? 'var(--ink-0)' : 'var(--ink-3)' }}>{streak}</span>
+              <span className="t-sm fg-2">day{streak !== 1 ? 's' : ''} in a row</span>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10, fontSize: 11, color: 'var(--ink-3)' }}>
-              <span>Less</span>
-              {[0, 1, 2, 3, 4].map((v) => <HeatCell key={v} v={v} />)}
-              <span>More</span>
-            </div>
+            {streak > 0 ? (
+              <div className="t-xs fg-2" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <Icon name="flame" size={11} style={{ color: 'var(--accent)' }} />
+                Keep it going — consistency beats intensity.
+              </div>
+            ) : (
+              <div className="t-xs fg-3">Complete a quiz or study session to start your streak.</div>
+            )}
           </Card>
 
           {/* Due for review */}
