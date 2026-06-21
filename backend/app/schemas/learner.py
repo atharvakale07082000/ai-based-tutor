@@ -1,3 +1,5 @@
+"""Pydantic schemas for learner profile request/response bodies."""
+
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field

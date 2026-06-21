@@ -78,6 +78,7 @@ class BoundedCache:
         self._lock = threading.Lock()
 
     def get(self, key: str) -> Any:
+        """Return the cached value for key, promoting it to MRU; return None on a miss."""
         with self._lock:
             if key not in self._data:
                 return None
@@ -85,6 +86,7 @@ class BoundedCache:
             return self._data[key]
 
     def set(self, key: str, value: Any) -> None:
+        """Insert or update key, evicting the LRU entry if the cache is full."""
         with self._lock:
             if key in self._data:
                 self._data.move_to_end(key)

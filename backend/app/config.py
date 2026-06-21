@@ -1,3 +1,10 @@
+"""
+Application configuration loaded from environment variables and .env files.
+
+All settings are validated at startup via Pydantic BaseSettings.
+Access via the module-level `settings` singleton.
+"""
+
 import json
 import warnings
 

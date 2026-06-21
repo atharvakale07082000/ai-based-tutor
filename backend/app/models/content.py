@@ -1,3 +1,5 @@
+"""SQLAlchemy ORM model for the content items table."""
+
 import uuid
 from datetime import datetime, timezone
 

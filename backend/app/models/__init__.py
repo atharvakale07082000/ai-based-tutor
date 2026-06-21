@@ -1,3 +1,5 @@
+"""Package: models."""
+
 from app.models.content import ContentItem
 from app.models.curriculum import CurriculumPath
 from app.models.doubts import DoubtSession

@@ -1,3 +1,14 @@
+"""
+Doubts (Q&A) API.
+
+Endpoints:
+  GET  /doubts/sessions            — list the learner's past doubt sessions
+  GET  /doubts/sessions/{id}       — fetch a single session with full transcript
+  POST /doubts/stream              — stream an SSE answer to a doubt question
+  POST /doubts/transcribe          — transcribe an audio blob to text
+  POST /doubts/caption             — caption / describe an uploaded image
+"""
+
 import json
 import uuid
 from datetime import datetime, timezone
@@ -24,10 +35,12 @@ async def stream_doubt(
     body: DoubtStreamRequest,
     user_id: str = Depends(get_current_user_id),
 ):
+    """Stream an SSE token-by-token answer to a learner's doubt question."""
     learner = await col_learners().find_one({"user_id": user_id}, PROJ)
     log.info("doubt_stream_start", question=body.question[:80], topic=body.topic_context)
 
     async def event_generator():
+        """Yield SSE frames: token* → [DONE]; persist conversation to DB after completion."""
         try:
             stream = await stream_doubt_response(
                 body.question,
@@ -87,6 +100,7 @@ _MAX_IMAGE_BYTES = 5 * 1024 * 1024  # 5 MB
 
 @router.post("/transcribe")
 async def transcribe(audio: UploadFile = File(...), user_id: str = Depends(get_current_user_id)):
+    """Transcribe an uploaded audio file (≤10 MB) to text using the HF speech-to-text model."""
     if audio.content_type not in _AUDIO_TYPES:
         raise HTTPException(
             status_code=415,
@@ -101,6 +115,7 @@ async def transcribe(audio: UploadFile = File(...), user_id: str = Depends(get_c
 
 @router.post("/caption")
 async def caption(image: UploadFile = File(...), user_id: str = Depends(get_current_user_id)):
+    """Generate a natural-language caption for an uploaded image (≤5 MB) via the HF captioner."""
     if image.content_type not in _IMAGE_TYPES:
         raise HTTPException(
             status_code=415, detail=f"Unsupported image type: {image.content_type}. Allowed: jpeg, png, gif, webp."
@@ -114,6 +129,7 @@ async def caption(image: UploadFile = File(...), user_id: str = Depends(get_curr
 
 @router.get("/sessions")
 async def get_sessions(user_id: str = Depends(get_current_user_id)):
+    """Return the learner's 20 most recent doubt sessions (summary only, no messages)."""
     learner = await col_learners().find_one({"user_id": user_id}, PROJ)
     if not learner:
         return []
@@ -139,6 +155,7 @@ async def get_sessions(user_id: str = Depends(get_current_user_id)):
 
 @router.get("/sessions/{session_id}")
 async def get_session(session_id: str, user_id: str = Depends(get_current_user_id)):
+    """Return a single doubt session with its full message transcript."""
     session = await col_doubts().find_one({"id": session_id}, PROJ)
     if not session:
         return {"messages": []}

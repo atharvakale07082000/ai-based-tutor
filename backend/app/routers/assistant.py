@@ -27,11 +27,13 @@ async def chat(
     request: Request,
     user_id: str = Depends(get_current_user_id),
 ):
+    """Stream an SSE response from the v1 assistant agent."""
     session_id = request.headers.get("X-Session-Id") or uuid.uuid4().hex
     correlation_id = request.headers.get("X-Correlation-Id") or uuid.uuid4().hex
     bind_contextvars(session_id=session_id, user_id=user_id, agent="assistant")
 
     async def event_stream():
+        """Yield SSE frames: routing → token* → done."""
         try:
             async for event in run_assistant(body.message, body.history, user_id, session_id=session_id):
                 yield f"data: {json.dumps(event)}\n\n"

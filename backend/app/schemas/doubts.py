@@ -1,3 +1,5 @@
+"""Pydantic schemas for doubt (Q&A) sessions."""
+
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field

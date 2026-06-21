@@ -49,6 +49,7 @@ async def test_model(
     model_key: str,
     user_id: str = Depends(get_current_user_id),
 ):
+    """Run a live inference probe against the given HF model and cache the result."""
     if model_key not in HF_MODELS:
         raise HTTPException(status_code=404, detail=f"Model key '{model_key}' not found")
 

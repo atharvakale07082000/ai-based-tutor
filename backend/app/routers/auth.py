@@ -1,3 +1,12 @@
+"""
+Authentication API.
+
+Endpoints:
+  POST /auth/login   — auto-register on first call, then issue JWT access + refresh tokens
+  POST /auth/refresh — exchange existing access token for a new one
+  POST /auth/logout  — client-side logout (stateless; tokens expire naturally)
+"""
+
 import uuid
 from datetime import datetime, timezone
 
@@ -17,6 +26,7 @@ PROJ = {"_id": 0}
 
 @router.post("/login", response_model=LoginResponse)
 async def login(body: LoginRequest):
+    """Auto-register on first call; verify password on subsequent calls. Returns JWT pair."""
     user = await col_users().find_one({"email": body.email}, PROJ)
 
     if not user:
@@ -85,9 +95,11 @@ async def login(body: LoginRequest):
 
 @router.post("/refresh", response_model=RefreshResponse)
 async def refresh(user_id: str = Depends(get_current_user_id)):
+    """Issue a new access token for the authenticated user."""
     return RefreshResponse(access_token=create_access_token({"sub": user_id}))
 
 
 @router.post("/logout")
 async def logout():
+    """Stateless logout — clients must discard their tokens; server cannot invalidate JWTs."""
     return {"message": "Logged out"}

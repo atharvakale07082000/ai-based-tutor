@@ -1,3 +1,14 @@
+"""
+Learning session API.
+
+A session is a single study round: the orchestrator picks the next topic,
+generates quiz questions, and the learner submits answers to advance.
+
+Endpoints:
+  POST /session/start   — start a new session (AI picks topic + quiz)
+  POST /session/advance — submit quiz answers and progress to the next topic
+"""
+
 import uuid
 from datetime import datetime, timezone
 
@@ -51,6 +62,7 @@ class SessionAdvanceResponse(BaseModel):
 
 
 async def _get_learner_or_404(user_id: str) -> dict:
+    """Fetch a learner document by user_id or raise HTTP 404."""
     learner = await col_learners().find_one({"user_id": user_id}, PROJ)
     if not learner:
         raise HTTPException(status_code=404, detail="Learner not found")
@@ -58,6 +70,7 @@ async def _get_learner_or_404(user_id: str) -> dict:
 
 
 async def _load_active_curriculum(learner_id: str) -> tuple[list, dict | None]:
+    """Return (topics_list, curriculum_doc) for the learner's most recent active curriculum."""
     record = await col_curricula().find_one(
         {"learner_id": learner_id, "is_active": True},
         PROJ,
@@ -68,6 +81,7 @@ async def _load_active_curriculum(learner_id: str) -> tuple[list, dict | None]:
 
 @router.post("/start", response_model=SessionStartResponse)
 async def start_session(user_id: str = Depends(get_current_user_id)):
+    """Start a new study session: orchestrator picks the next topic and generates quiz questions."""
     learner = await _get_learner_or_404(user_id)
     existing_path, _ = await _load_active_curriculum(learner["id"])
 
@@ -118,22 +132,24 @@ async def start_session(user_id: str = Depends(get_current_user_id)):
 
     questions = final.get("quiz_questions", [])
     session_id = str(uuid.uuid4())
-    if questions:
-        await col_quizzes().insert_one(
-            {
-                "id": session_id,
-                "learner_id": learner["id"],
-                "topic": final.get("current_topic", ""),
-                "bloom_level": final.get("bloom_level", "understand"),
-                "questions": questions,
-                "answers": [],
-                "score": None,
-                "weak_topics": [],
-                "sentiment_mood": None,
-                "started_at": now,
-                "completed_at": None,
-            }
-        )
+    # Always persist the quiz document so /session/advance can look it up by
+    # session_id regardless of whether the orchestrator produced questions.
+    # An empty questions list is valid — advance will score it as 100% (0/0).
+    await col_quizzes().insert_one(
+        {
+            "id": session_id,
+            "learner_id": learner["id"],
+            "topic": final.get("current_topic", ""),
+            "bloom_level": final.get("bloom_level", "understand"),
+            "questions": questions,
+            "answers": [],
+            "score": None,
+            "weak_topics": [],
+            "sentiment_mood": None,
+            "started_at": now,
+            "completed_at": None,
+        }
+    )
 
     log.info("session_start_done", session_id=session_id, topic=final.get("current_topic"))
     return SessionStartResponse(
@@ -152,6 +168,7 @@ async def advance_session(
     body: SessionAdvanceRequest,
     user_id: str = Depends(get_current_user_id),
 ):
+    """Score quiz answers, update ELO + XP, and have the orchestrator pick the next topic."""
     quiz = await col_quizzes().find_one({"id": body.quiz_id}, PROJ)
     if not quiz:
         raise HTTPException(status_code=404, detail="Quiz not found")

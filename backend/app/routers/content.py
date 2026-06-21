@@ -1,7 +1,16 @@
+"""
+Content library API.
+
+Endpoints:
+  GET  /content                    — paginated content list with AI-ranked results
+  GET  /content/{id}               — fetch a single item, generating body on first access
+  POST /content/{id}/regenerate    — queue a background AI body regeneration (non-blocking)
+"""
+
 import uuid
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 
 from app.auth.jwt import get_current_user_id
 from app.db.mongo import col_content, col_learners
@@ -106,6 +115,7 @@ SEED_CONTENT = [
 
 
 async def _ensure_seed():
+    """Insert seed content items if the collection is empty (first-run bootstrap)."""
     if await col_content().count_documents({}) == 0:
         for item in SEED_CONTENT:
             await col_content().insert_one({"id": str(uuid.uuid4()), **item})
@@ -122,6 +132,7 @@ async def list_content(
     limit: int = Query(12, ge=1, le=50),
     user_id: str = Depends(get_current_user_id),
 ):
+    """Return a paginated, AI-ranked content list filtered by topic, type, search, and difficulty."""
     await _ensure_seed()
 
     query: dict = {
@@ -164,6 +175,7 @@ async def list_content(
 
 @router.get("/{item_id}")
 async def get_content(item_id: str, user_id: str = Depends(get_current_user_id)):
+    """Fetch a content item, generating its body via LLM if it is shorter than 400 chars."""
     await _ensure_seed()
     item = await col_content().find_one({"id": item_id}, PROJ)
     if not item:
@@ -183,21 +195,39 @@ async def get_content(item_id: str, user_id: str = Depends(get_current_user_id))
     return item
 
 
+async def _do_regenerate(item: dict) -> None:
+    """Background worker: generate a new body for a content item and persist it."""
+    item_id = item["id"]
+    log.info("content_body_regenerating_bg", item_id=item_id)
+    try:
+        body = await generate_content_body(
+            topic=item.get("topic", ""),
+            subtopic=item.get("subtopic", ""),
+            content_type=item.get("content_type", "article"),
+            difficulty=item.get("difficulty", 0.5),
+        )
+        await col_content().update_one({"id": item_id}, {"$set": {"body": body}})
+        log.info("content_body_regenerated", item_id=item_id, chars=len(body))
+    except Exception as exc:
+        log.error("content_body_regen_failed", item_id=item_id, error=str(exc))
+
+
 @router.post("/{item_id}/regenerate")
-async def regenerate_content(item_id: str, user_id: str = Depends(get_current_user_id)):
-    """Force-regenerate the AI-written body for a content item regardless of current length."""
+async def regenerate_content(
+    item_id: str,
+    background_tasks: BackgroundTasks,
+    user_id: str = Depends(get_current_user_id),
+):
+    """
+    Queue a background AI body regeneration for a content item.
+
+    Returns immediately with status='queued'. The client should poll
+    GET /content/{id} until body length exceeds 400 chars.
+    """
     await _ensure_seed()
     item = await col_content().find_one({"id": item_id}, PROJ)
     if not item:
         raise HTTPException(status_code=404, detail="Content not found")
 
-    log.info("content_body_force_regenerating", item_id=item_id)
-    generated_body = await generate_content_body(
-        topic=item.get("topic", ""),
-        subtopic=item.get("subtopic", ""),
-        content_type=item.get("content_type", "article"),
-        difficulty=item.get("difficulty", 0.5),
-    )
-    await col_content().update_one({"id": item_id}, {"$set": {"body": generated_body}})
-    item["body"] = generated_body
-    return item
+    background_tasks.add_task(_do_regenerate, item)
+    return {"status": "queued", "id": item_id, "title": item.get("title", "")}

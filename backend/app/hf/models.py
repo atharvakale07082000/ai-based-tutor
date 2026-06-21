@@ -1,3 +1,11 @@
+"""
+HuggingFace / NVIDIA NIM model registry.
+
+Each entry maps a logical model key to its provider config.
+Generation tasks default to HF Together with NVIDIA NIM as fallback.
+Inference tasks (classification, embeddings, etc.) use dedicated HF endpoints.
+"""
+
 HF_MODELS: dict[str, dict] = {
     # ── Generation tasks (provider: together, NVIDIA NIM fallback) ────────────
     "DOUBT_SOLVER": {

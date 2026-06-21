@@ -1,3 +1,5 @@
+"""Topic classification using zero-shot inference via the HuggingFace Inference API."""
+
 import asyncio
 
 import structlog
@@ -26,6 +28,7 @@ CANDIDATE_LABELS = [
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
 async def classify_topic(text: str, candidate_labels: list[str] | None = None) -> dict:
+    """Classify text into the closest matching topic label using zero-shot classification."""
     model_cfg = HF_MODELS["TOPIC_CLASSIFIER"]
     client = get_hf_client(provider=model_cfg["provider"])
     model_id = model_cfg["model_id"]

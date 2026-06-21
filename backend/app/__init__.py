@@ -1,1 +1,1 @@
-# AI Tutor Platform - FastAPI Backend
+"""AI Tutor Platform — FastAPI backend root package."""

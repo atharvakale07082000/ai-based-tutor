@@ -1,3 +1,5 @@
+"""SQLAlchemy ORM model for the learners table."""
+
 import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING

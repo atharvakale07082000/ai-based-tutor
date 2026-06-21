@@ -73,6 +73,7 @@ async def v2_chat(
     bind_contextvars(session_id=session_id, user_id=user_id, agent="v2_chat")
 
     async def event_stream():
+        """Yield SSE frames: routing → agent events → [DONE]; log latency on exit."""
         start = time.perf_counter()
         had_error = False
         agent_name = "assistant"

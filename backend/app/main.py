@@ -69,6 +69,10 @@ async def lifespan(app: FastAPI):
     await ensure_indexes()
     log.info("mongo_indexes_ensured")
 
+    # Register activity-logging middleware here so it can be toggled or skipped
+    # in tests that override the lifespan — must happen before first request.
+    app.add_middleware(ActivityLoggingMiddleware)
+
     task = asyncio.create_task(_mongo_keepalive())
     yield
     task.cancel()
@@ -89,9 +93,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-app.add_middleware(ActivityLoggingMiddleware)
-
 
 # Build version — set APP_VERSION env var in your deployment pipeline (e.g. git SHA).
 # Changes on every deploy, which the frontend uses to detect redeploys and auto-logout.

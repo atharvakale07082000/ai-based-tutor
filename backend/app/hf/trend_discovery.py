@@ -87,6 +87,7 @@ def _search_one(query: str, max_results: int = 5) -> list[dict]:
 
 
 def _infer_type(url: str, title: str) -> str:
+    """Infer content type (video, course, article) from URL and title keywords."""
     lower = (url + title).lower()
     if any(k in lower for k in ("youtube", "youtu.be", "video", "watch")):
         return "video"
@@ -96,11 +97,13 @@ def _infer_type(url: str, title: str) -> str:
 
 
 def _estimate_minutes(body: str) -> int:
+    """Estimate reading time in minutes (5–45) based on word count at 200 wpm."""
     words = len(body.split()) if body else 300
     return max(5, min(45, words // 200 * 5))
 
 
 def _extract_source(url: str) -> str:
+    """Extract the bare domain name (e.g. 'github') from a URL."""
     try:
         from urllib.parse import urlparse
 

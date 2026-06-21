@@ -21,6 +21,7 @@ _embed_cache: BoundedCache = BoundedCache(max_size=512)
 
 
 async def _cached_embed(text: str) -> list[float]:
+    """Return an embedding vector from the LRU cache, computing it on a miss."""
     cached = _embed_cache.get(text)
     if cached is not None:
         return cached

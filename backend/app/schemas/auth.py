@@ -1,3 +1,5 @@
+"""Pydantic schemas for authentication request/response bodies."""
+
 from pydantic import BaseModel, EmailStr, Field
 
 

@@ -87,6 +87,7 @@ def _parse_response(text: str, topic: str, bloom_level: str) -> dict | None:
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=8))
 async def generate_quiz_questions(topic: str, bloom_level: str, count: int = 5) -> list[dict]:
+    """Generate multiple-choice quiz questions for a topic at the given Bloom level via LLM."""
     model_cfg = HF_MODELS["QUIZ_GENERATOR"]
     client = get_hf_client(provider=model_cfg["provider"])
     model_id = model_cfg["model_id"]

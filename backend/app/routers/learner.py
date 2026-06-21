@@ -14,6 +14,7 @@ PROJ = {"_id": 0}
 
 
 async def _get_learner_or_404(user_id: str) -> dict:
+    """Fetch a learner document by user_id or raise HTTP 404."""
     learner = await col_learners().find_one({"user_id": user_id}, PROJ)
     if not learner:
         raise HTTPException(status_code=404, detail="Learner profile not found")
@@ -22,6 +23,7 @@ async def _get_learner_or_404(user_id: str) -> dict:
 
 @router.get("/profile", response_model=LearnerProfileSchema)
 async def get_profile(user_id: str = Depends(get_current_user_id)):
+    """Return the learner's full profile including goals, XP, streak and proficiency map."""
     learner = await _get_learner_or_404(user_id)
     return LearnerProfileSchema(
         id=learner["id"],
@@ -41,6 +43,7 @@ async def update_profile(
     body: LearnerProfileUpdate,
     user_id: str = Depends(get_current_user_id),
 ):
+    """Partial-update the learner's profile fields (name, goals, learning style, cadence)."""
     learner = await _get_learner_or_404(user_id)
 
     updates: dict = {"updated_at": datetime.now(timezone.utc).isoformat()}

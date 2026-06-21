@@ -34,6 +34,7 @@ class AnswerRequest(BaseModel):
 
 @router.post("/plan")
 async def plan_course(body: PlanRequest, user_id: str = Depends(get_current_user_id)):
+    """Generate an AI course plan from a learning goal and persist it."""
     if not body.goal.strip():
         raise HTTPException(400, "Goal cannot be empty")
     try:
@@ -45,11 +46,13 @@ async def plan_course(body: PlanRequest, user_id: str = Depends(get_current_user
 
 @router.get("/")
 async def get_my_plans(user_id: str = Depends(get_current_user_id)):
+    """Return all course plans belonging to the current learner."""
     return await list_plans(user_id)
 
 
 @router.get("/{plan_id}")
 async def get_course_plan(plan_id: str, user_id: str = Depends(get_current_user_id)):
+    """Fetch a single course plan by ID, enforcing ownership."""
     plan = await get_plan(plan_id)
     if not plan or plan["user_id"] != user_id:
         raise HTTPException(404, "Plan not found")
@@ -65,6 +68,7 @@ async def start_module_interview(
     module_id: str,
     user_id: str = Depends(get_current_user_id),
 ):
+    """Begin an AI interview for a specific course module."""
     plan = await get_plan(plan_id)
     if not plan or plan["user_id"] != user_id:
         raise HTTPException(404, "Plan not found")
@@ -91,6 +95,7 @@ async def submit_answer(
     body: AnswerRequest,
     user_id: str = Depends(get_current_user_id),
 ):
+    """Submit and AI-evaluate a single interview answer."""
     interview = await get_interview(interview_id)
     if not interview or interview["user_id"] != user_id:
         raise HTTPException(404, "Interview not found")
@@ -108,6 +113,7 @@ async def finish_interview(
     interview_id: str,
     user_id: str = Depends(get_current_user_id),
 ):
+    """Mark an interview complete and update module progress."""
     interview = await get_interview(interview_id)
     if not interview or interview["user_id"] != user_id:
         raise HTTPException(404, "Interview not found")

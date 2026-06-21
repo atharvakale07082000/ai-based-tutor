@@ -24,6 +24,7 @@ PROJ = {"_id": 0}
 
 
 async def _get_learner_or_404(user_id: str) -> dict:
+    """Fetch a learner document by user_id or raise HTTP 404."""
     learner = await col_learners().find_one({"user_id": user_id}, PROJ)
     if not learner:
         raise HTTPException(status_code=404, detail="Learner not found")
@@ -35,6 +36,7 @@ async def generate_quiz(
     body: QuizGenerateRequest,
     user_id: str = Depends(get_current_user_id),
 ):
+    """Generate or retrieve a cached quiz for the given topic at the learner's Bloom level."""
     learner = await _get_learner_or_404(user_id)
     log.info("quiz_generate_start", topic=body.topic, learner_id=learner["id"])
 
@@ -72,6 +74,7 @@ async def generate_quiz(
 
 @router.get("/{quiz_id}", response_model=QuizSessionSchema)
 async def get_quiz(quiz_id: str, user_id: str = Depends(get_current_user_id)):
+    """Fetch a quiz session by ID (questions, bloom level, topic)."""
     quiz = await col_quizzes().find_one({"id": quiz_id}, PROJ)
     if not quiz:
         raise HTTPException(status_code=404, detail="Quiz not found")
@@ -90,6 +93,7 @@ async def submit_quiz(
     body: QuizSubmitRequest,
     user_id: str = Depends(get_current_user_id),
 ):
+    """Score quiz answers, update ELO proficiency, award XP, and persist results."""
     quiz = await col_quizzes().find_one({"id": quiz_id}, PROJ)
     if not quiz:
         raise HTTPException(status_code=404, detail="Quiz not found")

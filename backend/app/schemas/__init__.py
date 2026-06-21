@@ -1,3 +1,5 @@
+"""Package: schemas."""
+
 from app.schemas.auth import LoginRequest, LoginResponse, RefreshResponse
 from app.schemas.doubts import DoubtSessionSchema, DoubtStreamRequest
 from app.schemas.learner import LearnerProfileSchema, LearnerProfileUpdate

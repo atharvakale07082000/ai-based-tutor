@@ -50,6 +50,7 @@ _KEYWORD_MAP: dict[str, set[str]] = {
 
 
 def _keyword_route(query: str) -> tuple[str, str] | None:
+    """Return (agent, reason) via O(1) keyword matching, or None on a tie/miss."""
     lower = query.lower()
     hit_counts: dict[str, list[str]] = {}
     for agent_name, keywords in _KEYWORD_MAP.items():
@@ -70,6 +71,7 @@ def _keyword_route(query: str) -> tuple[str, str] | None:
 
 
 async def _llm_route(query: str) -> tuple[str, str]:
+    """Use the LLM to route a query when keyword matching is ambiguous or misses."""
     model_cfg = HF_MODELS["DOUBT_SOLVER"]
     provider = model_cfg["provider"]
     model_id = model_cfg["model_id"]
@@ -120,6 +122,7 @@ async def _llm_route(query: str) -> tuple[str, str]:
 
 
 async def orchestrator_node(state: DeepAgentState) -> dict:
+    """LangGraph node: resolve routing decision and update state with the chosen agent."""
     query = state["query"]
     result = _keyword_route(query) or await _llm_route(query)
     agent_key, reason = result
@@ -151,6 +154,7 @@ def _make_subagent_node(subagent_cls):
     )
 
     async def node(state: DeepAgentState) -> dict:
+        """Run the domain subagent with 3-tier resilience: domain → assistant fallback → failsafe."""
         chain = MiddlewareChain([CoTMiddleware(), GuardrailMiddleware(), ObservabilityMiddleware()])
 
         # Tier 1: domain agent
@@ -235,6 +239,7 @@ async def synthesizer_node(state: DeepAgentState) -> dict:
 
 
 def _route_by_decision(state: DeepAgentState) -> str:
+    """Return the agent key to branch to based on the current RoutingDecision in state."""
     decision = state.get("routing_decision")
     if decision is None:
         return "assistant"
@@ -247,6 +252,7 @@ def _route_by_decision(state: DeepAgentState) -> str:
 
 
 def build_graph() -> StateGraph:
+    """Construct and return the compiled LangGraph StateGraph for the DeepAgent."""
     graph = StateGraph(DeepAgentState)
 
     graph.add_node("orchestrator", orchestrator_node)

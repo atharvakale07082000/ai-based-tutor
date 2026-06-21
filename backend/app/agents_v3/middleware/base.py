@@ -24,6 +24,7 @@ class MiddlewareChain:
         self._middlewares = middlewares
 
     async def apply_pre(self, ctx: AgentContext) -> AgentContext:
+        """Run all pre-process hooks in order; short-circuit if ctx becomes blocked."""
         for mw in self._middlewares:
             ctx = await mw.pre_process(ctx)
             if ctx.blocked:
@@ -31,6 +32,7 @@ class MiddlewareChain:
         return ctx
 
     async def apply_post(self, ctx: AgentContext, report: AgentReport) -> AgentReport:
+        """Run all post-process hooks in reverse order."""
         for mw in reversed(self._middlewares):
             report = await mw.post_process(ctx, report)
         return report

@@ -1,3 +1,13 @@
+"""
+Admin API — learner management and agent configuration.
+
+Endpoints:
+  GET  /admin/learners     — paginated learner list with proficiency + mood
+  PUT  /admin/config       — update runtime agent config (quiz frequency, difficulty cap)
+  GET  /admin/config       — read current agent config
+  POST /admin/send-digest  — manually trigger the weekly progress digest for a user
+"""
+
 import structlog
 from fastapi import APIRouter, Depends, Query
 
@@ -23,6 +33,7 @@ async def get_learners(
     limit: int = Query(20),
     user_id: str = Depends(get_current_user_id),
 ):
+    """Return a paginated list of learners with their proficiency averages and latest mood."""
     query: dict = {}
     if search:
         query["$or"] = [
@@ -61,12 +72,14 @@ async def get_learners(
 
 @router.put("/config")
 async def update_config(config: dict, user_id: str = Depends(get_current_user_id)):
+    """Update one or more runtime agent configuration values."""
     _agent_config.update({k: v for k, v in config.items() if k in _agent_config})
     return {"config": _agent_config}
 
 
 @router.get("/config")
 async def get_config(user_id: str = Depends(get_current_user_id)):
+    """Return the current runtime agent configuration."""
     return _agent_config
 
 

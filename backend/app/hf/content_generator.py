@@ -36,6 +36,7 @@ List the key takeaways, summarise what was learned, and suggest what to study ne
 
 
 def _difficulty_label(difficulty: float) -> str:
+    """Convert a 0–1 difficulty float to a human-readable label."""
     if difficulty < 0.3:
         return "Beginner"
     if difficulty < 0.6:
@@ -46,6 +47,7 @@ def _difficulty_label(difficulty: float) -> str:
 
 
 def _fallback_body(topic: str, subtopic: str) -> str:
+    """Return a placeholder body shown while AI generation is in progress."""
     return f"""\
 ## {subtopic}
 

@@ -31,12 +31,14 @@ class ResilientGenerationClient:
         self._rotation = 0
 
     def _next_nvidia_model(self) -> str:
+        """Return the next NVIDIA model ID in round-robin rotation."""
         model = self._fallback_models[self._rotation % len(self._fallback_models)]
         self._rotation += 1
         return model
 
     @staticmethod
     def _nvidia_extra_body() -> dict:
+        """Return extra_body kwargs that disable CoT thinking mode on NVIDIA NIM reasoning models."""
         # Disable chain-of-thought "thinking" mode so reasoning models (e.g.
         # nemotron) put the answer directly in `content` instead of consuming
         # the whole max_tokens budget on `reasoning_content` and leaving
@@ -51,6 +53,7 @@ class ResilientGenerationClient:
         temperature: float = 0.1,
         stream: bool = False,
     ):
+        """Route to NVIDIA NIM (primary) or HF Together (fallback) for chat completion."""
         if not stream:
             nvidia_model = self._next_nvidia_model()
             try:
@@ -70,6 +73,7 @@ class ResilientGenerationClient:
         return self._stream_with_fallback(model, messages, max_tokens, temperature)
 
     def _stream_with_fallback(self, model: str, messages: list[dict], max_tokens: int, temperature: float) -> Iterator:
+        """Stream from NVIDIA NIM; fall back to HF Together if the first chunk fails."""
         nvidia_model = self._next_nvidia_model()
         try:
             nvidia_stream = self._nvidia.chat.completions.create(
@@ -88,6 +92,7 @@ class ResilientGenerationClient:
             )
 
         def _resume():
+            """Re-yield the already-consumed first chunk then continue the NVIDIA stream."""
             yield first_chunk
             yield from nvidia_stream
 
@@ -98,6 +103,7 @@ _client: ResilientGenerationClient | None = None
 
 
 def get_resilient_generation_client() -> ResilientGenerationClient:
+    """Return the module-level singleton ResilientGenerationClient, creating it on first call."""
     global _client
     if _client is None:
         if not settings.NVIDIA_API_KEY:

@@ -46,7 +46,10 @@ async def stream_doubt_response(
     log.info("doubt_solver_stream", question=question[:80], context=context)
 
     async def _generate() -> AsyncIterator[str]:
+        """Run the blocking streaming call in a thread and yield decoded tokens."""
+
         def _sync_stream():
+            """Synchronous wrapper passed to asyncio.to_thread for non-blocking streaming."""
             return client.chat_completion(
                 model=model_id,
                 messages=messages,

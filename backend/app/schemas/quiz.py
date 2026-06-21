@@ -1,3 +1,5 @@
+"""Pydantic schemas for quiz generation and submission."""
+
 from typing import Literal
 
 from pydantic import BaseModel, Field

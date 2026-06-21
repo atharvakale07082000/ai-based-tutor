@@ -1,3 +1,14 @@
+"""
+Progress tracking API.
+
+Endpoints:
+  GET  /progress              — full proficiency snapshot + history
+  GET  /progress/due-topics   — spaced-repetition scheduler
+  GET  /progress/report       — downloadable JSON progress report
+  POST /progress/study-session — record a completed study session and award XP
+"""
+
+import asyncio
 import uuid
 from datetime import date, datetime, timezone
 
@@ -17,6 +28,8 @@ PROJ = {"_id": 0}
 
 
 class StudySessionRequest(BaseModel):
+    """Payload for recording a completed study session."""
+
     minutes: int
     topic: str = "general"
     activity: str = "study"  # "pomodoro" | "quiz" | "reading" | "study"
@@ -24,30 +37,22 @@ class StudySessionRequest(BaseModel):
 
 @router.get("")
 async def get_progress(user_id: str = Depends(get_current_user_id)):
+    """Return the learner's full progress snapshot: proficiency, quiz history, mood, XP, streak."""
     learner = await col_learners().find_one({"user_id": user_id}, PROJ)
     if not learner:
         return {"topic_proficiency": {}, "history": []}
 
-    records = (
-        await col_progress()
-        .find({"learner_id": learner["id"]}, PROJ)
-        .sort("recorded_at", 1)
-        .limit(100)
-        .to_list(length=None)
-    )
-    quizzes = (
-        await col_quizzes()
-        .find(
-            {"learner_id": learner["id"], "completed_at": {"$ne": None}},
-            PROJ,
-        )
-        .to_list(length=None)
-    )
-    doubt_sessions = await col_doubts().find({"learner_id": learner["id"]}, PROJ).to_list(length=None)
+    learner_id = learner["id"]
 
-    quiz_accuracy = 0.0
-    if quizzes:
-        quiz_accuracy = sum(q.get("score") or 0 for q in quizzes) / len(quizzes)
+    # Parallelise all four independent collection reads now that we have learner_id.
+    records, quizzes, doubt_sessions, study_sessions = await asyncio.gather(
+        col_progress().find({"learner_id": learner_id}, PROJ).sort("recorded_at", 1).limit(100).to_list(length=None),
+        col_quizzes().find({"learner_id": learner_id, "completed_at": {"$ne": None}}, PROJ).to_list(length=None),
+        col_doubts().find({"learner_id": learner_id}, PROJ).to_list(length=None),
+        col_study_sessions().find({"learner_id": learner_id}, PROJ).to_list(length=None),
+    )
+
+    quiz_accuracy = sum(q.get("score") or 0 for q in quizzes) / len(quizzes) if quizzes else 0.0
 
     mood_timeline = [
         {"session_id": d["id"], "mood": d["sentiment_mood"], "date": d.get("started_at")}
@@ -55,11 +60,10 @@ async def get_progress(user_id: str = Depends(get_current_user_id)):
         if d.get("sentiment_mood")
     ]
 
-    study_sessions = await col_study_sessions().find({"learner_id": learner["id"]}, PROJ).to_list(length=None)
     total_study_minutes = sum(s.get("minutes", 0) for s in study_sessions) + len(quizzes) * 15
 
     return {
-        "learner_id": learner["id"],
+        "learner_id": learner_id,
         "topic_proficiency": learner.get("topic_proficiency_map") or {},
         "history": [
             {"topic": r["topic"], "elo_score": r["elo_score"], "recorded_at": r.get("recorded_at")} for r in records
@@ -76,14 +80,18 @@ async def get_progress(user_id: str = Depends(get_current_user_id)):
 @router.get("/due-topics")
 async def get_due_topics(user_id: str = Depends(get_current_user_id)):
     """
-    Spaced repetition scheduler: returns topics ordered by urgency.
-    Uses SM-2-inspired algorithm with HuggingFace difficulty scoring support.
+    Spaced-repetition scheduler: return topics ordered by urgency.
+
+    Uses an SM-2-inspired algorithm. Topics the learner has not reviewed recently
+    or scored poorly on float to the top of the list.
     """
     learner = await col_learners().find_one({"user_id": user_id}, PROJ)
     if not learner:
         return {"due_topics": []}
 
     proficiency = learner.get("topic_proficiency_map") or {}
+
+    # Fetch only the fields needed for scheduling — minimal projection.
     quizzes = await (
         col_quizzes()
         .find(
@@ -94,6 +102,7 @@ async def get_due_topics(user_id: str = Depends(get_current_user_id)):
         .to_list(length=None)
     )
 
+    # Keep only the most-recent completion date per topic.
     last_quiz_dates: dict[str, str] = {}
     for q in quizzes:
         topic = q.get("topic", "")
@@ -111,34 +120,37 @@ async def record_study_session(
     body: StudySessionRequest,
     user_id: str = Depends(get_current_user_id),
 ):
-    """Record a completed study session (pomodoro, quiz, reading, etc.)."""
+    """Record a completed study session (pomodoro, quiz, reading, etc.) and award XP."""
     learner = await col_learners().find_one({"user_id": user_id}, PROJ)
     if not learner:
         return {"ok": False}
 
     now = datetime.now(timezone.utc).isoformat()
 
-    await col_study_sessions().insert_one(
-        {
-            "id": str(uuid.uuid4()),
-            "learner_id": learner["id"],
-            "topic": body.topic,
-            "minutes": max(1, body.minutes),
-            "activity": body.activity,
-            "recorded_at": now,
-        }
-    )
-
-    # Award XP: 5 XP per minute, capped at 50 per session
+    # XP: 5 per minute, capped at 50 per session.
     xp_earned = min(50, max(1, body.minutes) * 5)
-    await _update_xp_and_streak(user_id, xp_earned, now)
+
+    # Write session record and update XP/streak in parallel.
+    await asyncio.gather(
+        col_study_sessions().insert_one(
+            {
+                "id": str(uuid.uuid4()),
+                "learner_id": learner["id"],
+                "topic": body.topic,
+                "minutes": max(1, body.minutes),
+                "activity": body.activity,
+                "recorded_at": now,
+            }
+        ),
+        _update_xp_and_streak(user_id, xp_earned, now),
+    )
 
     log.info("study_session_recorded", topic=body.topic, minutes=body.minutes, xp=xp_earned)
     return {"ok": True, "xp_earned": xp_earned}
 
 
 async def _update_xp_and_streak(user_id: str, xp_delta: int, now_iso: str) -> None:
-    """Atomically add XP and update streak based on last_active date."""
+    """Atomically add XP and update the login streak based on last-active date."""
     learner = await col_learners().find_one({"user_id": user_id}, PROJ)
     if not learner:
         return
@@ -152,11 +164,11 @@ async def _update_xp_and_streak(user_id: str, xp_delta: int, now_iso: str) -> No
             last_active = date.fromisoformat(last_active_str)
             delta_days = (today - last_active).days
             if delta_days == 0:
-                pass  # same day, no streak change
+                pass  # same day — streak unchanged
             elif delta_days == 1:
                 streak += 1  # consecutive day
             else:
-                streak = 1  # streak broken
+                streak = 1  # gap breaks the streak
         except ValueError:
             streak = 1
     else:
@@ -164,12 +176,20 @@ async def _update_xp_and_streak(user_id: str, xp_delta: int, now_iso: str) -> No
 
     await col_learners().update_one(
         {"user_id": user_id},
-        {"$inc": {"xp": xp_delta}, "$set": {"streak": streak, "last_active_date": now_iso[:10], "updated_at": now_iso}},
+        {
+            "$inc": {"xp": xp_delta},
+            "$set": {
+                "streak": streak,
+                "last_active_date": now_iso[:10],
+                "updated_at": now_iso,
+            },
+        },
     )
 
 
 @router.get("/report")
 async def download_report(user_id: str = Depends(get_current_user_id)):
+    """Download the full progress snapshot as a JSON file attachment."""
     progress = await get_progress(user_id=user_id)
     return JSONResponse(
         content=progress,

@@ -32,6 +32,7 @@ BLOOM_BY_ELO: list[tuple[tuple[int, int], str]] = [
 
 
 def bloom_for_elo(elo: float) -> str:
+    """Map an ELO score to the appropriate Bloom taxonomy level."""
     for (lo, hi), level in BLOOM_BY_ELO:
         if lo <= elo < hi:
             return level

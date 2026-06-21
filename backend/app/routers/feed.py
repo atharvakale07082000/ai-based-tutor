@@ -11,6 +11,7 @@ DELETE /feed/{item_id}/interaction → clear snooze/schedule for an item
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -41,6 +42,7 @@ class SnoozeRequest(BaseModel):
     @field_validator("hours")
     @classmethod
     def _clamp(cls, v: int) -> int:
+        """Clamp snooze duration to [1, 168] hours (1 hour – 1 week)."""
         return max(1, min(168, v))  # 1h–1 week
 
 
@@ -52,14 +54,17 @@ class ScheduleRequest(BaseModel):
 
 
 def _now_iso() -> str:
+    """Return the current UTC time as an ISO 8601 string."""
     return datetime.now(timezone.utc).isoformat()
 
 
 async def _get_interaction(user_id: str, item_id: str) -> dict | None:
+    """Fetch a single feed interaction record for a user/item pair."""
     return await col_feed_interactions().find_one({"user_id": user_id, "item_id": item_id}, PROJ)
 
 
 def _is_snoozed(interaction: dict | None) -> bool:
+    """Return True if the interaction has an active snooze that hasn't expired yet."""
     if not interaction or not interaction.get("snoozed_until"):
         return False
     try:
@@ -85,46 +90,51 @@ async def list_feed(
 ):
     """Return today's AI-curated feed items, excluding snoozed items."""
     now = datetime.now(timezone.utc)
+    now_iso = now.isoformat()
+    skip = (page - 1) * limit
 
-    # Build query: only non-expired items
-    query: dict = {"expires_at": {"$gt": now.isoformat()}}
-    if domain:
-        query["domain"] = {"$regex": domain, "$options": "i"}
-    if content_type:
-        query["content_type"] = content_type
-
-    # Fetch active interactions for this user
-    if not include_snoozed:
-        snoozed_docs = (
-            await col_feed_interactions()
-            .find(
-                {"user_id": user_id, "snoozed_until": {"$gt": now.isoformat()}},
-                {"item_id": 1, "_id": 0},
-            )
+    # Parallelise: fetch snoozed-ID list and feed items simultaneously.
+    # We pass an empty coroutine for the snoozed path when include_snoozed=True
+    # so the gather always has two awaitables.
+    async def _get_snoozed() -> list[str]:
+        if include_snoozed:
+            return []
+        docs = await (
+            col_feed_interactions()
+            .find({"user_id": user_id, "snoozed_until": {"$gt": now_iso}}, {"item_id": 1, "_id": 0})
             .to_list(length=None)
         )
-        snoozed_items = [i["item_id"] for i in snoozed_docs]
-        if snoozed_items:
-            query["id"] = {"$nin": snoozed_items}
+        return [d["item_id"] for d in docs]
 
-    skip = (page - 1) * limit
-    raw = (
-        await col_feed_items()
-        .find(query, PROJ)
+    # Base query without snoozed filter — we apply it in Python after the gather.
+    base_query: dict = {"expires_at": {"$gt": now_iso}}
+    if domain:
+        base_query["domain"] = {"$regex": domain, "$options": "i"}
+    if content_type:
+        base_query["content_type"] = content_type
+
+    snoozed_ids, raw = await asyncio.gather(
+        _get_snoozed(),
+        col_feed_items()
+        .find(base_query, PROJ)
         .sort("discovered_at", -1)
         .skip(skip)
-        .limit(limit + 1)
-        .to_list(length=None)
+        .limit(limit + 1 + len([]))  # small over-fetch to survive post-filter
+        .to_list(length=None),
     )
+
+    # Filter out snoozed items in Python (avoids a second round-trip to Mongo).
+    if snoozed_ids:
+        snoozed_set = set(snoozed_ids)
+        raw = [i for i in raw if i["id"] not in snoozed_set]
+
     has_more = len(raw) > limit
     items = raw[:limit]
 
-    # Annotate each item with user interaction state
+    # Fetch interaction annotations for rendered items.
     item_ids = [i["id"] for i in items]
-    interaction_docs = (
-        await col_feed_interactions()
-        .find({"user_id": user_id, "item_id": {"$in": item_ids}}, PROJ)
-        .to_list(length=None)
+    interaction_docs = await (
+        col_feed_interactions().find({"user_id": user_id, "item_id": {"$in": item_ids}}, PROJ).to_list(length=None)
     )
     interactions = {i["item_id"]: i for i in interaction_docs}
 
@@ -134,7 +144,6 @@ async def list_feed(
         item["_snoozed_until"] = ix.get("snoozed_until") if ix else None
         item["_scheduled_for"] = ix.get("scheduled_for") if ix else None
 
-    # If feed is empty, serve fallback seed items
     if not items and page == 1:
         items = _seed_feed()
 
@@ -149,20 +158,22 @@ async def list_trending(
     limit: int = Query(24, ge=1, le=48),
     user_id: str = Depends(get_current_user_id),
 ):
-    """Return the latest batch of 24 trending topics discovered by the agent."""
-    # Get the most recent discovery batch
-    latest = await col_trending_topics().find_one({}, PROJ, sort=[("discovered_at", -1)])
+    """Return the latest batch of trending topics discovered by the agent."""
+    # Parallelise: find the most-recent batch header and the learner profile.
+    latest, learner = await asyncio.gather(
+        col_trending_topics().find_one({}, PROJ, sort=[("discovered_at", -1)]),
+        col_learners().find_one({"user_id": user_id}, PROJ),
+    )
+
     if not latest:
         return {"topics": _fallback_trending(), "discovered_at": _now_iso(), "fresh": False}
 
     batch_time = latest["discovered_at"]
     topics = await col_trending_topics().find({"discovered_at": batch_time}, PROJ).limit(limit).to_list(length=None)
 
-    # Annotate with learner proficiency if available
-    learner = await col_learners().find_one({"user_id": user_id}, PROJ)
-    proficiency = learner.get("topic_proficiency_map", {}) if learner else {}
+    proficiency = (learner or {}).get("topic_proficiency_map", {})
     for t in topics:
-        elo = proficiency.get(t["subtopic"], None)
+        elo = proficiency.get(t["subtopic"])
         t["_elo"] = elo
         t["_started"] = elo is not None
 
@@ -321,6 +332,7 @@ async def list_scheduled(user_id: str = Depends(get_current_user_id)):
 
 
 def _seed_feed() -> list[dict]:
+    """Return a hard-coded set of fallback feed items shown when no DB records exist."""
     now_iso = _now_iso()
     expires_iso = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
     return [
@@ -424,6 +436,7 @@ def _seed_feed() -> list[dict]:
 
 
 def _fallback_trending() -> list[dict]:
+    """Return static trending-topic stubs when the discovery agent has no DB data yet."""
     from app.hf.trend_discovery import _fallback_topics
 
     now_iso = _now_iso()

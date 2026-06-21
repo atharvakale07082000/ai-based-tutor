@@ -19,10 +19,12 @@ PROJ = {"_id": 0, "id": 1, "user_id": 1, "name": 1, "xp": 1, "streak": 1, "topic
 
 
 def _topics_mastered(proficiency: dict) -> int:
+    """Count topics where the learner's ELO has reached mastery (≥ 700)."""
     return sum(1 for elo in proficiency.values() if elo >= 700)
 
 
 def _anonymize(learner: dict, is_self: bool) -> dict:
+    """Return a privacy-safe leaderboard entry, partially masking other learners' names."""
     name = (learner.get("name") or "Learner").strip()
     first = name.split()[0] if name else "Learner"
     initial = first[0].upper() if first else "L"

@@ -57,6 +57,7 @@ async def v3_chat(
     bind_contextvars(session_id=session_id, user_id=user_id, agent="v3_chat")
 
     async def event_stream():
+        """Yield typed SSE frames from the DeepAgent: routing/cot_step/token/done; log latency."""
         start = time.perf_counter()
         had_error = False
 

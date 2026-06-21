@@ -47,9 +47,11 @@ class BaseSubAgent:
     max_steps: int = _DEFAULT_MAX_STEPS
 
     def __init__(self, middleware: MiddlewareChain) -> None:
+        """Inject the middleware chain used by pre/post processing hooks."""
         self._middleware = middleware
 
     def _build_system_prompt(self) -> str:
+        """Render the agent's system prompt with tool descriptions and CoT instructions."""
         tools_desc = tool_registry.describe_tools(self.tool_names)
         display = AGENT_DISPLAY_NAMES.get(self.name, self.name)
         return (
@@ -73,6 +75,7 @@ class BaseSubAgent:
         )
 
     async def _decide_step(self, messages: list[dict]) -> dict:
+        """Call the LLM for one ReAct step; return parsed JSON or a safe error fallback."""
         model_cfg = HF_MODELS["DOUBT_SOLVER"]
         provider = model_cfg["provider"]
         model_id = model_cfg["model_id"]
@@ -115,6 +118,7 @@ class BaseSubAgent:
             }
 
     async def run(self, query: str, context: dict) -> AgentReport:
+        """Execute the full ReAct loop with middleware and return a structured AgentReport."""
         start_ms = time.monotonic()
         display_name = AGENT_DISPLAY_NAMES.get(self.name, self.name)
 

@@ -30,6 +30,7 @@ _AUTH_FAILURE_THRESHOLD = 3
 
 
 def _make_client(provider: str):
+    """Instantiate the correct client for a provider (ResilientGenerationClient or InferenceClient)."""
     if provider in _GENERATION_PROVIDERS:
         from app.hf.generation_client import get_resilient_generation_client
 
@@ -98,6 +99,7 @@ async def hf_chat_completion_with_resilience(
     from app.resilience import resilient_call
 
     async def _call():
+        """Execute a single non-streaming chat-completion attempt."""
         client = get_hf_client(provider)
         response = await asyncio.wait_for(
             asyncio.to_thread(

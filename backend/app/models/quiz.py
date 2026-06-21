@@ -1,3 +1,5 @@
+"""SQLAlchemy ORM model for the quizzes table."""
+
 import uuid
 from datetime import datetime, timezone
 

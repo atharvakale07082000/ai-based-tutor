@@ -31,6 +31,7 @@ async def get_embeddings(text: str) -> list[float]:
 
 
 def cosine_similarity(a: list[float], b: list[float]) -> float:
+    """Return the cosine similarity in [0, 1] between two equal-length vectors."""
     if len(a) != len(b) or not a:
         return 0.0
     dot = sum(x * y for x, y in zip(a, b))

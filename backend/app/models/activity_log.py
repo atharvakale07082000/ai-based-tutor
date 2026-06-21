@@ -1,3 +1,5 @@
+"""Pydantic model for learner activity log entries."""
+
 from datetime import datetime, timezone
 
 from pydantic import BaseModel, Field

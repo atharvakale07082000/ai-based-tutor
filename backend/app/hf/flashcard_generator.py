@@ -85,6 +85,7 @@ Topic: {topic}"""
 
 
 def _fallback_cards(topic: str, count: int) -> list[dict]:
+    """Return a set of generic fallback flashcards when LLM generation fails."""
     base = [
         {
             "front": f"What is the core concept of {topic}?",
