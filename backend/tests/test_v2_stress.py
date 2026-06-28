@@ -223,11 +223,24 @@ async def _mock_decide_step(self, messages: list[dict]) -> dict:
             "score_difficulty": {"text": "explain recursion", "topic": "Python"},
             "generate_quiz": {"topic": "Python", "bloom_level": "apply", "count": 5},
             "get_embeddings": {"text": "learning Python"},
-            "generate_explanation": {"question": "what is recursion?", "correct_answer": "A function calls itself"},
+            "generate_explanation": {
+                "question": "what is recursion?",
+                "correct_answer": "A function calls itself",
+            },
             "get_proficiency": {"user_id": "test-user", "topic": "Python"},
             "get_topic_graph": {"user_id": "test-user"},
-            "save_quiz": {"user_id": "test-user", "topic": "Python", "bloom_level": "apply", "questions": []},
-            "save_progress": {"user_id": "test-user", "topic": "Python", "old_elo": 500.0, "new_elo": 520.0},
+            "save_quiz": {
+                "user_id": "test-user",
+                "topic": "Python",
+                "bloom_level": "apply",
+                "questions": [],
+            },
+            "save_progress": {
+                "user_id": "test-user",
+                "topic": "Python",
+                "old_elo": 500.0,
+                "new_elo": 520.0,
+            },
             "get_due_topics": {"user_id": "test-user"},
             "calculate_elo": {"current_elo": 500.0, "score": 0.8},
             "check_guardrail": {"text": "sample query"},
@@ -246,7 +259,16 @@ async def _mock_decide_step(self, messages: list[dict]) -> dict:
 
 
 async def _mock_stream_final_answer(self, final_answer: str, messages: list[dict]):
-    tokens = ["Here", " is", " a", " helpful", " response", " from", f" {self.name}", "."]
+    tokens = [
+        "Here",
+        " is",
+        " a",
+        " helpful",
+        " response",
+        " from",
+        f" {self.name}",
+        ".",
+    ]
     for token in tokens:
         yield token
 
@@ -314,13 +336,13 @@ async def stream_v2_query(
     client: AsyncClient,
     query: str,
 ) -> tuple[list[dict], int]:
-    """Hit POST /api/v2/chat and return (events, latency_ms)."""
+    """Hit POST /api/v1/chat and return (events, latency_ms)."""
     start = time.monotonic()
     events: list[dict] = []
 
     async with client.stream(
         "POST",
-        "/api/v2/chat",
+        "/api/v1/chat",
         json={"message": query, "history": [], "context": {}},
         timeout=60.0,
     ) as response:
@@ -389,7 +411,9 @@ def _print_summary(results: list[QueryResult], agent_name: str) -> None:
     avg_attempts = sum(r.attempts for r in results) / max(len(results), 1)
 
     print(f"\n{'=' * 60}")
-    print(f"Agent: {agent_name.upper()} | Total: {len(results)} | Passed: {len(passed)} | Failed: {len(failed)}")
+    print(
+        f"Agent: {agent_name.upper()} | Total: {len(results)} | Passed: {len(passed)} | Failed: {len(failed)}"
+    )
     print(f"Avg latency: {avg_latency:.0f}ms | Avg attempts: {avg_attempts:.2f}")
 
     if failed:
@@ -435,7 +459,7 @@ async def v2_client():
         return MockToolResult(name=name, args=args)
 
     with (
-        patch("app.routers.v2.chat.col_learners", return_value=mock_col),
+        patch("app.routers.chat.col_learners", return_value=mock_col),
         patch.object(tool_registry, "call", side_effect=_mock_tool_call),
         patch.object(BaseAgent, "decide_step", _mock_decide_step),
         patch.object(BaseAgent, "stream_final_answer", _mock_stream_final_answer),
@@ -463,8 +487,9 @@ class TestQuizAgentStress:
         _print_summary(results, "quiz")
 
         failed = [r for r in results if not r.passed]
-        assert not failed, f"{len(failed)}/{len(results)} quiz queries failed:\n" + "\n".join(
-            f"  {r.query!r}: {r.error}" for r in failed
+        assert not failed, (
+            f"{len(failed)}/{len(results)} quiz queries failed:\n"
+            + "\n".join(f"  {r.query!r}: {r.error}" for r in failed)
         )
 
 
@@ -479,8 +504,9 @@ class TestCurriculumAgentStress:
         _print_summary(results, "curriculum")
 
         failed = [r for r in results if not r.passed]
-        assert not failed, f"{len(failed)}/{len(results)} curriculum queries failed:\n" + "\n".join(
-            f"  {r.query!r}: {r.error}" for r in failed
+        assert not failed, (
+            f"{len(failed)}/{len(results)} curriculum queries failed:\n"
+            + "\n".join(f"  {r.query!r}: {r.error}" for r in failed)
         )
 
 
@@ -495,8 +521,9 @@ class TestProgressAgentStress:
         _print_summary(results, "progress")
 
         failed = [r for r in results if not r.passed]
-        assert not failed, f"{len(failed)}/{len(results)} progress queries failed:\n" + "\n".join(
-            f"  {r.query!r}: {r.error}" for r in failed
+        assert not failed, (
+            f"{len(failed)}/{len(results)} progress queries failed:\n"
+            + "\n".join(f"  {r.query!r}: {r.error}" for r in failed)
         )
 
 
@@ -526,7 +553,10 @@ class TestDoubtAgentStress:
 
             return _gen()
 
-        with patch("app.agents_v2.doubt_agent.stream_doubt_response", side_effect=_mock_doubt_stream):
+        with patch(
+            "app.agents_v2.doubt_agent.stream_doubt_response",
+            side_effect=_mock_doubt_stream,
+        ):
             for query in DOUBT_QUERIES:
                 r = await run_with_retry(v2_client, query, "doubt")
                 results.append(r)
@@ -534,8 +564,9 @@ class TestDoubtAgentStress:
         _print_summary(results, "doubt")
 
         failed = [r for r in results if not r.passed]
-        assert not failed, f"{len(failed)}/{len(results)} doubt queries failed:\n" + "\n".join(
-            f"  {r.query!r}: {r.error}" for r in failed
+        assert not failed, (
+            f"{len(failed)}/{len(results)} doubt queries failed:\n"
+            + "\n".join(f"  {r.query!r}: {r.error}" for r in failed)
         )
 
 
@@ -550,8 +581,9 @@ class TestAssistantAgentStress:
         _print_summary(results, "assistant")
 
         failed = [r for r in results if not r.passed]
-        assert not failed, f"{len(failed)}/{len(results)} assistant queries failed:\n" + "\n".join(
-            f"  {r.query!r}: {r.error}" for r in failed
+        assert not failed, (
+            f"{len(failed)}/{len(results)} assistant queries failed:\n"
+            + "\n".join(f"  {r.query!r}: {r.error}" for r in failed)
         )
 
 
@@ -572,7 +604,10 @@ class TestFullSuite125Queries:
 
             return _gen()
 
-        with patch("app.agents_v2.doubt_agent.stream_doubt_response", side_effect=_mock_doubt_stream):
+        with patch(
+            "app.agents_v2.doubt_agent.stream_doubt_response",
+            side_effect=_mock_doubt_stream,
+        ):
             for agent_name, queries in ALL_QUERIES.items():
                 for query in queries:
                     r = await run_with_retry(v2_client, query, agent_name)
@@ -597,22 +632,31 @@ class TestFullSuite125Queries:
                 by_agent[ag]["fail"] += 1
 
         print(f"\n{'#' * 60}")
-        print(f"FULL SUITE: {total} queries | Passed: {len(passed)} | Failed: {len(failed)}")
+        print(
+            f"FULL SUITE: {total} queries | Passed: {len(passed)} | Failed: {len(failed)}"
+        )
         print(f"Avg latency: {avg_latency:.0f}ms | Queries retried: {len(retried)}")
         print("\nPer-agent breakdown:")
         for ag, counts in sorted(by_agent.items()):
             status = "✓" if counts["fail"] == 0 else "✗"
-            print(f"  {status} {ag:12s}: {counts['pass']:2d} passed, {counts['fail']:2d} failed")
+            print(
+                f"  {status} {ag:12s}: {counts['pass']:2d} passed, {counts['fail']:2d} failed"
+            )
 
         if failed:
             print("\nFailed queries:")
             for r in failed:
-                print(f"  [{r.expected_agent}] [{r.attempts} attempts] {r.query[:55]!r}")
+                print(
+                    f"  [{r.expected_agent}] [{r.attempts} attempts] {r.query[:55]!r}"
+                )
                 print(f"    Error: {r.error}")
         print(f"{'#' * 60}\n")
 
-        assert not failed, f"{len(failed)}/{total} queries failed across all agents.\n" + "\n".join(
-            f"  [{r.expected_agent}] {r.query!r}: {r.error}" for r in failed
+        assert not failed, (
+            f"{len(failed)}/{total} queries failed across all agents.\n"
+            + "\n".join(
+                f"  [{r.expected_agent}] {r.query!r}: {r.error}" for r in failed
+            )
         )
 
 
@@ -649,7 +693,10 @@ class TestRoutingAccuracy:
 
             return _gen()
 
-        with patch("app.agents_v2.doubt_agent.stream_doubt_response", side_effect=_mock_doubt_stream):
+        with patch(
+            "app.agents_v2.doubt_agent.stream_doubt_response",
+            side_effect=_mock_doubt_stream,
+        ):
             for query, expected in confident_map:
                 _step_counters.clear()
                 events, _ = await stream_v2_query(v2_client, query)
@@ -699,15 +746,22 @@ class TestSSEEventStructure:
 
             return _gen()
 
-        with patch("app.agents_v2.doubt_agent.stream_doubt_response", side_effect=_mock_doubt_stream):
-            events, _ = await stream_v2_query(v2_client, "explain what is a neural network")
+        with patch(
+            "app.agents_v2.doubt_agent.stream_doubt_response",
+            side_effect=_mock_doubt_stream,
+        ):
+            events, _ = await stream_v2_query(
+                v2_client, "explain what is a neural network"
+            )
 
         _assert_full_event_structure(events, expected_tool_step=True)
 
     @pytest.mark.asyncio
     async def test_assistant_sse_structure(self, v2_client):
         _step_counters.clear()
-        events, _ = await stream_v2_query(v2_client, "help me get started with learning")
+        events, _ = await stream_v2_query(
+            v2_client, "help me get started with learning"
+        )
         _assert_full_event_structure(events, expected_tool_step=True)
 
 

@@ -1,4 +1,4 @@
-"""POST /api/v2/chat — agentic SSE endpoint."""
+"""POST /api/v1/chat — agentic SSE chat endpoint (the single chat implementation)."""
 
 from __future__ import annotations
 
@@ -85,7 +85,11 @@ async def v2_chat(
             # (v1 and v3 already guard; this closes the gap on the v2 path.)
             guard = check_input(stripped, context="v2_chat")
             if not guard.passed and guard.reason.startswith("blocked_pattern"):
-                log.warning("v2_chat_guardrail_blocked", reason=guard.reason, session_id=session_id)
+                log.warning(
+                    "v2_chat_guardrail_blocked",
+                    reason=guard.reason,
+                    session_id=session_id,
+                )
                 yield f"data: {json.dumps({'type': 'guardrail', 'message': 'That request looks like an attempt to override my instructions — I can only help with learning.'})}\n\n"
                 return
 
@@ -101,7 +105,9 @@ async def v2_chat(
 
             agent_name, reason = await _agent_router.route(stripped, context)
             display_name = AGENT_DISPLAY_NAMES.get(agent_name, "AI Tutor")
-            log.info("v2_chat_routed", agent=agent_name, reason=reason, session_id=session_id)
+            log.info(
+                "v2_chat_routed", agent=agent_name, reason=reason, session_id=session_id
+            )
             yield f"data: {json.dumps({'type': 'routing', 'agent': agent_name, 'display_name': display_name, 'reason': reason})}\n\n"
 
             # Live step timeline: routing done → working (+ one step per tool call) → composing answer.
@@ -110,7 +116,9 @@ async def v2_chat(
             yield f"data: {json.dumps(tl.start('work'))}\n\n"
             answered = False
             answer_text = ""  # accumulated for online eval sampling
-            tool_grounding: list[str] = []  # tool results = the retrieval context for faithfulness
+            tool_grounding: list[
+                str
+            ] = []  # tool results = the retrieval context for faithfulness
 
             agent = _AGENTS.get(agent_name, _AGENTS["assistant"])
             async for event in agent.run(stripped, context):

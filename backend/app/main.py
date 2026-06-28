@@ -24,6 +24,7 @@ from app.otel import current_trace_id, get_otel_tracer
 from app.routers import (
     admin,
     auth,
+    chat,
     content,
     courses,
     curriculum,
@@ -39,7 +40,6 @@ from app.routers import (
     quiz,
     session,
 )
-from app.routers.v2 import chat as chat_v2
 from app.websocket import sio
 
 # Configure structured JSON logging before the first log call.
@@ -70,7 +70,9 @@ async def lifespan(app: FastAPI):
     get_otel_tracer()
 
     loop = asyncio.get_event_loop()
-    executor = concurrent.futures.ThreadPoolExecutor(max_workers=64, thread_name_prefix="ai-tutor")
+    executor = concurrent.futures.ThreadPoolExecutor(
+        max_workers=64, thread_name_prefix="ai-tutor"
+    )
     loop.set_default_executor(executor)
     log.info("thread_pool_set", max_workers=64)
 
@@ -175,18 +177,22 @@ app.include_router(evals.router, prefix="/api/v1/evals", tags=["evals"])
 app.include_router(courses.router, prefix="/api/v1/courses", tags=["courses"])
 app.include_router(jobs.router, prefix="/api/v1/jobs", tags=["jobs"])
 app.include_router(feed.router, prefix="/api/v1/feed", tags=["feed"])
-app.include_router(leaderboard.router, prefix="/api/v1/leaderboard", tags=["leaderboard"])
+app.include_router(
+    leaderboard.router, prefix="/api/v1/leaderboard", tags=["leaderboard"]
+)
 app.include_router(profile.router, prefix="/api/v1/profile", tags=["profile"])
-# Chat is consolidated on v2 (D4). The v1 `assistant` and v3 `chat_v3` routers are
-# retired/de-registered; their modules remain for reference but serve no routes.
-app.include_router(chat_v2.router, prefix="/api/v2", tags=["v2"])
+# Single chat implementation (agents_v2 specialists) at /api/v1/chat — the old v1/v3 chat
+# stacks were removed; this is the one source of truth. (router defines POST /chat)
+app.include_router(chat.router, prefix="/api/v1", tags=["chat"])
 
 
 # ── Global exception handler ─────────────────────────────────────────────────
 
 
 @app.exception_handler(Exception)
-async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+async def _unhandled_exception_handler(
+    request: Request, exc: Exception
+) -> JSONResponse:
     """Catch any unhandled exception and return a structured 500 instead of leaking tracebacks."""
     correlation_id = request.headers.get("X-Correlation-Id", "unknown")
     log.error(
@@ -260,7 +266,11 @@ async def ready():
     status_code = 200 if healthy else 503
     return JSONResponse(
         status_code=status_code,
-        content={"status": "ok" if healthy else "degraded", "checks": checks, "version": VERSION},
+        content={
+            "status": "ok" if healthy else "degraded",
+            "checks": checks,
+            "version": VERSION,
+        },
     )
 
 

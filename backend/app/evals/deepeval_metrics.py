@@ -15,21 +15,26 @@ fire-and-forget so they never add latency to the request.
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import os
 import random
 
 import structlog
-
-# Keep DeepEval quiet + offline (no telemetry, no Confident-AI login, no progress bars).
-os.environ.setdefault("DEEPEVAL_TELEMETRY_OPT_OUT", "YES")
-os.environ.setdefault("DEEPEVAL_DISABLE_PROGRESS_BAR", "YES")
-os.environ.setdefault("CONFIDENT_API_KEY", "")
 
 from app.config import settings
 from app.evals.mongo import insert_eval
 from app.evals.schemas import EvalRecord
 
 log = structlog.get_logger()
+
+# Keep DeepEval quiet + offline (set before any lazy `import deepeval` below).
+os.environ.setdefault("DEEPEVAL_TELEMETRY_OPT_OUT", "YES")
+os.environ.setdefault("DEEPEVAL_DISABLE_PROGRESS_BAR", "YES")
+os.environ.setdefault("CONFIDENT_API_KEY", "")
+
+# deepeval is an optional (opt-in) dependency — see pyproject. When it's not installed, online
+# sampling silently no-ops so the app runs cleanly without it.
+_DEEPEVAL_AVAILABLE = importlib.util.find_spec("deepeval") is not None
 
 # Keep references to fire-and-forget eval tasks so they aren't GC'd mid-flight.
 _BG_TASKS: set[asyncio.Task] = set()
@@ -46,7 +51,11 @@ def should_sample() -> bool:
     LLM + Mongo calls, which must never fire during the test suite (they fight per-test loop teardown
     and slow everything down).
     """
-    if not settings.EVALS_ONLINE_SAMPLING or os.environ.get("PYTEST_CURRENT_TEST"):
+    if (
+        not _DEEPEVAL_AVAILABLE
+        or not settings.EVALS_ONLINE_SAMPLING
+        or os.environ.get("PYTEST_CURRENT_TEST")
+    ):
         return False
     return random.choice([True, False])
 
@@ -96,11 +105,18 @@ def _single_turn_metrics(judge, threshold: float):
 def _faithfulness_metric(judge, threshold: float):
     from deepeval.metrics import FaithfulnessMetric
 
-    return ("faithfulness", FaithfulnessMetric(model=judge, threshold=threshold, async_mode=False))
+    return (
+        "faithfulness",
+        FaithfulnessMetric(model=judge, threshold=threshold, async_mode=False),
+    )
 
 
 def _conversation_metrics(judge, threshold: float):
-    from deepeval.metrics import ConversationalGEval, KnowledgeRetentionMetric, RoleAdherenceMetric
+    from deepeval.metrics import (
+        ConversationalGEval,
+        KnowledgeRetentionMetric,
+        RoleAdherenceMetric,
+    )
     from deepeval.test_case import TurnParams
 
     return [
@@ -116,23 +132,36 @@ def _conversation_metrics(judge, threshold: float):
         ),
         (
             "conversation_knowledge_retention",
-            KnowledgeRetentionMetric(model=judge, threshold=threshold, async_mode=False),
+            KnowledgeRetentionMetric(
+                model=judge, threshold=threshold, async_mode=False
+            ),
         ),
-        ("conversation_role_adherence", RoleAdherenceMetric(model=judge, threshold=threshold, async_mode=False)),
+        (
+            "conversation_role_adherence",
+            RoleAdherenceMetric(model=judge, threshold=threshold, async_mode=False),
+        ),
     ]
 
 
 # ── Scoring + persistence ─────────────────────────────────────────────────────
 
 
-async def _measure_and_store(eval_type, metric, test_case, *, agent, input, output, learner_id="", session_id=""):
+async def _measure_and_store(
+    eval_type, metric, test_case, *, agent, input, output, learner_id="", session_id=""
+):
     """Run one metric (off-thread) and persist an EvalRecord; swallow errors (evals never break a flow)."""
     try:
         # Bounded concurrency: at most EVAL_MAX_CONCURRENCY judge calls in flight across all evals.
         async with _EVAL_SEMAPHORE:
             await asyncio.to_thread(metric.measure, test_case)
         score = float(metric.score if metric.score is not None else 0.0)
-        passed = bool(getattr(metric, "success", score >= getattr(metric, "threshold", settings.EVAL_THRESHOLD)))
+        passed = bool(
+            getattr(
+                metric,
+                "success",
+                score >= getattr(metric, "threshold", settings.EVAL_THRESHOLD),
+            )
+        )
         reason = getattr(metric, "reason", "") or ""
     except Exception as e:  # noqa: BLE001
         log.warning("deepeval_metric_failed", eval_type=eval_type, error=str(e)[:200])
@@ -153,11 +182,19 @@ async def _measure_and_store(eval_type, metric, test_case, *, agent, input, outp
         await insert_eval(record.to_mongo())
     except Exception as e:  # noqa: BLE001
         log.warning("deepeval_store_failed", eval_type=eval_type, error=str(e)[:200])
-    log.info("deepeval_scored", eval_type=eval_type, agent=agent, score=record.score, passed=record.passed)
+    log.info(
+        "deepeval_scored",
+        eval_type=eval_type,
+        agent=agent,
+        score=record.score,
+        passed=record.passed,
+    )
     return record
 
 
-async def evaluate_single_turn(agent, query, answer, *, retrieval_context=None, learner_id="", session_id=""):
+async def evaluate_single_turn(
+    agent, query, answer, *, retrieval_context=None, learner_id="", session_id=""
+):
     """Run the single-turn metrics on one agent answer and store each result."""
     from deepeval.test_case import LLMTestCase
 
@@ -165,7 +202,9 @@ async def evaluate_single_turn(agent, query, answer, *, retrieval_context=None, 
 
     judge = get_judge()
     th = settings.EVAL_THRESHOLD
-    tc = LLMTestCase(input=query, actual_output=answer, retrieval_context=retrieval_context or None)
+    tc = LLMTestCase(
+        input=query, actual_output=answer, retrieval_context=retrieval_context or None
+    )
     metrics = list(_single_turn_metrics(judge, th))
     if retrieval_context:
         metrics = [_faithfulness_metric(judge, th)] + metrics
@@ -174,11 +213,20 @@ async def evaluate_single_turn(agent, query, answer, *, retrieval_context=None, 
     oo = {"answer": answer[:2000]}
     for eval_type, metric in metrics:
         await _measure_and_store(
-            eval_type, metric, tc, agent=agent, input=io, output=oo, learner_id=learner_id, session_id=session_id
+            eval_type,
+            metric,
+            tc,
+            agent=agent,
+            input=io,
+            output=oo,
+            learner_id=learner_id,
+            session_id=session_id,
         )
 
 
-async def evaluate_conversation(agent, turns, *, chatbot_role="a warm, accurate tutor", learner_id="", session_id=""):
+async def evaluate_conversation(
+    agent, turns, *, chatbot_role="a warm, accurate tutor", learner_id="", session_id=""
+):
     """Run multi-turn conversation metrics over a list of {role, content} turns and store results.
 
     ``turns`` is normalized [{role: 'user'|'assistant', content: str}, ...] including the latest turn.
@@ -192,14 +240,25 @@ async def evaluate_conversation(agent, turns, *, chatbot_role="a warm, accurate 
 
     judge = get_judge()
     th = settings.EVAL_THRESHOLD
-    dt_turns = [Turn(role=t["role"], content=str(t["content"])[:2000]) for t in turns if t.get("content")]
+    dt_turns = [
+        Turn(role=t["role"], content=str(t["content"])[:2000])
+        for t in turns
+        if t.get("content")
+    ]
     tc = ConversationalTestCase(turns=dt_turns, chatbot_role=chatbot_role)
 
     io = {"turns": len(dt_turns)}
     oo = {"last": dt_turns[-1].content[:1000] if dt_turns else ""}
     for eval_type, metric in _conversation_metrics(judge, th):
         await _measure_and_store(
-            eval_type, metric, tc, agent=agent, input=io, output=oo, learner_id=learner_id, session_id=session_id
+            eval_type,
+            metric,
+            tc,
+            agent=agent,
+            input=io,
+            output=oo,
+            learner_id=learner_id,
+            session_id=session_id,
         )
 
 
@@ -213,22 +272,39 @@ def _fire(coro) -> None:
     task.add_done_callback(_BG_TASKS.discard)
 
 
-def maybe_eval_single_turn(agent, query, answer, *, retrieval_context=None, learner_id="", session_id=""):
+def maybe_eval_single_turn(
+    agent, query, answer, *, retrieval_context=None, learner_id="", session_id=""
+):
     """If sampled, evaluate a single agent answer in the background."""
     if not (query and answer) or not should_sample() or _backlog_full():
         return
     _fire(
         evaluate_single_turn(
-            agent, query, answer, retrieval_context=retrieval_context, learner_id=learner_id, session_id=session_id
+            agent,
+            query,
+            answer,
+            retrieval_context=retrieval_context,
+            learner_id=learner_id,
+            session_id=session_id,
         )
     )
 
 
-def maybe_eval_conversation(agent, turns, *, chatbot_role="a warm, accurate tutor", learner_id="", session_id=""):
+def maybe_eval_conversation(
+    agent, turns, *, chatbot_role="a warm, accurate tutor", learner_id="", session_id=""
+):
     """If sampled, evaluate a multi-turn conversation in the background."""
     if not should_sample() or _backlog_full():
         return
-    _fire(evaluate_conversation(agent, turns, chatbot_role=chatbot_role, learner_id=learner_id, session_id=session_id))
+    _fire(
+        evaluate_conversation(
+            agent,
+            turns,
+            chatbot_role=chatbot_role,
+            learner_id=learner_id,
+            session_id=session_id,
+        )
+    )
 
 
 def maybe_eval_chat(
@@ -252,10 +328,21 @@ def maybe_eval_chat(
     if query and answer:
         _fire(
             evaluate_single_turn(
-                agent, query, answer, retrieval_context=retrieval_context, learner_id=learner_id, session_id=session_id
+                agent,
+                query,
+                answer,
+                retrieval_context=retrieval_context,
+                learner_id=learner_id,
+                session_id=session_id,
             )
         )
     if len(turns) >= 2:
         _fire(
-            evaluate_conversation(agent, turns, chatbot_role=chatbot_role, learner_id=learner_id, session_id=session_id)
+            evaluate_conversation(
+                agent,
+                turns,
+                chatbot_role=chatbot_role,
+                learner_id=learner_id,
+                session_id=session_id,
+            )
         )

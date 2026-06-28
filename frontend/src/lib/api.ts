@@ -705,14 +705,15 @@ export type V2Event =
   | V2ErrorEvent
   | StepEvent
 
-export const assistantV2API = {
+// Single chat endpoint: /api/v1/chat (BASE_URL already includes /api/v1).
+export const chatAPI = {
   streamChat: async (
     message: string,
     onEvent: (event: V2Event) => void,
     history?: Array<{ role: string; content: string }>,
     context?: Record<string, unknown>,
   ): Promise<void> => {
-    const response = await fetch(`${BASE_URL}/v2/chat`, {
+    const response = await fetch(`${BASE_URL}/chat`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

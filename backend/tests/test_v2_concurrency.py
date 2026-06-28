@@ -122,7 +122,7 @@ async def _run_single_request(client: AsyncClient, query: str) -> ConcurrentResu
     try:
         async with client.stream(
             "POST",
-            "/api/v2/chat",
+            "/api/v1/chat",
             json={"message": query, "history": [], "context": {}},
             timeout=90.0,
         ) as resp:
@@ -144,27 +144,53 @@ async def _run_single_request(client: AsyncClient, query: str) -> ConcurrentResu
         types = [e.get("type") for e in events]
 
         if not events:
-            return ConcurrentResult(query=query, passed=False, latency_ms=latency_ms, error="No events")
+            return ConcurrentResult(
+                query=query, passed=False, latency_ms=latency_ms, error="No events"
+            )
         if types[0] != "routing":
-            return ConcurrentResult(query=query, passed=False, latency_ms=latency_ms, error=f"First={types[0]!r}")
+            return ConcurrentResult(
+                query=query,
+                passed=False,
+                latency_ms=latency_ms,
+                error=f"First={types[0]!r}",
+            )
         if types[-1] not in ("done", "error"):
-            return ConcurrentResult(query=query, passed=False, latency_ms=latency_ms, error=f"Last={types[-1]!r}")
+            return ConcurrentResult(
+                query=query,
+                passed=False,
+                latency_ms=latency_ms,
+                error=f"Last={types[-1]!r}",
+            )
         if types[-1] == "error":
             return ConcurrentResult(
-                query=query, passed=False, latency_ms=latency_ms, error=events[-1].get("message", "")
+                query=query,
+                passed=False,
+                latency_ms=latency_ms,
+                error=events[-1].get("message", ""),
             )
         if "token" not in types:
-            return ConcurrentResult(query=query, passed=False, latency_ms=latency_ms, error="No token events")
+            return ConcurrentResult(
+                query=query,
+                passed=False,
+                latency_ms=latency_ms,
+                error="No token events",
+            )
 
         token_count = types.count("token")
         routed_to = events[0].get("agent", "")
         return ConcurrentResult(
-            query=query, passed=True, latency_ms=latency_ms, routed_to=routed_to, token_count=token_count
+            query=query,
+            passed=True,
+            latency_ms=latency_ms,
+            routed_to=routed_to,
+            token_count=token_count,
         )
 
     except Exception as exc:
         latency_ms = int((time.monotonic() - start) * 1000)
-        return ConcurrentResult(query=query, passed=False, latency_ms=latency_ms, error=str(exc)[:200])
+        return ConcurrentResult(
+            query=query, passed=False, latency_ms=latency_ms, error=str(exc)[:200]
+        )
 
 
 # ── Fixture ───────────────────────────────────────────────────────────────────
@@ -192,14 +218,20 @@ async def concurrent_v2_client():
         return MockToolResult(name=name, args=args)
 
     with (
-        patch("app.routers.v2.chat.col_learners", return_value=mock_col),
+        patch("app.routers.chat.col_learners", return_value=mock_col),
         patch.object(tool_registry, "call", side_effect=_mock_tool_call),
         patch.object(BaseAgent, "decide_step", _mock_decide_step),
         patch.object(BaseAgent, "stream_final_answer", _mock_stream_final_answer),
-        patch("app.agents_v2.doubt_agent.stream_doubt_response", side_effect=_mock_doubt_stream),
+        patch(
+            "app.agents_v2.doubt_agent.stream_doubt_response",
+            side_effect=_mock_doubt_stream,
+        ),
         # Deterministic routing: this is a semaphore/concurrency test, not a live-routing test.
         # Without this, tie/miss queries fall through to a real LLM routing call and flake under load.
-        patch("app.agents.routing.llm_route", new=AsyncMock(return_value=("assistant", "test-routing"))),
+        patch(
+            "app.agents.routing.llm_route",
+            new=AsyncMock(return_value=("assistant", "test-routing")),
+        ),
     ):
         async with AsyncClient(
             transport=ASGITransport(app=app),
@@ -223,7 +255,9 @@ class TestConcurrency50Users:
         queries = [_QUERIES_POOL[i % len(_QUERIES_POOL)] for i in range(n)]
 
         start = time.monotonic()
-        results = await asyncio.gather(*[_run_single_request(concurrent_v2_client, q) for q in queries])
+        results = await asyncio.gather(
+            *[_run_single_request(concurrent_v2_client, q) for q in queries]
+        )
         wall_ms = int((time.monotonic() - start) * 1000)
 
         passed = [r for r in results if r.passed]
@@ -253,7 +287,9 @@ class TestConcurrency200Users:
         queries = [_QUERIES_POOL[i % len(_QUERIES_POOL)] for i in range(n)]
 
         start = time.monotonic()
-        results = await asyncio.gather(*[_run_single_request(concurrent_v2_client, q) for q in queries])
+        results = await asyncio.gather(
+            *[_run_single_request(concurrent_v2_client, q) for q in queries]
+        )
         wall_ms = int((time.monotonic() - start) * 1000)
 
         passed = [r for r in results if r.passed]
@@ -270,7 +306,9 @@ class TestConcurrency200Users:
                 agent_counts[r.routed_to] = agent_counts.get(r.routed_to, 0) + 1
 
         print(f"\n[200-user] Passed: {len(passed)}/{n} | Wall: {wall_ms}ms")
-        print(f"  Latency — Avg: {avg_latency:.0f}ms | P50: {p50}ms | P95: {p95}ms | P99: {p99}ms")
+        print(
+            f"  Latency — Avg: {avg_latency:.0f}ms | P50: {p50}ms | P95: {p95}ms | P99: {p99}ms"
+        )
         print(f"  Agent distribution: {dict(sorted(agent_counts.items()))}")
 
         if failed:
@@ -293,15 +331,21 @@ class TestConcurrency200Users:
         queries = [_QUERIES_POOL[i % len(_QUERIES_POOL)] for i in range(n)]
 
         start = time.monotonic()
-        results = await asyncio.gather(*[_run_single_request(concurrent_v2_client, q) for q in queries])
+        results = await asyncio.gather(
+            *[_run_single_request(concurrent_v2_client, q) for q in queries]
+        )
         wall_s = time.monotonic() - start
         throughput = n / wall_s
 
         passed = sum(1 for r in results if r.passed)
-        print(f"\n[Throughput] {n} requests in {wall_s:.2f}s = {throughput:.1f} req/s | {passed}/{n} passed")
+        print(
+            f"\n[Throughput] {n} requests in {wall_s:.2f}s = {throughput:.1f} req/s | {passed}/{n} passed"
+        )
 
         # Minimum 20 req/s (very conservative for mocked tests on any hardware)
-        assert throughput >= 20, f"Throughput {throughput:.1f} req/s below 20 req/s minimum"
+        assert throughput >= 20, (
+            f"Throughput {throughput:.1f} req/s below 20 req/s minimum"
+        )
         assert wall_s < 30, f"200 requests took {wall_s:.1f}s (limit: 30s)"
 
 
@@ -313,7 +357,9 @@ class TestSemaphoreBehavior:
         """Fire 40 requests simultaneously — all should get semaphore slots immediately."""
         from app.agents_v2.base import _HF_SEMAPHORE
 
-        assert _HF_SEMAPHORE._value == 40, f"Semaphore initial value should be 40, got {_HF_SEMAPHORE._value}"
+        assert _HF_SEMAPHORE._value == 40, (
+            f"Semaphore initial value should be 40, got {_HF_SEMAPHORE._value}"
+        )
 
     @pytest.mark.asyncio
     async def test_100_concurrent_with_semaphore(self, concurrent_v2_client):
@@ -322,12 +368,15 @@ class TestSemaphoreBehavior:
         n = 100
         queries = [_QUERIES_POOL[i % len(_QUERIES_POOL)] for i in range(n)]
 
-        results = await asyncio.gather(*[_run_single_request(concurrent_v2_client, q) for q in queries])
+        results = await asyncio.gather(
+            *[_run_single_request(concurrent_v2_client, q) for q in queries]
+        )
 
         failed = [r for r in results if not r.passed]
         passed_count = n - len(failed)
         print(f"\n[Semaphore-100] Passed: {passed_count}/{n}")
 
-        assert len(failed) == 0, f"{len(failed)}/{n} requests failed under semaphore:\n" + "\n".join(
-            f"  {r.query!r}: {r.error}" for r in failed[:5]
+        assert len(failed) == 0, (
+            f"{len(failed)}/{n} requests failed under semaphore:\n"
+            + "\n".join(f"  {r.query!r}: {r.error}" for r in failed[:5])
         )

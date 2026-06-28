@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { assistantV2API } from '@/lib/api'
+import { chatAPI } from '@/lib/api'
 import { useLearnerStore } from '@/stores/learnerStore'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -135,7 +135,7 @@ export default function AtelierV2Page() {
       .map((m) => ({ role: m.role, content: m.content }))
 
     try {
-      await assistantV2API.streamChat(
+      await chatAPI.streamChat(
         text,
         (event) => {
           setMessages((msgs) =>

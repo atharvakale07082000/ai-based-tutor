@@ -93,13 +93,17 @@ _ACTION_PATTERNS: list[tuple[str, re.Pattern, str]] = [
     ("POST", re.compile(r"^/api/v1/jobs/[^/]+/reanalyze/stream$"), "Re-checked a Job"),
     ("PATCH", re.compile(r"^/api/v1/jobs/[^/]+$"), "Updated a Job Application"),
     ("POST", re.compile(r"^/api/v1/jobs/?$"), "Saved a Job Application"),
-    ("POST", re.compile(r"^/api/v2/chat$"), "Asked the AI Assistant"),
+    ("POST", re.compile(r"^/api/v1/chat$"), "Asked the AI Assistant"),
     ("GET", re.compile(r"^/api/v1/feed/trending$"), "Viewed Trending Topics"),
     ("GET", re.compile(r"^/api/v1/feed/scheduled$"), "Viewed Scheduled Feed"),
     ("POST", re.compile(r"^/api/v1/feed/run-discovery$"), "Ran Feed Discovery"),
     ("POST", re.compile(r"^/api/v1/feed/[^/]+/snooze$"), "Snoozed Feed Item"),
     ("POST", re.compile(r"^/api/v1/feed/[^/]+/schedule$"), "Scheduled Feed Item"),
-    ("DELETE", re.compile(r"^/api/v1/feed/[^/]+/interaction$"), "Removed Feed Interaction"),
+    (
+        "DELETE",
+        re.compile(r"^/api/v1/feed/[^/]+/interaction$"),
+        "Removed Feed Interaction",
+    ),
     ("GET", re.compile(r"^/api/v1/feed$"), "Viewed Feed"),
     ("GET", re.compile(r"^/api/v1/leaderboard$"), "Viewed Leaderboard"),
     ("GET", re.compile(r"^/api/v1/profile/activity-stats$"), "Viewed Activity Stats"),
@@ -181,7 +185,9 @@ def _schedule_log(entry: dict) -> None:
 
 
 class ActivityLoggingMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+    async def dispatch(
+        self, request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
         if not settings.ACTIVITY_LOGGING_ENABLED or request.url.path in _SKIP_PATHS:
             return await call_next(request)
 
