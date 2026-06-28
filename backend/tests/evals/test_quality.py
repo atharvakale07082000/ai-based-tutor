@@ -6,8 +6,17 @@ from the normal test run. They use the domain golden dataset (tutoring / career-
 """
 
 import pytest
+
+pytest.importorskip(
+    "deepeval"
+)  # opt-in dep; install with `uv pip install deepeval instructor`
+
 from app.evals.deepeval_judge import get_judge
-from app.evals.deepeval_metrics import _conversation_metrics, _faithfulness_metric, _single_turn_metrics
+from app.evals.deepeval_metrics import (
+    _conversation_metrics,
+    _faithfulness_metric,
+    _single_turn_metrics,
+)
 
 from tests.evals.datasets import FAITHFUL_DOUBT, TUTOR_CONVERSATION, UNFAITHFUL_DOUBT
 
@@ -21,7 +30,9 @@ def test_faithfulness_separates_faithful_from_unfaithful():
     _, bad = _faithfulness_metric(judge, 0.6)
     bad.measure(UNFAITHFUL_DOUBT)
     assert good.score >= 0.6, f"faithful answer scored low: {good.score}"
-    assert good.score > bad.score, f"faithful({good.score}) should beat unfaithful({bad.score})"
+    assert good.score > bad.score, (
+        f"faithful({good.score}) should beat unfaithful({bad.score})"
+    )
 
 
 def test_single_turn_metrics_score_a_good_tutor_answer():

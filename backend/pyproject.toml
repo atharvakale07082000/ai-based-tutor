@@ -40,10 +40,14 @@ dependencies = [
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
-    # Quality-eval suite (opt-in, marker-gated). Kept out of prod deps (uv sync --no-dev).
-    "deepeval>=2.0",
-    "instructor>=1.6",
 ]
+
+# NOTE: the opt-in DeepEval quality suite (deepeval + instructor) is intentionally NOT a project
+# dependency. Its transitive pins conflict with this project's tenacity>=9.1 and huggingface-hub>=1.20
+# (deepeval needs tenacity<=9.0 and click<8.4, hf-hub needs click>=8.4), which would make `uv sync`
+# unresolvable. The eval suite is marker-gated and skipped unless those packages are present, so:
+#   to run evals:  uv pip install "deepeval>=4" "instructor>=1.6"  then  RUN_EVALS=1 uv run pytest -m evals
+# This keeps `uv sync` / `uv lock` working for the core project.
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -51,3 +55,8 @@ asyncio_default_fixture_loop_scope = "function"
 markers = [
     "evals: DeepEval-based quality suite (opt-in; hits the NVIDIA judge LLM). Run with -m evals.",
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# These call pytest.importorskip("deepeval") before importing deepeval, which trips E402.
+"tests/test_deepeval_judge.py" = ["E402"]
+"tests/evals/*.py" = ["E402"]

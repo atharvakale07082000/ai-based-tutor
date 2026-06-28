@@ -1,7 +1,17 @@
 """Fast (no-network) tests for the DeepEval NVIDIA judge wrapper + sampling gate."""
 
+import pytest
+
+pytest.importorskip(
+    "deepeval"
+)  # opt-in dep; install with `uv pip install deepeval instructor`
+
 from app.evals.deepeval_judge import get_judge
-from app.evals.deepeval_metrics import _conversation_metrics, _single_turn_metrics, should_sample
+from app.evals.deepeval_metrics import (
+    _conversation_metrics,
+    _single_turn_metrics,
+    should_sample,
+)
 from deepeval.models import DeepEvalBaseLLM
 from pydantic import BaseModel
 
@@ -31,7 +41,10 @@ def test_should_sample_returns_bool():
 
 def test_metric_factories_build_without_network():
     j = get_judge()
-    assert [e for e, _ in _single_turn_metrics(j, 0.6)] == ["answer_correctness", "answer_accuracy"]
+    assert [e for e, _ in _single_turn_metrics(j, 0.6)] == [
+        "answer_correctness",
+        "answer_accuracy",
+    ]
     assert [e for e, _ in _conversation_metrics(j, 0.6)] == [
         "conversation_consistency",
         "conversation_knowledge_retention",

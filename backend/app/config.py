@@ -17,7 +17,9 @@ class Settings(BaseSettings):
     # App
     APP_ENV: str = "development"
     LOG_LEVEL: str = "INFO"
-    JSON_LOGS: bool = False  # False = pretty coloured console; set JSON_LOGS=true in production
+    JSON_LOGS: bool = (
+        False  # False = pretty coloured console; set JSON_LOGS=true in production
+    )
 
     # JWT
     SECRET_KEY: str = "change-this-secret-in-production"
@@ -45,15 +47,20 @@ class Settings(BaseSettings):
     # Rate-limit safety: cap concurrent judge calls + bound the background eval backlog so online
     # sampling never floods the NVIDIA endpoint. Each eval metric makes several judge calls.
     EVAL_MAX_CONCURRENCY: int = 2  # max simultaneous judge (NVIDIA) calls from evals
-    EVAL_MAX_PENDING: int = 16  # drop new eval sampling if this many eval tasks are already queued
-    EVAL_JUDGE_MAX_RETRIES: int = 4  # OpenAI-client retries (handles NVIDIA 429s with backoff)
+    EVAL_MAX_PENDING: int = (
+        16  # drop new eval sampling if this many eval tasks are already queued
+    )
+    EVAL_JUDGE_MAX_RETRIES: int = (
+        4  # OpenAI-client retries (handles NVIDIA 429s with backoff)
+    )
     EVAL_JUDGE_TIMEOUT_S: float = 30.0
 
     # Evals dashboard superuser — the only account that can view evals.
-    # Password has NO source default (must come from the environment); auto-seeding is disabled in
-    # production. Set SUPERUSER_PASSWORD in your .env to enable the dashboard locally.
+    # The dev default lets the dashboard work out-of-the-box with no env changes. Auto-seeding is
+    # DISABLED in production (see auth.jwt.seed_superuser), so this default is never a production
+    # backdoor — set a strong SUPERUSER_PASSWORD in the environment for any non-dev use.
     SUPERUSER_EMAIL: str = "admin@test.com"
-    SUPERUSER_PASSWORD: str = ""
+    SUPERUSER_PASSWORD: str = "admin@1234"
 
     # ── Code execution (interview compiler) ──────────────────────────────────
     # When set, code runs in the sandboxed Piston service (60+ languages). When empty, it falls
