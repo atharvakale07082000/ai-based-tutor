@@ -94,7 +94,7 @@ export default function OnboardingPage() {
       const { data } = await authAPI.login(authEmail.trim().toLowerCase(), authPass)
       setAccessToken(data.access_token)
       const displayName = authMode === 'signup' && authName.trim() ? authName.trim() : data.user.name
-      setLearner({ id: data.user.id, name: displayName, email: data.user.email })
+      setLearner({ id: data.user.id, name: displayName, email: data.user.email, role: data.user.role })
       setNameLocal(displayName)
 
       if (authMode === 'signin') {

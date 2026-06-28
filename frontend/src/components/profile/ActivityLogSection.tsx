@@ -9,12 +9,18 @@ import { Icon } from '@/components/ui/Icon'
 
 const PAGE_SIZE = 20
 
-const METHOD_TONE: Record<string, 'neutral' | 'accent' | 'info' | 'neg'> = {
-  GET: 'neutral',
-  POST: 'accent',
-  PUT: 'info',
-  PATCH: 'info',
-  DELETE: 'neg',
+// Map a friendly action to a small icon — purely cosmetic, keeps the row readable.
+function actionIcon(action: string): string {
+  const a = action.toLowerCase()
+  if (a.includes('quiz')) return 'quiz'
+  if (a.includes('interview')) return 'interview'
+  if (a.includes('course') || a.includes('curriculum')) return 'course'
+  if (a.includes('job')) return 'target'
+  if (a.includes('assistant') || a.includes('doubt')) return 'chat'
+  if (a.includes('flashcard')) return 'cards'
+  if (a.includes('study') || a.includes('onboarding')) return 'book'
+  if (a.includes('logged in') || a.includes('profile')) return 'user'
+  return 'dot'
 }
 
 function timeAgo(iso: string): string {
@@ -38,18 +44,15 @@ function LogRow({ log }: { log: ActivityLogEntry }) {
         display: 'flex',
         alignItems: 'center',
         gap: 10,
-        padding: '9px 0',
+        padding: '10px 0',
         borderTop: '1px solid var(--line-1)',
       }}
     >
-      <Badge size="xs" tone={METHOD_TONE[log.method] ?? 'neutral'}>{log.method}</Badge>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div className="t-sm fg-0" style={{ fontWeight: 500 }}>{log.action}</div>
-        <div className="t-xs fg-3 mono" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {log.endpoint}
-        </div>
-      </div>
-      <div className="t-xs fg-3" style={{ flexShrink: 0, textAlign: 'right' }}>{timeAgo(log.timestamp)}</div>
+      <span style={{ width: 26, height: 26, borderRadius: '50%', background: 'var(--paper-2)', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+        <Icon name={actionIcon(log.action)} size={13} style={{ color: 'var(--ink-2)' }} />
+      </span>
+      <div className="t-sm fg-0" style={{ flex: 1, minWidth: 0, fontWeight: 500 }}>{log.action}</div>
+      <div className="t-xs fg-3" style={{ flexShrink: 0 }}>{timeAgo(log.timestamp)}</div>
     </div>
   )
 }

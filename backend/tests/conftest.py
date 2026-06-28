@@ -1,9 +1,23 @@
+import os
+
+import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 
 def pytest_configure(config):
     config.addinivalue_line("markers", "asyncio: mark test as async")
+    config.addinivalue_line("markers", "evals: DeepEval quality suite (hits the NVIDIA judge)")
+
+
+def pytest_collection_modifyitems(config, items):
+    """Skip the slow, network-hitting `evals` suite by default. Run with RUN_EVALS=1."""
+    if os.environ.get("RUN_EVALS") == "1":
+        return
+    skip_evals = pytest.mark.skip(reason="eval suite — set RUN_EVALS=1 (or use scripts/run_evals.py)")
+    for item in items:
+        if "evals" in item.keywords:
+            item.add_marker(skip_evals)
 
 
 @pytest_asyncio.fixture(autouse=True)

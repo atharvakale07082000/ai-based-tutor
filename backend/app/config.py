@@ -37,6 +37,30 @@ class Settings(BaseSettings):
     NVIDIA_MODEL: str = "qwen/qwen3-next-80b-a3b-instruct"
     NVIDIA_FALLBACK_MODEL: str = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
 
+    # ── Quality evals (DeepEval) ─────────────────────────────────────────────
+    # The DeepEval judge wraps the NVIDIA NIM client (OpenAI-compatible) — no new creds.
+    EVAL_JUDGE_MODEL: str = "qwen/qwen3-next-80b-a3b-instruct"
+    EVAL_THRESHOLD: float = 0.6  # default pass threshold for the DeepEval metrics
+    EVALS_ONLINE_SAMPLING: bool = True  # master switch for random online eval sampling
+    # Rate-limit safety: cap concurrent judge calls + bound the background eval backlog so online
+    # sampling never floods the NVIDIA endpoint. Each eval metric makes several judge calls.
+    EVAL_MAX_CONCURRENCY: int = 2  # max simultaneous judge (NVIDIA) calls from evals
+    EVAL_MAX_PENDING: int = 16  # drop new eval sampling if this many eval tasks are already queued
+    EVAL_JUDGE_MAX_RETRIES: int = 4  # OpenAI-client retries (handles NVIDIA 429s with backoff)
+    EVAL_JUDGE_TIMEOUT_S: float = 30.0
+
+    # Evals dashboard superuser — the only account that can view evals.
+    # Password has NO source default (must come from the environment); auto-seeding is disabled in
+    # production. Set SUPERUSER_PASSWORD in your .env to enable the dashboard locally.
+    SUPERUSER_EMAIL: str = "admin@test.com"
+    SUPERUSER_PASSWORD: str = ""
+
+    # ── Code execution (interview compiler) ──────────────────────────────────
+    # When set, code runs in the sandboxed Piston service (60+ languages). When empty, it falls
+    # back to the local Python-only subprocess (dev convenience; not a real sandbox).
+    PISTON_BASE_URL: str = ""  # e.g. http://piston:2000
+    CODE_RUN_TIMEOUT_MS: int = 10000
+
     # MongoDB — primary datastore + evals storage
     MONGO_URL: str = "mongodb://localhost:27017"
     MONGO_DATABASE: str = "ai_tutor_evals"

@@ -1,14 +1,15 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
-import { Icon } from '@/components/ui/Icon'
 import { Input } from '@/components/ui/Input'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { coursesAPI, type CoursePlan } from '@/lib/api'
+import { AgentTimeline } from '@/components/ui/AgentTimeline'
+import { useAgentTimeline } from '@/hooks/useAgentTimeline'
+import { coursesAPI, streamSSE, type CoursePlan } from '@/lib/api'
 
 const SUGGESTIONS = [
   'Machine Learning from scratch',
@@ -17,13 +18,6 @@ const SUGGESTIONS = [
   'Deep Learning and neural nets',
   'SQL and database design',
   'Statistics for data science',
-]
-
-const STEPS = [
-  { icon: 'search', label: 'Searching for resources…' },
-  { icon: 'sparkle', label: 'Analyzing learning paths…' },
-  { icon: 'layers', label: 'Structuring curriculum…' },
-  { icon: 'check', label: 'Saving your plan…' },
 ]
 
 function PlanCard({ plan }: { plan: CoursePlan }) {
@@ -61,9 +55,11 @@ function PlanCard({ plan }: { plan: CoursePlan }) {
 
 export default function CoursePlannerPage() {
   const navigate = useNavigate()
-  const [goal, setGoal] = useState('')
+  const location = useLocation()
+  const prefill = (location.state as { prefill?: string } | null)?.prefill ?? ''
+  const [goal, setGoal] = useState(prefill)
   const [isPlanning, setIsPlanning] = useState(false)
-  const [planStep, setPlanStep] = useState(0)
+  const { steps, applyStep, reset } = useAgentTimeline()
 
   const { data: plans, refetch, isError: plansError } = useQuery({
     queryKey: ['courses'],
@@ -75,16 +71,26 @@ export default function CoursePlannerPage() {
   const handlePlan = async () => {
     if (!goal.trim()) { toast.error('Tell me what you want to learn'); return }
     setIsPlanning(true)
-    setPlanStep(0)
-    const iv = setInterval(() => setPlanStep((s) => Math.min(s + 1, STEPS.length - 1)), 2400)
+    reset()
+    let createdPlanId: string | null = null
     try {
-      const { data } = await coursesAPI.create(goal.trim())
-      clearInterval(iv)
-      toast.success('Your learning plan is ready!')
-      await refetch()
-      navigate(`/courses/${data.plan_id}`)
+      await streamSSE('/courses/plan/stream', { goal: goal.trim() }, (event) => {
+        if (event.type === 'step') {
+          applyStep(event as unknown as { id: string; label: string; status: 'active' | 'done' | 'error' })
+        } else if (event.type === 'action' && event.kind === 'plan_created') {
+          createdPlanId = String((event.payload as { plan_id: string }).plan_id)
+        } else if (event.type === 'error') {
+          toast.error(String(event.message ?? 'Could not generate plan. Try again.'))
+        }
+      })
+      if (createdPlanId) {
+        toast.success('Your learning plan is ready!')
+        await refetch()
+        navigate(`/courses/${createdPlanId}`)
+      } else {
+        toast.error('Could not generate plan. Try again.')
+      }
     } catch {
-      clearInterval(iv)
       toast.error('Could not generate plan. Try again.')
     } finally {
       setIsPlanning(false)
@@ -133,23 +139,10 @@ export default function CoursePlannerPage() {
           ))}
         </div>
 
-        {/* Planning progress */}
-        {isPlanning && (
-          <div style={{ marginTop: 16, padding: 12, background: 'var(--paper-2)', borderRadius: 'var(--r-2)', display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {STEPS.map((step, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, opacity: i <= planStep ? 1 : 0.3, transition: 'opacity var(--dur-base)' }}>
-                <Icon name={step.icon as any} size={12} style={{ color: i <= planStep ? 'var(--accent)' : 'var(--ink-3)' }} />
-                <span className="t-sm fg-1">{step.label}</span>
-                {i < planStep && <Icon name="check" size={10} style={{ color: 'var(--pos)', marginLeft: 'auto' }} />}
-                {i === planStep && (
-                  <div style={{ marginLeft: 'auto', display: 'flex', gap: 3 }}>
-                    {[0, 1, 2].map((d) => (
-                      <span key={d} style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--accent)', animation: `blink 1.2s ease-in-out ${d * 0.2}s infinite` }} />
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
+        {/* Live planning progress (streamed from the agent) */}
+        {isPlanning && steps.length > 0 && (
+          <div style={{ marginTop: 16, padding: 14, background: 'var(--paper-2)', borderRadius: 'var(--r-2)' }}>
+            <AgentTimeline steps={steps} className="fade-in" />
           </div>
         )}
       </Card>

@@ -10,7 +10,7 @@ const SESSIONS = [
   { label: '5m',  minutes: 5  },
 ]
 
-const STUDY_ROUTES = ['/learn', '/quiz', '/doubts', '/assistant', '/courses']
+const STUDY_ROUTES = ['/learn', '/quiz', '/doubts', '/atelier', '/courses']
 
 export function PomodoroTimer() {
   const location = useLocation()

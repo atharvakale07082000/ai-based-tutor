@@ -89,8 +89,11 @@ _ACTION_PATTERNS: list[tuple[str, re.Pattern, str]] = [
     ),
     ("GET", re.compile(r"^/api/v1/courses/[^/]+$"), "Viewed Course Plan"),
     ("GET", re.compile(r"^/api/v1/courses/?$"), "Viewed Course Plans"),
-    ("POST", re.compile(r"^/api/v1/assistant/chat$"), "Asked Assistant"),
-    ("POST", re.compile(r"^/api/v2/chat$"), "Asked Assistant"),
+    ("POST", re.compile(r"^/api/v1/jobs/analyze/stream$"), "Analyzed a Job"),
+    ("POST", re.compile(r"^/api/v1/jobs/[^/]+/reanalyze/stream$"), "Re-checked a Job"),
+    ("PATCH", re.compile(r"^/api/v1/jobs/[^/]+$"), "Updated a Job Application"),
+    ("POST", re.compile(r"^/api/v1/jobs/?$"), "Saved a Job Application"),
+    ("POST", re.compile(r"^/api/v2/chat$"), "Asked the AI Assistant"),
     ("GET", re.compile(r"^/api/v1/feed/trending$"), "Viewed Trending Topics"),
     ("GET", re.compile(r"^/api/v1/feed/scheduled$"), "Viewed Scheduled Feed"),
     ("POST", re.compile(r"^/api/v1/feed/run-discovery$"), "Ran Feed Discovery"),
@@ -104,14 +107,36 @@ _ACTION_PATTERNS: list[tuple[str, re.Pattern, str]] = [
     ("DELETE", re.compile(r"^/api/v1/profile/activity-logs$"), "Cleared Activity Logs"),
 ]
 
+# Only these actions are worth surfacing on the user's Activity page. Everything else
+# (page views, session refreshes, status polls, admin/eval/feed reads, raw unmatched
+# routes) is noise and is never recorded — keeping the log a clean, human-readable
+# history of things the learner actually did.
+_IMPORTANT_ACTIONS: frozenset[str] = frozenset(
+    {
+        "Logged In",
+        "Completed Onboarding",
+        "Updated Learner Profile",
+        "Generated Curriculum",
+        "Regenerated Content",
+        "Generated Quiz",
+        "Generated Flashcards",
+        "Submitted Quiz",
+        "Asked Doubt",
+        "Logged Study Session",
+        "Created Course Plan",
+        "Started Module Interview",
+        "Completed Module Interview",
+        "Analyzed a Job",
+        "Re-checked a Job",
+        "Saved a Job Application",
+        "Updated a Job Application",
+        "Asked the AI Assistant",
+    }
+)
+
 # Keep references to fire-and-forget tasks so they aren't garbage collected
 # mid-flight.
 _BACKGROUND_TASKS: set[asyncio.Task] = set()
-
-# Cap how much of a request body we'll buffer to avoid hurting latency/memory
-# on large uploads (e.g. audio/image submissions to /doubts/transcribe).
-_MAX_BODY_BYTES = 2000
-_BODY_EXCERPT_CHARS = 200
 
 
 def _resolve_action(method: str, path: str) -> str:
@@ -162,39 +187,34 @@ class ActivityLoggingMiddleware(BaseHTTPMiddleware):
 
         start = time.perf_counter()
 
-        body_excerpt: str | None = None
-        if request.method in ("POST", "PUT", "PATCH"):
-            content_type = request.headers.get("content-type", "")
-            content_length = int(request.headers.get("content-length") or 0)
-            if content_type.startswith("application/json") and 0 < content_length <= _MAX_BODY_BYTES:
-                try:
-                    body = await request.body()
-                    body_excerpt = body.decode("utf-8", errors="replace")[:_BODY_EXCERPT_CHARS]
-                except Exception:
-                    body_excerpt = None
-
         response = await call_next(request)
 
         user_id = _extract_user_id(request)
         if not user_id:
             return response
 
+        # Only record meaningful, user-facing actions; skip views/system noise so the
+        # Activity page stays a clean, human-readable history (no raw method/path slugs).
+        action = _resolve_action(request.method, request.url.path)
+        if action not in _IMPORTANT_ACTIONS:
+            return response
+        # Don't record failed attempts as if they happened.
+        if response.status_code >= 400:
+            return response
+
         duration_ms = round((time.perf_counter() - start) * 1000)
-        metadata: dict = {"query": dict(request.query_params)}
-        if body_excerpt is not None:
-            metadata["body"] = body_excerpt
 
         entry = {
             "id": uuid.uuid4().hex,
             "user_id": user_id,
-            "action": _resolve_action(request.method, request.url.path),
+            "action": action,
+            # method/endpoint kept for internal/debug use; the UI shows only `action`.
             "method": request.method,
             "endpoint": request.url.path,
             "ip_address": _client_ip(request),
             "user_agent": request.headers.get("user-agent"),
             "status_code": response.status_code,
             "duration_ms": duration_ms,
-            "metadata": metadata,
             "timestamp": datetime.now(timezone.utc),
         }
         _schedule_log(entry)

@@ -9,6 +9,8 @@ import { Icon } from '@/components/ui/Icon'
 import { Avatar } from '@/components/ui/Avatar'
 import { MarkdownMessage } from '@/components/ui/MarkdownMessage'
 import { StreamTrace, type AgentStep } from '@/components/agents/StreamTrace'
+import { AgentTimeline } from '@/components/ui/AgentTimeline'
+import type { TimelineStep } from '@/hooks/useAgentTimeline'
 import { useSpeechInput } from '@/hooks/useSpeechInput'
 
 interface ActionCard {
@@ -23,6 +25,7 @@ interface V2Message {
   streaming?: boolean
   routing?: { agent: string; reason: string }
   steps: AgentStep[]
+  timeline: TimelineStep[]
   actions: ActionCard[]
 }
 
@@ -115,14 +118,14 @@ export default function AtelierV2Page() {
     if (text.length > 2000) { toast.error("Let's keep it under 2,000 characters — try breaking it into a shorter question."); return }
     setInput('')
 
-    const userMsg: V2Message = { id: crypto.randomUUID(), role: 'user', content: text, steps: [], actions: [] }
+    const userMsg: V2Message = { id: crypto.randomUUID(), role: 'user', content: text, steps: [], timeline: [], actions: [] }
     setMessages((m) => [...m, userMsg])
     setStreaming(true)
 
     const assistantId = crypto.randomUUID()
     setMessages((m) => [
       ...m,
-      { id: assistantId, role: 'assistant', content: '', streaming: true, steps: [], actions: [] },
+      { id: assistantId, role: 'assistant', content: '', streaming: true, steps: [], timeline: [], actions: [] },
     ])
 
     // Build history from last 6 completed messages
@@ -176,6 +179,17 @@ export default function AtelierV2Page() {
                     steps.push({ step: event.step, toolResult })
                   }
                   return { ...msg, steps }
+                }
+
+                case 'step': {
+                  const timeline = [...msg.timeline]
+                  const idx = timeline.findIndex((s) => s.id === event.id)
+                  if (idx >= 0) {
+                    timeline[idx] = { ...timeline[idx], label: event.label || timeline[idx].label, status: event.status }
+                  } else {
+                    timeline.push({ id: event.id, label: event.label, status: event.status })
+                  }
+                  return { ...msg, timeline }
                 }
 
                 case 'token':
@@ -352,6 +366,11 @@ export default function AtelierV2Page() {
                         steps={msg.steps}
                         streaming={!!msg.streaming}
                       />
+                    )}
+
+                    {/* Live step timeline */}
+                    {msg.timeline.length > 0 && (
+                      <AgentTimeline steps={msg.timeline} className="fade-in" style={{ margin: '8px 0 12px' }} />
                     )}
 
                     {/* Answer content */}

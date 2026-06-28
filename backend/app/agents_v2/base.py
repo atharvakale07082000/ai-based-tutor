@@ -13,23 +13,25 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
 import time
 from functools import cached_property, lru_cache
 from typing import AsyncIterator
 
 import structlog
 
-from app.hf.client import get_hf_client, record_auth_failure, record_auth_success
+from app.agents.json_utils import extract_json
+from app.agents.prompt_utils import history_messages, truncate_observation
+from app.hf.client import HF_SEMAPHORE, get_hf_client, record_auth_failure, record_auth_success
 from app.hf.models import HF_MODELS, TOKEN_BUDGETS
 from app.tools import tool_registry
 
 log = structlog.get_logger()
 
-# Cap simultaneous outbound LLM calls to avoid exhausting Together API rate limits
-# and the thread pool under high concurrency.  40 slots ≈ 200 concurrent users
-# where each user makes 2 LLM calls, giving headroom for retries.
-_HF_SEMAPHORE = asyncio.Semaphore(40)
+# Single process-wide cap on concurrent outbound LLM calls, owned by app.hf.client
+# and shared with every other agent generation (e.g. v3 BaseSubAgent). Aliased here
+# so existing imports of `_HF_SEMAPHORE` keep working while pointing at the one
+# shared Semaphore — the real ceiling is 40 total, not 40 per agent module.
+_HF_SEMAPHORE = HF_SEMAPHORE
 
 
 @lru_cache(maxsize=16)
@@ -76,13 +78,14 @@ class BaseAgent:
         budget_key = self.name.lower().removesuffix("agent")
         return TOKEN_BUDGETS.get(budget_key, TOKEN_BUDGETS["cot_step"])
 
-    async def decide_step(self, messages: list[dict], *, synthesis: bool = False) -> dict:
+    async def decide_step(self, messages: list[dict]) -> dict:
         """Non-streaming LLM call for one ReAct step.
 
-        Args:
-            synthesis: True when all tool calls are done and the next step is
-                       expected to produce final_answer — uses the full agent budget.
-                       False (default) uses the cheaper cot_step budget for action dispatch.
+        Always uses the full agent synthesis budget: max_tokens is a ceiling, not a
+        target, so action-dispatch steps naturally stop after ~80 tokens while a
+        final_answer step gets the room it needs. (A separate, smaller budget for
+        action steps was tried and removed — it truncated final answers, since the
+        loop can't know in advance which kind of step the model will emit.)
         """
         from app.hf.client import hf_chat_completion_with_resilience
         from app.resilience import CircuitOpenError
@@ -91,9 +94,7 @@ class BaseAgent:
         provider = model_cfg["provider"]
         model_id = model_cfg["model_id"]
 
-        # Action-dispatch steps produce short JSON (~80-120 tokens); synthesis steps
-        # need the full agent budget to write the final answer without truncation.
-        budget = self._synthesis_budget if synthesis else TOKEN_BUDGETS["cot_step"]
+        budget = self._synthesis_budget
         try:
             async with _HF_SEMAPHORE:
                 raw = await hf_chat_completion_with_resilience(
@@ -105,21 +106,46 @@ class BaseAgent:
                     timeout_s=20.0,
                 )
 
-            cleaned = re.sub(r"```(?:json)?", "", raw).strip().rstrip("`").strip()
-            return json.loads(cleaned)
+            parsed = extract_json(raw)
+            if parsed is None:
+                # One corrective retry before giving up — the model emitted prose or
+                # malformed JSON. A stricter, zero-temperature reprompt usually recovers.
+                log.warning("base_agent_decide_json_retry", agent=self.name)
+                retry_messages = messages + [
+                    {"role": "assistant", "content": raw[:500]},
+                    {
+                        "role": "user",
+                        "content": (
+                            "That was not valid JSON. Reply with ONLY the JSON object described "
+                            "in the instructions — no prose, no markdown fences."
+                        ),
+                    },
+                ]
+                async with _HF_SEMAPHORE:
+                    raw = await hf_chat_completion_with_resilience(
+                        provider=provider,
+                        model_id=model_id,
+                        messages=retry_messages,
+                        max_tokens=budget,
+                        temperature=0.0,
+                        timeout_s=20.0,
+                    )
+                parsed = extract_json(raw)
+
+            if parsed is None:
+                log.error("base_agent_decide_parse_error", agent=self.name, raw=raw[:200])
+                return {
+                    "thought": "parse error",
+                    "final_answer": "I got a bit tangled up there — let me try that again with a fresh approach.",
+                    "side_effects": [],
+                }
+            return parsed
 
         except (asyncio.TimeoutError, CircuitOpenError) as e:
             log.error("base_agent_decide_timeout", agent=self.name, error=str(e)[:100])
             return {
                 "thought": "Request timed out or service unavailable",
                 "final_answer": "I'm taking longer than expected — go ahead and send your question again and I'll come back quickly.",
-                "side_effects": [],
-            }
-        except json.JSONDecodeError as e:
-            log.error("base_agent_decide_parse_error", agent=self.name, error=str(e))
-            return {
-                "thought": "parse error",
-                "final_answer": "I got a bit tangled up there — let me try that again with a fresh approach.",
                 "side_effects": [],
             }
         except Exception as e:
@@ -217,18 +243,16 @@ class BaseAgent:
         )
         user_content = f"Learner context: {context_str}\n\nQuery: {query}"
 
-        messages: list[dict] = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_content},
-        ]
+        # Thread recent conversation turns so the agent has multi-turn memory
+        # instead of treating every message as a cold start.
+        messages: list[dict] = [{"role": "system", "content": system_prompt}]
+        messages.extend(history_messages(context.get("history")))
+        messages.append({"role": "user", "content": user_content})
 
         for step in range(self.max_steps):
             step_num = step + 1
 
-            # Always use the agent-specific synthesis budget — max_tokens is a ceiling,
-            # not a target. Action steps naturally produce ~80 tokens and stop early.
-            # Using cot_step for later steps would truncate final_answer responses.
-            step_result = await self.decide_step(messages, synthesis=True)
+            step_result = await self.decide_step(messages)
 
             thought = step_result.get("thought", "")
             yield {"type": "thought", "step": step_num, "content": thought}
@@ -266,7 +290,7 @@ class BaseAgent:
                 messages.append(
                     {
                         "role": "user",
-                        "content": f"Observation from {tool_name}: {json.dumps(result_payload, default=str)}",
+                        "content": f"Observation from {tool_name}: {truncate_observation(result_payload)}",
                     }
                 )
 

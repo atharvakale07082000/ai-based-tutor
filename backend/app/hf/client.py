@@ -18,6 +18,13 @@ if settings.HF_TOKEN:
     os.environ["HF_TOKEN"] = settings.HF_TOKEN
     os.environ["HUGGING_FACE_HUB_TOKEN"] = settings.HF_TOKEN
 
+# Global cap on concurrent outbound LLM calls, shared by every agent generation
+# (v2 BaseAgent, v3 BaseSubAgent, …). Defining it here — instead of once per
+# agent module — keeps the real ceiling at 40 simultaneous calls rather than
+# 40-per-module. 40 slots ≈ 200 concurrent users at ~2 LLM calls each, with
+# headroom for retries, and respects the Together/NVIDIA rate limits.
+HF_SEMAPHORE = asyncio.Semaphore(40)
+
 # Providers whose Qwen2.5-7B-Instruct generation calls go through the
 # resilient HF-primary / NVIDIA-fallback client (see generation_client.py)
 _GENERATION_PROVIDERS = {"together", "nvidia"}

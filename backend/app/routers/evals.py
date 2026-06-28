@@ -1,13 +1,23 @@
 import structlog
 from fastapi import APIRouter, Depends, Query
 
-from app.auth.jwt import get_current_user_id
+from app.auth.jwt import require_superuser
 from app.evals.evaluator import run_eval
-from app.evals.mongo import aggregate_summary, query_evals
+from app.evals.mongo import aggregate_summary, dashboard_stats, query_evals
 from app.evals.schemas import EvalRecord, EvalType
 
 router = APIRouter()
 log = structlog.get_logger()
+
+
+@router.get("/dashboard")
+async def evals_dashboard(user_id: str = Depends(require_superuser)):
+    """Superuser-only: one-shot rich stats for the evals dashboard.
+
+    Returns overall pass-rate/avg-score, per-metric and per-agent breakdowns, recent records, and a
+    14-day score trend. The frontend refetches this on an interval.
+    """
+    return await dashboard_stats()
 
 
 @router.post("/run", response_model=EvalRecord)
@@ -18,7 +28,7 @@ async def trigger_eval(
     output: dict,
     learner_id: str = "",
     trace_id: str = "",
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_superuser),
 ):
     """
     Manually trigger an evaluation for a specific agent invocation.
@@ -43,7 +53,7 @@ async def get_eval_results(
     agent: str | None = Query(None),
     passed: bool | None = Query(None),
     limit: int = Query(50, ge=1, le=500),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_superuser),
 ):
     """Query stored eval records with optional filters."""
     results = await query_evals(
@@ -59,7 +69,7 @@ async def get_eval_results(
 async def get_eval_summary(
     eval_type: EvalType | None = Query(None),
     agent: str | None = Query(None),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_superuser),
 ):
     """Aggregate pass-rate and average score by (eval_type, agent)."""
     summaries = await aggregate_summary(eval_type=eval_type, agent=agent)
@@ -69,7 +79,7 @@ async def get_eval_summary(
 @router.post("/batch/quiz")
 async def run_quiz_batch_eval(
     quiz_sessions: list[dict],
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_superuser),
 ):
     """
     Run quiz_format eval over a batch of quiz session outputs.

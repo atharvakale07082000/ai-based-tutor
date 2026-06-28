@@ -46,7 +46,7 @@ function AuthOverlay({ onClose }: { onClose: () => void }) {
     try {
       const { data } = await authAPI.login(email.trim().toLowerCase(), password)
       setAccessToken(data.access_token)
-      setLearner({ id: data.user.id, name: name.trim() || data.user.name, email: data.user.email })
+      setLearner({ id: data.user.id, name: name.trim() || data.user.name, email: data.user.email, role: data.user.role })
       onClose()
 
       if (mode === 'signup') {

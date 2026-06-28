@@ -79,15 +79,15 @@ class MockToolResult:
         self.latency_ms = 5
 
 
+# Kept for the `.clear()` calls in tests; the mock no longer relies on it.
 _decide_call_counts: dict[int, int] = {}
 
 
 async def _mock_decide_step(self, messages):
-    key = id(self)
-    _decide_call_counts[key] = _decide_call_counts.get(key, 0) + 1
-    count = _decide_call_counts[key]
-
-    if count % 2 == 1 and self.tool_names:
+    # Decide from THIS request's own message list (race-free under concurrency — the v2 router reuses
+    # singleton agent instances, so a shared id(self) counter would interleave across requests).
+    # First step (only system+user present) → one tool call; after the observation is appended → answer.
+    if len(messages) <= 2 and self.tool_names:
         tool = self.tool_names[0]
         return {
             "thought": f"Using {tool} to respond.",
@@ -197,6 +197,9 @@ async def concurrent_v2_client():
         patch.object(BaseAgent, "decide_step", _mock_decide_step),
         patch.object(BaseAgent, "stream_final_answer", _mock_stream_final_answer),
         patch("app.agents_v2.doubt_agent.stream_doubt_response", side_effect=_mock_doubt_stream),
+        # Deterministic routing: this is a semaphore/concurrency test, not a live-routing test.
+        # Without this, tie/miss queries fall through to a real LLM routing call and flake under load.
+        patch("app.agents.routing.llm_route", new=AsyncMock(return_value=("assistant", "test-routing"))),
     ):
         async with AsyncClient(
             transport=ASGITransport(app=app),

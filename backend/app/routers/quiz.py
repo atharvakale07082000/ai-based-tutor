@@ -1,15 +1,19 @@
+import asyncio
+import json
 import uuid
 from datetime import datetime, timezone
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from app.agents.progress_agent import calculate_elo_update
+from app.agents.steps import StepTimeline, sse_step_stream
 from app.auth.jwt import get_current_user_id
 from app.db.mongo import col_learners, col_progress, col_quizzes
-from app.hf.quiz_questions import bloom_for_elo, get_or_generate_quiz_questions
 from app.schemas.quiz import (
     EloUpdate,
     QuizGenerateRequest,
@@ -18,6 +22,8 @@ from app.schemas.quiz import (
     QuizSubmitRequest,
     QuizSubmitResult,
 )
+
+_SSE_HEADERS = {"X-Accel-Buffering": "no", "Cache-Control": "no-cache"}
 
 limiter = Limiter(key_func=get_remote_address)
 router = APIRouter()
@@ -41,56 +47,37 @@ async def generate_quiz(
     body: QuizGenerateRequest,
     user_id: str = Depends(get_current_user_id),
 ):
-    """Generate or retrieve a cached quiz for the given topic at the learner's Bloom level."""
+    """Generate or retrieve a cached quiz via the ``quiz_gen`` workflow (resolve → generate → persist)."""
+    from app.agents.workflow import run_workflow
+
     learner = await _get_learner_or_404(user_id)
     log.info("quiz_generate_start", topic=body.topic, learner_id=learner["id"])
 
-    proficiency = learner.get("topic_proficiency_map") or {}
-    elo = proficiency.get(body.topic, 500.0)
-    bloom_level = body.bloom_level or bloom_for_elo(elo)
-
-    # Ease difficulty if the learner has been consistently discouraged recently
-    if not body.bloom_level:
-        recent = (
-            await col_quizzes()
-            .find({"learner_id": learner["id"]}, {"sentiment_mood": 1})
-            .sort("started_at", -1)
-            .to_list(length=3)
-        )
-        negative_count = sum(1 for q in recent if q.get("sentiment_mood") == "negative")
-        if negative_count >= 2:
-            _bloom_order = ["remember", "understand", "apply", "analyze", "evaluate", "create"]
-            idx = _bloom_order.index(bloom_level) if bloom_level in _bloom_order else 2
-            if idx > 0:
-                bloom_level = _bloom_order[idx - 1]
-                log.info(
-                    "quiz_bloom_eased", learner_id=learner["id"], negative_moods=negative_count, bloom_level=bloom_level
-                )
-
-    questions = await get_or_generate_quiz_questions(body.topic, bloom_level, count=5)
-
-    quiz_id = str(uuid.uuid4())
-    await col_quizzes().insert_one(
+    elo = (learner.get("topic_proficiency_map") or {}).get(body.topic, 500.0)
+    ctx = await run_workflow(
+        "quiz_gen",
         {
-            "id": quiz_id,
-            "learner_id": learner["id"],
             "topic": body.topic,
-            "bloom_level": bloom_level,
-            "questions": questions,
-            "answers": [],
-            "score": None,
-            "weak_topics": [],
-            "sentiment_mood": None,
-            "started_at": datetime.now(timezone.utc).isoformat(),
-            "completed_at": None,
-        }
+            "bloom_level": body.bloom_level,
+            "elo": elo,
+            "learner_id": learner["id"],
+        },
+    )
+    persisted = ctx.result("persist")
+
+    # Online eval sampling: do the generated questions correctly test the requested topic?
+    from app.evals.deepeval_metrics import maybe_eval_single_turn
+
+    q_text = "\n".join(q.get("question", "") for q in persisted["questions"])
+    maybe_eval_single_turn(
+        "quiz_agent", f"Generate a quiz that tests understanding of: {body.topic}", q_text, learner_id=learner["id"]
     )
 
     return QuizSessionSchema(
-        quiz_id=quiz_id,
+        quiz_id=persisted["quiz_id"],
         topic=body.topic,
-        bloom_level=bloom_level,
-        questions=[QuizQuestion(**q) for q in questions],
+        bloom_level=persisted["bloom_level"],
+        questions=[QuizQuestion(**q) for q in persisted["questions"]],
         time_per_question=60,
     )
 
@@ -110,41 +97,26 @@ async def get_quiz(quiz_id: str, user_id: str = Depends(get_current_user_id)):
     )
 
 
-@router.post("/{quiz_id}/submit", response_model=QuizSubmitResult)
-async def submit_quiz(
-    quiz_id: str,
-    body: QuizSubmitRequest,
-    user_id: str = Depends(get_current_user_id),
-):
-    """Score quiz answers, update ELO proficiency, award XP, and persist results."""
-    quiz = await col_quizzes().find_one({"id": quiz_id}, PROJ)
-    if not quiz:
-        raise HTTPException(status_code=404, detail="Quiz not found")
-
-    learner = await _get_learner_or_404(user_id)
-
-    questions = quiz.get("questions") or []
-    answers = body.answers or []
-
-    # Reject answer sets that don't match the question count
+def _validate_quiz_answers(questions: list, answers: list) -> None:
+    """Raise HTTP 400 if the answer set is the wrong length or has out-of-range indices."""
     if len(answers) != len(questions):
-        raise HTTPException(
-            400,
-            f"Expected {len(questions)} answers, got {len(answers)}",
-        )
-
-    # Reject out-of-range option indices
+        raise HTTPException(400, f"Expected {len(questions)} answers, got {len(answers)}")
     for i, (ans, q) in enumerate(zip(answers, questions)):
         n_opts = len(q.get("options", []))
         if n_opts and not (0 <= ans < n_opts):
             raise HTTPException(400, f"Answer for question {i + 1} is out of range (0–{n_opts - 1})")
 
+
+async def _grade_and_persist(quiz: dict, learner: dict, answers: list, user_id: str) -> QuizSubmitResult:
+    """Score answers, update ELO/XP, persist results, and return the structured result.
+
+    Shared by the plain and streaming submit endpoints so scoring lives in one place.
+    """
+    questions = quiz.get("questions") or []
     correct_count = 0
     weak_topics: list[str] = []
-
     for i, q in enumerate(questions):
-        user_answer = answers[i]
-        if user_answer == q.get("correct_index", 0):
+        if answers[i] == q.get("correct_index", 0):
             correct_count += 1
         else:
             weak_topics.append(quiz["topic"])
@@ -165,15 +137,8 @@ async def submit_quiz(
 
     await col_learners().update_one(
         {"user_id": user_id},
-        {
-            "$set": {
-                "topic_proficiency_map": proficiency,
-                "updated_at": now,
-            },
-            "$inc": {"xp": xp_delta},
-        },
+        {"$set": {"topic_proficiency_map": proficiency, "updated_at": now}, "$inc": {"xp": xp_delta}},
     )
-
     await col_progress().insert_one(
         {
             "id": str(uuid.uuid4()),
@@ -183,26 +148,128 @@ async def submit_quiz(
             "recorded_at": now,
         }
     )
-
     await col_quizzes().update_one(
-        {"id": quiz_id},
-        {
-            "$set": {
-                "answers": answers,
-                "score": score,
-                "weak_topics": list(set(weak_topics)),
-                "completed_at": now,
-            }
-        },
+        {"id": quiz["id"]},
+        {"$set": {"answers": answers, "score": score, "weak_topics": list(set(weak_topics)), "completed_at": now}},
     )
 
-    log.info("quiz_submitted", quiz_id=quiz_id, score=score, xp_delta=xp_delta)
+    log.info("quiz_submitted", quiz_id=quiz["id"], score=score, xp_delta=xp_delta)
     return QuizSubmitResult(
         score=score,
         correct_count=correct_count,
         weak_topics=list(set(weak_topics))[:5],
         elo_update=EloUpdate(topic=quiz["topic"], old_elo=old_elo, new_elo=new_elo),
     )
+
+
+@router.post("/{quiz_id}/submit", response_model=QuizSubmitResult)
+async def submit_quiz(
+    quiz_id: str,
+    body: QuizSubmitRequest,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Score quiz answers, update ELO proficiency, award XP, and persist results."""
+    quiz = await col_quizzes().find_one({"id": quiz_id}, PROJ)
+    if not quiz:
+        raise HTTPException(status_code=404, detail="Quiz not found")
+    learner = await _get_learner_or_404(user_id)
+    answers = body.answers or []
+    _validate_quiz_answers(quiz.get("questions") or [], answers)
+    return await _grade_and_persist(quiz, learner, answers, user_id)
+
+
+@router.post("/{quiz_id}/submit/stream")
+async def submit_quiz_stream(
+    quiz_id: str,
+    body: QuizSubmitRequest,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Score a quiz while streaming a live step timeline as SSE.
+
+    Emits `step` events (analyze → score → feedback), then a `quiz_scored` action
+    carrying the full result, then `[DONE]`. Validation still happens up-front so a
+    bad request returns a normal 400 instead of an in-stream error.
+    """
+    quiz = await col_quizzes().find_one({"id": quiz_id}, PROJ)
+    if not quiz:
+        raise HTTPException(status_code=404, detail="Quiz not found")
+    learner = await _get_learner_or_404(user_id)
+    answers = body.answers or []
+    _validate_quiz_answers(quiz.get("questions") or [], answers)
+
+    async def event_stream():
+        """Emit timeline steps around grading, then the result as an action."""
+
+        async def run(emit):
+            tl = StepTimeline("quiz_review")
+            await emit(tl.start("analyze"))
+            await asyncio.sleep(0.4)  # brief pacing so the review reads as progress
+            await emit(tl.done("analyze"))
+
+            await emit(tl.start("score"))
+            result = await _grade_and_persist(quiz, learner, answers, user_id)
+            await emit(tl.done("score"))
+
+            await emit(tl.start("feedback"))
+            await asyncio.sleep(0.3)
+            await emit(tl.done("feedback"))
+
+            await emit({"type": "action", "kind": "quiz_scored", "payload": result.model_dump()})
+
+        async for ev in sse_step_stream(run):
+            yield f"data: {json.dumps(ev)}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream", headers=_SSE_HEADERS)
+
+
+class ExplainRequest(BaseModel):
+    question_index: int = Field(ge=0, le=100)
+
+
+@router.post("/{quiz_id}/explain")
+async def explain_quiz_answer(
+    quiz_id: str,
+    body: ExplainRequest,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Explain why a question's correct answer is right — server-side via the resilient LLM.
+
+    Replaces the old browser→HuggingFace call so the feature works without a client HF token.
+    """
+    from app.hf.client import hf_chat_completion_with_resilience
+    from app.hf.models import HF_MODELS
+
+    quiz = await col_quizzes().find_one({"id": quiz_id}, PROJ)
+    if not quiz:
+        raise HTTPException(404, "Quiz not found")
+    questions = quiz.get("questions") or []
+    if body.question_index >= len(questions):
+        raise HTTPException(400, "question_index out of range")
+
+    q = questions[body.question_index]
+    options = q.get("options") or []
+    correct_idx = q.get("correct_index", 0)
+    correct = options[correct_idx] if 0 <= correct_idx < len(options) else ""
+    prompt = (
+        f'Question: "{q.get("question", "")}"\n'
+        f'The correct answer is: "{correct}".\n'
+        "In 2–3 sentences, explain clearly why that answer is correct. Be concrete and tutoring-friendly."
+    )
+    cfg = HF_MODELS["DOUBT_SOLVER"]
+    try:
+        text = await hf_chat_completion_with_resilience(
+            provider=cfg["provider"],
+            model_id=cfg["model_id"],
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=200,
+            temperature=0.3,
+            timeout_s=30.0,
+        )
+    except Exception as e:
+        log.warning("quiz_explain_failed", quiz_id=quiz_id, error=str(e)[:200])
+        raise HTTPException(503, "Explanation is unavailable right now — please try again.")
+    return {"explanation": text}
 
 
 @router.post("/flashcards")

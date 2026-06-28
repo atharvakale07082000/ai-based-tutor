@@ -2,8 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import ReactMarkdown from 'react-markdown'
-import { contentAPI, quizAPI } from '@/lib/api'
-import { runImageCaption } from '@/lib/hf'
+import { contentAPI, quizAPI, doubtsAPI } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Icon } from '@/components/ui/Icon'
@@ -64,8 +63,8 @@ export default function ModulePlayerPage() {
     if (!file || !file.type.startsWith('image/')) return
     setCaptionLoading(true)
     try {
-      const caption = await runImageCaption(file)
-      setDoubtInput((prev) => `[Image: ${caption}]\n${prev}`)
+      const { data } = await doubtsAPI.caption(file)
+      setDoubtInput((prev) => `[Image: ${data.caption}]\n${prev}`)
       toast.success('Image captioned')
     } catch {
       toast.error('Could not caption image')

@@ -120,7 +120,7 @@ export default function DashboardPage() {
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
           <Button size="sm" variant="ghost" icon="calendar">Schedule</Button>
-          <Button size="sm" variant="accent" icon="sparkle" onClick={() => navigate('/assistant')}>Ask Atelier</Button>
+          <Button size="sm" variant="accent" icon="sparkle" onClick={() => navigate('/atelier')}>Ask Atelier</Button>
         </div>
       </div>
 

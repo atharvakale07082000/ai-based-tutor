@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { quizAPI } from '@/lib/api'
-import { runTextGeneration, runSentiment } from '@/lib/hf'
+import { quizAPI, hfAPI, streamSSE } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Icon } from '@/components/ui/Icon'
+import { AgentTimeline } from '@/components/ui/AgentTimeline'
+import { useAgentTimeline } from '@/hooks/useAgentTimeline'
 import { useLearnerStore } from '@/stores/learnerStore'
 import { useAgentStore } from '@/stores/agentStore'
 import toast from 'react-hot-toast'
@@ -33,7 +34,9 @@ export default function QuizPage() {
   const [explanation, setExplanation] = useState('')
   const [explanationLoading, setExplanationLoading] = useState(false)
   const [quizDone, setQuizDone] = useState(false)
-  const [result, setResult] = useState<{ score: number; weak_topics: string[] } | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const { steps: reviewSteps, applyStep: applyReviewStep, reset: resetReview } = useAgentTimeline()
+  const [result, setResult] = useState<{ score: number; weak_topics: string[]; elo_update?: { topic: string; new_elo: number } } | null>(null)
   const [reflection, setReflection] = useState('')
   const [reflectionMood, setReflectionMood] = useState<string | null>(null)
   const updateProficiency = useLearnerStore((s) => s.updateProficiency)
@@ -106,25 +109,44 @@ export default function QuizPage() {
   const handleFinish = async () => {
     if (!quiz) return
     updateAgentStatus('progress', { status: 'processing' })
+    setSubmitting(true)
+    resetReview()
+    type QuizScored = { score: number; weak_topics: string[]; elo_update: { topic: string; new_elo: number } }
+    let scored: QuizScored | null = null
     try {
-      const { data } = await quizAPI.submit(quiz.quiz_id, answers, reflection)
-      setResult(data)
-      setQuizDone(true)
-      updateProficiency(quiz.topic, data.elo_update.new_elo)
-      addQuizSession({ id: quiz.quiz_id, topic: quiz.topic, score: data.score, bloom_level: quiz.bloom_level, completed_at: new Date().toISOString() })
-      // Sync XP from the updated learner profile and invalidate progress cache
-      queryClient.invalidateQueries({ queryKey: ['progress'] })
+      await streamSSE(`/quiz/${quiz.quiz_id}/submit/stream`, { answers, reflection }, (event) => {
+        if (event.type === 'step') {
+          applyReviewStep(event as unknown as { id: string; label: string; status: 'active' | 'done' | 'error' })
+        } else if (event.type === 'action' && event.kind === 'quiz_scored') {
+          scored = event.payload as QuizScored
+        } else if (event.type === 'error') {
+          toast.error(String(event.message ?? 'Could not submit quiz results'))
+        }
+      })
+      const s = scored as QuizScored | null  // assigned inside the SSE callback; cast so TS keeps the union
+      if (s) {
+        setResult(s)
+        setQuizDone(true)
+        updateProficiency(quiz.topic, s.elo_update.new_elo)
+        addQuizSession({ id: quiz.quiz_id, topic: quiz.topic, score: s.score, bloom_level: quiz.bloom_level, completed_at: new Date().toISOString() })
+        // Sync XP from the updated learner profile and invalidate progress cache
+        queryClient.invalidateQueries({ queryKey: ['progress'] })
+      } else {
+        toast.error('Could not submit quiz results')
+      }
     } catch { toast.error('Could not submit quiz results') }
-    finally { updateAgentStatus('progress', { status: 'active' }) }
+    finally {
+      setSubmitting(false)
+      updateAgentStatus('progress', { status: 'active' })
+    }
   }
 
   const handleGetExplanation = async () => {
-    if (!currentQuestion) return
+    if (!currentQuestion || !quiz) return
     setExplanationLoading(true)
     try {
-      const prompt = `Explain why the correct answer to this question is "${currentQuestion.options[currentQuestion.correct_index]}". Question: ${currentQuestion.question}`
-      const text = await runTextGeneration('QUIZ_GENERATOR', prompt, { max_new_tokens: 150 })
-      setExplanation(text)
+      const { data } = await quizAPI.explain(quiz.quiz_id, currentIdx)
+      setExplanation(data.explanation)
     } catch { toast.error('Could not generate explanation') }
     finally { setExplanationLoading(false) }
   }
@@ -132,8 +154,8 @@ export default function QuizPage() {
   const handleReflectionSubmit = async () => {
     if (!reflection.trim()) return
     try {
-      const sentiment = await runSentiment(reflection)
-      setReflectionMood(sentiment[0]?.label ?? 'NEUTRAL')
+      const { data } = await hfAPI.sentiment(reflection)
+      setReflectionMood(data.label ?? 'NEUTRAL')
       toast.success('Mood saved')
     } catch { /* non-critical */ }
   }
@@ -155,6 +177,18 @@ export default function QuizPage() {
         <Icon name="book" size={32} style={{ color: 'var(--ink-3)' }} />
         <div className="t-md fg-2">Quiz not found</div>
         <Button variant="secondary" onClick={() => navigate('/dashboard')}>Back to Dashboard</Button>
+      </div>
+    )
+  }
+
+  // Reviewing screen — live step timeline while the quiz is being scored
+  if (submitting && !result) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, background: 'var(--paper-0)' }}>
+        <div className="fade-in" style={{ background: 'var(--paper-1)', border: '1px solid var(--line-1)', borderRadius: 'var(--r-3)', padding: 32, maxWidth: 420, width: '100%' }}>
+          <h2 className="serif" style={{ fontSize: 24, fontWeight: 400, textAlign: 'center', marginBottom: 20 }}>Reviewing your quiz</h2>
+          <AgentTimeline steps={reviewSteps} />
+        </div>
       </div>
     )
   }

@@ -315,6 +315,8 @@ export const quizAPI = {
     api.post<QuizSubmitResult>(`/quiz/${quizId}/submit`, { answers, reflection }),
   flashcards: (topic: string, count = 10) =>
     api.get<{ topic: string; cards: Flashcard[]; count: number }>('/quiz/flashcards', { params: { topic, count } }),
+  explain: (quizId: string, questionIndex: number) =>
+    api.post<{ explanation: string }>(`/quiz/${quizId}/explain`, { question_index: questionIndex }),
 }
 
 // ─── Doubts ───────────────────────────────────────────────────────────────────
@@ -417,6 +419,31 @@ export interface HFModelStatusAPI {
 export const hfAPI = {
   status: () => api.get<Record<string, HFModelStatusAPI>>('/hf/status'),
   test: (modelKey: string) => api.post(`/hf/test/${modelKey}`),
+  sentiment: (text: string) => api.post<{ label: string; score: number }>('/hf/sentiment', { text }),
+}
+
+// ─── Evals (superuser-only) ────────────────────────────────────────────────────
+
+export interface EvalMetricStat { eval_type: string; total: number; pass_rate: number; avg_score: number }
+export interface EvalAgentStat { agent: string; total: number; pass_rate: number; avg_score: number }
+export interface EvalRecentItem {
+  eval_type: string
+  agent: string
+  score: number
+  passed: boolean
+  details?: { reason?: string; metric?: string }
+  timestamp: string
+}
+export interface EvalDashboard {
+  overall: { total: number; pass_rate: number; avg_score: number }
+  by_metric: EvalMetricStat[]
+  by_agent: EvalAgentStat[]
+  recent: EvalRecentItem[]
+  trend: Array<{ day: string; avg_score: number; count: number }>
+}
+
+export const evalsAPI = {
+  dashboard: () => api.get<EvalDashboard>('/evals/dashboard'),
 }
 
 // ─── Admin ────────────────────────────────────────────────────────────────────
@@ -511,6 +538,62 @@ export const coursesAPI = {
     ),
 }
 
+// ─── Job Tracker ──────────────────────────────────────────────────────────────
+
+export type JobStage = 'saved' | 'applied' | 'interview' | 'offer' | 'rejected'
+
+export interface SkillGap {
+  skill: string
+  have_elo: number | null
+  status: 'have' | 'partial' | 'missing'
+}
+
+export interface JobRecommendation {
+  type: 'quiz' | 'course'
+  skill: string
+  label: string
+  url: string
+}
+
+export interface JobApplication {
+  id: string
+  learner_id: string
+  company: string
+  role: string
+  seniority: string
+  required_skills: string[]
+  stage: JobStage
+  source_jd: string
+  readiness_score: number
+  skill_gaps: SkillGap[]
+  recommendations: JobRecommendation[]
+  notes: string
+  created_at: string
+  updated_at: string
+}
+
+// Payload of the `jd_analyzed` action streamed by /jobs/analyze/stream.
+export interface JDAnalysis {
+  company: string
+  role: string
+  seniority: string
+  required_skills: string[]
+  readiness_score: number
+  skill_gaps: SkillGap[]
+  recommendations: JobRecommendation[]
+  source_jd: string
+}
+
+export const jobsAPI = {
+  list: () => api.get<{ jobs: JobApplication[] }>('/jobs'),
+  get: (id: string) => api.get<JobApplication>(`/jobs/${id}`),
+  create: (job: Partial<JobApplication>) => api.post<JobApplication>('/jobs', job),
+  update: (id: string, patch: Partial<Pick<JobApplication, 'company' | 'role' | 'seniority' | 'stage' | 'notes'>>) =>
+    api.patch<JobApplication>(`/jobs/${id}`, patch),
+  remove: (id: string) => api.delete(`/jobs/${id}`),
+  // analyze + reanalyze stream via streamSSE('/jobs/analyze/stream' | `/jobs/${id}/reanalyze/stream`)
+}
+
 // ─── Feed ─────────────────────────────────────────────────────────────────────
 
 export interface FeedItem {
@@ -561,49 +644,6 @@ export const feedAPI = {
     api.delete(`/feed/${itemId}/interaction`),
 }
 
-// ─── Assistant ────────────────────────────────────────────────────────────────
-
-export const assistantAPI = {
-  streamChat: async (
-    message: string,
-    onChunk: (chunk: string) => void,
-    onAction?: (kind: string, payload: Record<string, unknown>) => void,
-    history?: Array<{ role: string; content: string }>,
-  ): Promise<void> => {
-    const response = await fetch(`${BASE_URL}/assistant/chat`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: accessToken ? `Bearer ${accessToken}` : '',
-      },
-      body: JSON.stringify({ message, history: history ?? [] }),
-    })
-    if (!response.ok || !response.body) throw new Error('Stream failed')
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder()
-    try {
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        const chunk = decoder.decode(value, { stream: true })
-        const lines = chunk.split('\n').filter((l) => l.startsWith('data: '))
-        for (const line of lines) {
-          const json = line.slice(6).trim()
-          try {
-            const event = JSON.parse(json)
-            if (event.type === 'token' && event.content) onChunk(event.content)
-            if (event.type === 'action' && onAction) onAction(event.kind, event.payload ?? {})
-            if (event.type === 'done') return
-          } catch { /* skip malformed SSE line */ }
-        }
-      }
-    } catch (err) {
-      reader.cancel().catch(() => {})
-      throw new Error(err instanceof Error ? err.message : 'Stream read error')
-    }
-  },
-}
-
 // ─── Activity Logs ────────────────────────────────────────────────────────────
 
 export interface ActivityLogEntry {
@@ -616,7 +656,7 @@ export interface ActivityLogEntry {
   user_agent?: string | null
   status_code: number
   duration_ms: number
-  metadata: Record<string, unknown>
+  metadata?: Record<string, unknown>
   timestamp: string
 }
 
@@ -652,6 +692,8 @@ export interface V2ActionEvent     { type: 'action';      kind: string; payload:
 export interface V2DoneEvent       { type: 'done';        steps: number; total_ms: number }
 export interface V2ErrorEvent      { type: 'error';       message: string }
 
+export interface StepEvent { type: 'step'; id: string; label: string; status: 'active' | 'done' | 'error' }
+
 export type V2Event =
   | V2RoutingEvent
   | V2ThoughtEvent
@@ -661,6 +703,7 @@ export type V2Event =
   | V2ActionEvent
   | V2DoneEvent
   | V2ErrorEvent
+  | StepEvent
 
 export const assistantV2API = {
   streamChat: async (
@@ -700,4 +743,50 @@ export const assistantV2API = {
       throw new Error(err instanceof Error ? err.message : 'Stream read error')
     }
   },
+}
+
+// ─── Generic agent step streaming ─────────────────────────────────────────────
+// Reusable SSE driver for any endpoint that streams typed JSON events terminated
+// by the `[DONE]` sentinel (course generation, quiz review, interview review, …).
+// Buffers partial frames so events split across network reads parse correctly.
+
+export async function streamSSE(
+  path: string,
+  body: unknown,
+  onEvent: (event: { type: string } & Record<string, unknown>) => void,
+): Promise<void> {
+  const response = await fetch(`${BASE_URL}${path}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: accessToken ? `Bearer ${accessToken}` : '',
+    },
+    body: JSON.stringify(body ?? {}),
+  })
+  if (!response.ok || !response.body) throw new Error(`Stream failed: ${response.status}`)
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() ?? '' // keep the last, possibly-partial line for the next read
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue
+        const json = line.slice(6).trim()
+        if (!json) continue
+        if (json === '[DONE]') return
+        try {
+          const event = JSON.parse(json)
+          if (event && event.type) onEvent(event)
+        } catch { /* skip malformed frame */ }
+      }
+    }
+  } catch (err) {
+    reader.cancel().catch(() => {})
+    throw new Error(err instanceof Error ? err.message : 'Stream read error')
+  }
 }

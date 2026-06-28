@@ -13,7 +13,9 @@ const CMD_ACTIONS = [
       { id: 'go-doubts',    label: 'Open Doubt Chat',   icon: 'chat',      target: '/doubts' },
       { id: 'go-progress',  label: 'View Progress',     icon: 'progress',  target: '/progress' },
       { id: 'go-courses',   label: 'My Courses',        icon: 'course',    target: '/courses' },
-      { id: 'go-assistant', label: 'Open Assistant',    icon: 'sparkle',   target: '/assistant' },
+      { id: 'go-assistant', label: 'Open AI Assistant', icon: 'sparkle',   target: '/atelier' },
+      { id: 'go-interview', label: 'Interview Coach',   icon: 'interview', target: '/interview' },
+      { id: 'go-tracker',   label: 'Job Tracker',       icon: 'progress',  target: '/tracker' },
     ],
   },
   {

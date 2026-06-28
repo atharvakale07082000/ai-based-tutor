@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { doubtsAPI } from '@/lib/api'
-import { runSentiment } from '@/lib/hf'
+import { doubtsAPI, hfAPI } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Icon } from '@/components/ui/Icon'
@@ -114,8 +113,8 @@ export default function DoubtChatPage() {
       if (messages.length >= 3) {
         const allText = messages.map((m) => m.content).join(' ')
         try {
-          const sentiment = await runSentiment(allText)
-          const mood = sentiment[0]?.label ?? 'NEUTRAL'
+          const { data } = await hfAPI.sentiment(allText)
+          const mood = data.label ?? 'NEUTRAL'
           addDoubtSession({ id: sessionId, topic_context: topicContext, sentiment_mood: mood, started_at: new Date().toISOString(), message_count: messages.length })
         } catch { /* non-critical */ }
       }

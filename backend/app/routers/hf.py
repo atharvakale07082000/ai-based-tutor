@@ -3,6 +3,7 @@ import time
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 
 from app.auth.jwt import get_current_user_id
 from app.hf.client import get_hf_client
@@ -10,6 +11,26 @@ from app.hf.models import HF_MODELS
 
 router = APIRouter()
 log = structlog.get_logger()
+
+
+class SentimentRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=2000)
+
+
+@router.post("/sentiment")
+async def sentiment(body: SentimentRequest, user_id: str = Depends(get_current_user_id)):
+    """Classify sentiment server-side (replaces the old browser→HuggingFace call).
+
+    Degrades to a neutral result rather than erroring so callers can treat it as best-effort.
+    """
+    from app.hf.sentiment import analyze_sentiment
+
+    try:
+        return await analyze_sentiment(body.text)
+    except Exception as e:
+        log.warning("sentiment_failed", error=str(e)[:200])
+        return {"label": "NEUTRAL", "score": 0.0}
+
 
 _model_status: dict[str, dict] = {}
 

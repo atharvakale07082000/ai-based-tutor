@@ -1,16 +1,12 @@
 services:
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: ai_tutor
+  mongo:
+    image: mongo:7
     ports:
-      - "5432:5432"
+      - "27017:27017"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - mongo_data:/data/db
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -33,15 +29,17 @@ services:
     ports:
       - "8000:8000"
     environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:password@postgres:5432/ai_tutor
-      DATABASE_SYNC_URL: postgresql://postgres:password@postgres:5432/ai_tutor
+      # The app's datastore is MongoDB (see app/db/mongo.py). This points the container at the
+      # local `mongo` service; remove it to use the MONGO_URL from .env (e.g. Atlas) instead.
+      MONGO_URL: mongodb://mongo:27017
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/1
+      PISTON_BASE_URL: http://piston:2000
     env_file:
       - .env
     depends_on:
-      postgres:
+      mongo:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -52,8 +50,7 @@ services:
     build: .
     command: celery -A app.tasks.celery_app.celery_app worker --loglevel=info --concurrency=4
     environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:password@postgres:5432/ai_tutor
-      DATABASE_SYNC_URL: postgresql://postgres:password@postgres:5432/ai_tutor
+      MONGO_URL: mongodb://mongo:27017
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/1
@@ -61,7 +58,7 @@ services:
       - .env
     depends_on:
       - redis
-      - postgres
+      - mongo
     volumes:
       - .:/app
 
@@ -91,6 +88,19 @@ services:
     volumes:
       - .:/app
 
+  # Sandboxed multi-language code execution for the interview compiler.
+  # After `docker compose up`, install language packs once: `bash scripts/piston_install.sh`.
+  piston:
+    image: ghcr.io/engineer-man/piston:latest
+    privileged: true            # required by Piston's isolate sandbox
+    ports:
+      - "2000:2000"
+    volumes:
+      - piston_data:/piston/packages
+    tmpfs:
+      - /tmp:exec
+
 volumes:
-  postgres_data:
+  mongo_data:
   redis_data:
+  piston_data:

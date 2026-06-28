@@ -85,6 +85,25 @@ async def stream_doubt(
                         }
                     )
 
+            # Online eval sampling (random gate, fire-and-forget). Topic context = grounding for
+            # faithfulness; prior history + this turn → multi-turn conversation metrics.
+            try:
+                from app.evals.deepeval_metrics import maybe_eval_chat
+
+                turns = [{"role": m.role, "content": m.content} for m in body.history]
+                turns += [{"role": "user", "content": body.question}, {"role": "assistant", "content": full_response}]
+                maybe_eval_chat(
+                    "doubt_solver",
+                    body.question,
+                    full_response,
+                    turns,
+                    retrieval_context=[body.topic_context] if body.topic_context else None,
+                    learner_id=(learner or {}).get("id", ""),
+                    session_id=body.session_id or "",
+                )
+            except Exception as e:  # noqa: BLE001
+                log.warning("doubt_eval_sample_failed", error=str(e)[:200])
+
         except Exception as e:
             log.error("doubt_stream_error", error=str(e))
             yield f"data: {json.dumps({'error': str(e)})}\n\n"

@@ -26,11 +26,13 @@ const AdminPage          = lazy(() => import('@/pages/AdminPage'))
 const CoursePlannerPage  = lazy(() => import('@/pages/CoursePlannerPage'))
 const CourseDetailPage   = lazy(() => import('@/pages/CourseDetailPage'))
 const ModuleInterviewPage = lazy(() => import('@/pages/ModuleInterviewPage'))
-const AssistantPage      = lazy(() => import('@/pages/AssistantPage'))
 const AtelierV2Page      = lazy(() => import('@/pages/AtelierV2Page'))
 const FlashcardsPage     = lazy(() => import('@/pages/FlashcardsPage'))
 const ProfilePage        = lazy(() => import('@/pages/ProfilePage'))
 const ResetPasswordPage  = lazy(() => import('@/pages/ResetPasswordPage'))
+const JobTrackerPage     = lazy(() => import('@/pages/JobTrackerPage'))
+const InterviewCoachPage = lazy(() => import('@/pages/InterviewCoachPage'))
+const EvalsDashboardPage = lazy(() => import('@/pages/EvalsDashboardPage'))
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -167,13 +169,16 @@ export default function App() {
               <Route path="/courses" element={<PrivateRoute><ErrorBoundary fallbackRoute="/dashboard"><PageWrapper><CoursePlannerPage /></PageWrapper></ErrorBoundary></PrivateRoute>} />
               <Route path="/courses/:planId" element={<PrivateRoute><ErrorBoundary fallbackRoute="/courses"><PageWrapper><CourseDetailPage /></PageWrapper></ErrorBoundary></PrivateRoute>} />
               <Route path="/courses/:planId/modules/:moduleId/interview" element={<PrivateRoute><ErrorBoundary fallbackRoute="/courses"><PageWrapper><ModuleInterviewPage /></PageWrapper></ErrorBoundary></PrivateRoute>} />
-              <Route path="/assistant" element={<PrivateRoute><ErrorBoundary fallbackRoute="/dashboard"><PageWrapper><AssistantPage /></PageWrapper></ErrorBoundary></PrivateRoute>} />
+              {/* AI Assistant (v2). /assistant + /assistant-v2 are retired → redirect (D4 chat consolidation) */}
               <Route path="/atelier" element={<PrivateRoute><ErrorBoundary fallbackRoute="/dashboard"><PageWrapper><AtelierV2Page /></PageWrapper></ErrorBoundary></PrivateRoute>} />
-              <Route path="/assistant-v2" element={<PrivateRoute><ErrorBoundary fallbackRoute="/dashboard"><PageWrapper><AtelierV2Page /></PageWrapper></ErrorBoundary></PrivateRoute>} />
+              <Route path="/assistant" element={<Navigate to="/atelier" replace />} />
+              <Route path="/assistant-v2" element={<Navigate to="/atelier" replace />} />
+              <Route path="/interview" element={<PrivateRoute><ErrorBoundary fallbackRoute="/dashboard"><PageWrapper><InterviewCoachPage /></PageWrapper></ErrorBoundary></PrivateRoute>} />
+              <Route path="/evals" element={<PrivateRoute><ErrorBoundary fallbackRoute="/dashboard"><PageWrapper><EvalsDashboardPage /></PageWrapper></ErrorBoundary></PrivateRoute>} />
               <Route path="/flashcards" element={<PrivateRoute><ErrorBoundary fallbackRoute="/dashboard"><PageWrapper><FlashcardsPage /></PageWrapper></ErrorBoundary></PrivateRoute>} />
               <Route path="/profile" element={<PrivateRoute><ErrorBoundary fallbackRoute="/dashboard"><PageWrapper><ProfilePage /></PageWrapper></ErrorBoundary></PrivateRoute>} />
               <Route path="/reset-password" element={<ResetPasswordPage />} />
-              <Route path="/tracker" element={<PrivateRoute><ErrorBoundary fallbackRoute="/dashboard"><PageWrapper><div style={{ padding: '48px 28px', textAlign: 'center' }}><h2 style={{ fontSize: 28, fontWeight: 400, marginBottom: 8 }}>Job Tracker</h2><p style={{ color: 'var(--ink-2)' }}>Application tracking board — coming soon in Phase 4.</p></div></PageWrapper></ErrorBoundary></PrivateRoute>} />
+              <Route path="/tracker" element={<PrivateRoute><ErrorBoundary fallbackRoute="/dashboard"><PageWrapper><JobTrackerPage /></PageWrapper></ErrorBoundary></PrivateRoute>} />
               <Route path="/login" element={<Navigate to="/" replace />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

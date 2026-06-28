@@ -21,6 +21,7 @@ interface LearnerState {
   id: string | null
   name: string
   email: string
+  role: string
   xp: number
   streak: number
   goalVector: string[]
@@ -45,6 +46,7 @@ const initialState = {
   id: null,
   name: '',
   email: '',
+  role: '',
   xp: 0,
   streak: 0,
   goalVector: [],
@@ -88,6 +90,7 @@ export const useLearnerStore = create<LearnerState>()(
         id: state.id,
         name: state.name,
         email: state.email,
+        role: state.role,
         goalVector: state.goalVector,
         learningStyle: state.learningStyle,
         topicProficiency: state.topicProficiency,

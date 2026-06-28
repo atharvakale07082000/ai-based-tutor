@@ -291,7 +291,12 @@ class TestRecommendationAgent:
     async def test_rank_returns_items_with_flag(self):
         fake_emb = [0.1, 0.2, 0.3, 0.4]
 
-        with patch("app.hf.recommendation_agent.get_embeddings", return_value=fake_emb):
+        # rank_content_for_learner batch-embeds [learner_query, *item_texts] in one
+        # call via _batch_embeddings, so the patch returns one vector per input text.
+        with patch(
+            "app.hf.recommendation_agent._batch_embeddings",
+            side_effect=lambda texts: [fake_emb for _ in texts],
+        ):
             from app.hf.recommendation_agent import rank_content_for_learner
 
             items = [
@@ -320,7 +325,7 @@ class TestRecommendationAgent:
 
     @pytest.mark.asyncio
     async def test_rank_falls_back_on_error(self):
-        with patch("app.hf.recommendation_agent.get_embeddings", side_effect=Exception("API error")):
+        with patch("app.hf.recommendation_agent._batch_embeddings", side_effect=Exception("API error")):
             from app.hf.recommendation_agent import rank_content_for_learner
 
             items = [{"title": "X", "topic": "Y", "subtopic": "Z"}]

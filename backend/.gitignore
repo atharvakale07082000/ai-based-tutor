@@ -144,3 +144,7 @@ desktop.ini
 # ------------------------------------------------------------
 *.bak
 *.tmp
+
+# DeepEval local telemetry/cache
+.deepeval/
+.deepeval_telemetry.txt

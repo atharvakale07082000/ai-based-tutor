@@ -11,7 +11,7 @@ import re
 import time
 import uuid
 from datetime import datetime, timezone
-from typing import Optional, TypedDict
+from typing import Awaitable, Callable, Optional, TypedDict
 
 import structlog
 from ddgs import DDGS
@@ -23,6 +23,10 @@ from app.hf.models import HF_MODELS
 log = structlog.get_logger()
 
 PROJ = {"_id": 0}
+
+# Type of the optional step-emit callback forwarded to a workflow run: it receives a step/event
+# dict and forwards it to the SSE stream. None = no live timeline.
+StepEmit = Optional[Callable[[dict], Awaitable[None]]]
 
 
 def _chat(prompt: str, max_tokens: int = 2000, temperature: float = 0.2) -> str:
@@ -204,19 +208,18 @@ async def _pregenerate_quizzes_for_plan(plan: dict) -> None:
                 log.warning("quiz_pregenerate_error", topic=topic, error=str(e))
 
 
-async def create_course_plan(goal: str, user_id: str) -> dict:
+async def create_course_plan(goal: str, user_id: str, emit: StepEmit = None) -> dict:
+    """Build and persist a course plan via the ``course_gen`` workflow.
+
+    Thin entry point: the research → design → persist steps now live as sequential tasks in the
+    plan-then-execute framework (app.agents.workflow). If ``emit`` is given, the workflow streams
+    live timeline steps identical to before. Returns the saved plan.
+    """
+    from app.agents.workflow import run_workflow
+
     log.info("course_planner_start", goal=goal, user_id=user_id)
-    search_results = await asyncio.to_thread(_search_web, goal)
-    raw = await _generate_plan_json(goal, search_results)
-    plan = _build_plan(goal, user_id, raw)
-    await _save_plan(plan)
-    log.info("course_planner_plan_saved", plan_id=plan["plan_id"])
-    # Fire-and-forget: pre-populate quiz bank for all module topics
-    task = asyncio.create_task(_pregenerate_quizzes_for_plan(plan))
-    task.add_done_callback(
-        lambda t: log.error("quiz_pregenerate_task_failed", error=str(t.exception())) if t.exception() else None
-    )
-    return plan
+    ctx = await run_workflow("course_gen", {"goal": goal, "user_id": user_id}, emit=emit)
+    return ctx.result("finalize")
 
 
 # ─── Interview ────────────────────────────────────────────────────────────────
@@ -358,72 +361,26 @@ Return ONLY the JSON."""
     return evaluation
 
 
-async def complete_interview(interview_id: str, plan_id: str, module_id: str) -> dict:
-    """Run LangGraph scoring agent on all Q&A pairs, mark module pass/fail."""
-    from app.agents.interview_scorer import run_scoring_agent
+async def complete_interview(interview_id: str, plan_id: str, module_id: str, emit: StepEmit = None) -> dict:
+    """Score an interview via the ``interview_review`` workflow (evaluate → score → feedback).
 
-    interview = await col_interviews().find_one({"interview_id": interview_id})
-    if not interview:
-        raise ValueError("Interview not found")
+    Thin entry point: the steps now live as sequential tasks in app.agents.workflow. If ``emit`` is
+    given, the workflow streams live timeline steps identical to before. Returns the result payload.
+    """
+    from app.agents.workflow import run_workflow
 
-    answers = interview.get("answers", [])
-    if not answers:
-        raise ValueError("No answers submitted")
-
-    log.info(
-        "interview_scoring",
-        interview_id=interview_id,
-        module=interview["module_title"],
-        answers_submitted=len(answers),
-        per_question_scores={str(a["question_id"]): a.get("score") for a in answers},
+    ctx = await run_workflow(
+        "interview_review",
+        {"interview_id": interview_id, "plan_id": plan_id, "module_id": module_id},
+        emit=emit,
     )
-
-    transcriptions = [{"question_id": a.get("question_id"), "answer_text": a.get("answer_text", "")} for a in answers]
-
-    t0 = time.perf_counter()
-    scoring = await asyncio.to_thread(
-        run_scoring_agent,
-        interview["module_title"],
-        interview.get("module_topics", []),
-        interview["questions"],
-        transcriptions,
-    )
-
-    final_score = scoring["final_score"]
-    passed = scoring["passed"]
-    completed_at = datetime.now(timezone.utc).isoformat()
-
-    await col_interviews().update_one(
-        {"interview_id": interview_id},
-        {
-            "$set": {
-                "final_score": final_score,
-                "passed": passed,
-                "scoring_matrix": scoring["scoring_matrix"],
-                "summary": scoring["summary"],
-                "completed_at": completed_at,
-            }
-        },
-    )
-
-    status = "passed" if passed else "failed"
-    await _update_module_interview(plan_id, module_id, status, round(final_score / 10, 2))
+    result = ctx.result("feedback")
 
     log.info(
         "interview_complete",
         interview_id=interview_id,
-        module=interview["module_title"],
-        final_score=final_score,
-        passed=passed,
-        status="PASSED ✓" if passed else "FAILED ✗",
-        scoring_latency_ms=round((time.perf_counter() - t0) * 1000),
+        final_score=result["final_score"],
+        passed=result["passed"],
+        status="PASSED ✓" if result["passed"] else "FAILED ✗",
     )
-    return {
-        "interview_id": interview_id,
-        "final_score": final_score,
-        "passed": passed,
-        "scoring_matrix": scoring["scoring_matrix"],
-        "summary": scoring["summary"],
-        "total_questions": len(answers),
-        "completed_at": completed_at,
-    }
+    return result

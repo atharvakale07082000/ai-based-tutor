@@ -232,6 +232,7 @@ input, textarea { font: inherit; color: inherit; }
 
 .fade-up { animation: fadeUp var(--dur-slow) var(--ease-out) both; }
 .fade-in { animation: fadeIn var(--dur-base) var(--ease-out) both; }
+.spin { animation: spin 0.9s linear infinite; }
 .pulse-dot { animation: pulse-soft 2s ease-in-out infinite; }
 
 @media (prefers-reduced-motion: reduce) {

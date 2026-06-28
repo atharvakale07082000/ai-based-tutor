@@ -9,7 +9,9 @@ import { authAPI } from '@/lib/api'
 const BREADCRUMBS: Record<string, string[]> = {
   '/dashboard':  ['Dashboard'],
   '/learn':      ['Today'],
-  '/assistant':  ['Assistant'],
+  '/atelier':    ['AI Assistant'],
+  '/interview':  ['Interview Coach'],
+  '/tracker':    ['Job Tracker'],
   '/courses':    ['Courses'],
   '/doubts':     ['Doubts'],
   '/progress':   ['Progress'],
@@ -105,7 +107,7 @@ export function TopBar() {
           variant="accent"
           icon="sparkle"
           className="hidden sm:inline-flex"
-          onClick={() => navigate('/assistant')}
+          onClick={() => navigate('/atelier')}
         >
           Ask Atelier
         </Button>

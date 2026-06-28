@@ -25,6 +25,14 @@ EvalType = Literal[
     # ── Chat orchestrator ─────────────────────────────────────────────────────
     "chat_session",  # full assistant turn: routing + response + delegation
     "chat_guardrail",  # turn blocked by input guardrail before any agent ran
+    # ── DeepEval quality metrics (single-turn) ────────────────────────────────
+    "faithfulness",  # output grounded in retrieval_context (no contradictions)
+    "answer_correctness",  # matches the reference / expected intent
+    "answer_accuracy",  # factual claims correct
+    # ── DeepEval quality metrics (multi-turn conversation) ────────────────────
+    "conversation_consistency",  # no self-contradiction across turns
+    "conversation_knowledge_retention",  # remembers earlier turns
+    "conversation_role_adherence",  # stays in the tutor role
 ]
 
 

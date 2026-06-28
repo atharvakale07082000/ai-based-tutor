@@ -19,10 +19,10 @@ const NAV_GROUPS: NavGroup[] = [
   {
     group: 'Workspace',
     items: [
-      { id: '/dashboard',  label: 'Dashboard',         icon: 'home',     kbd: 'D' },
-      { id: '/learn',      label: 'Career Feed',        icon: 'feed',     kbd: 'T' },
-      { id: '/assistant',  label: 'Assistant',          icon: 'sparkle',  kbd: 'A' },
-      { id: '/atelier',    label: 'AI Interview Coach', icon: 'sparkle',  kbd: 'V' },
+      { id: '/dashboard',  label: 'Dashboard',       icon: 'home',      kbd: 'D' },
+      { id: '/learn',      label: 'Career Feed',      icon: 'feed',      kbd: 'T' },
+      { id: '/atelier',    label: 'AI Assistant',     icon: 'sparkle',   kbd: 'A' },
+      { id: '/interview',  label: 'Interview Coach',  icon: 'interview', kbd: 'V' },
     ],
   },
   {
@@ -49,6 +49,9 @@ const NAV_GROUPS: NavGroup[] = [
   },
 ]
 
+// Superuser-only nav item (evals dashboard), appended to the System group when applicable.
+const EVALS_ITEM: NavItem = { id: '/evals', label: 'Agent Evals', icon: 'target' }
+
 const AGENT_KEYS = ['curr', 'quiz', 'prog', 'doubt'] as const
 const AGENT_MAP = { curr: 'curriculum', quiz: 'quiz', prog: 'progress', doubt: 'doubt' } as const
 
@@ -56,6 +59,11 @@ export function Sidebar() {
   const location = useLocation()
   const navigate = useNavigate()
   const { name, xp, streak, reset } = useLearnerStore()
+  const role = useLearnerStore((s) => s.role)
+  // Superuser sees an extra "Agent Evals" item in the System group.
+  const navGroups: NavGroup[] = role === 'superuser'
+    ? NAV_GROUPS.map((g) => (g.group === 'System' ? { ...g, items: [...g.items, EVALS_ITEM] } : g))
+    : NAV_GROUPS
   const agents = useAgentStore((s) => s.agents)
   const { theme, toggleTheme } = useThemeStore()
   const openCmdk = useCmdkStore((s) => s.setOpen)
@@ -196,7 +204,7 @@ export function Sidebar() {
 
         {/* Nav */}
         <nav aria-label="Main navigation" style={{ flex: 1, overflowY: 'auto', padding: '0 8px' }}>
-          {NAV_GROUPS.map((grp) => (
+          {navGroups.map((grp) => (
             <div key={grp.group} style={{ marginBottom: 14 }}>
               <div className="caps lg:hidden xl:block" style={{ padding: '4px 8px', color: 'var(--ink-3)' }}>{grp.group}</div>
               {grp.items.map((it) => {

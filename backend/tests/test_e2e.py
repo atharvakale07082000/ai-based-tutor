@@ -70,7 +70,8 @@ def mock_all_agents():
         patch("app.agents.planner_agent.call_tool", side_effect=_mock_tool),
         patch("app.agents.doubt_agent.stream_doubt_response", side_effect=_mock_stream),
         patch("app.routers.doubts.stream_doubt_response", side_effect=_mock_stream),
-        patch("app.routers.quiz.get_or_generate_quiz_questions", side_effect=_mock_get_or_generate),
+        # Quiz generation now runs inside the quiz_gen workflow, which imports
+        # get_or_generate_quiz_questions lazily from its source module — patch there.
         patch("app.hf.quiz_questions.get_or_generate_quiz_questions", side_effect=_mock_get_or_generate),
     ):
         yield
@@ -107,6 +108,15 @@ async def authed(client):
         _STATE["user_id"] = resp.json()["user"]["id"]
     client.headers["Authorization"] = f"Bearer {_STATE['access_token']}"
     return client
+
+
+@pytest_asyncio.fixture
+async def superuser_authed(authed):
+    """Authed client promoted to the superuser role — required by the gated /evals/* endpoints."""
+    from app.db.mongo import col_users
+
+    await col_users().update_one({"id": _STATE["user_id"]}, {"$set": {"role": "superuser"}})
+    return authed
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -461,12 +471,12 @@ class TestE2E_Doubts:
 
 class TestE2E_Evals:
     @pytest.mark.asyncio
-    async def test_E2E_EV01_run_quiz_format_eval(self, authed):
+    async def test_E2E_EV01_run_quiz_format_eval(self, superuser_authed):
         """POST /evals/run — quiz_format eval returns correct score."""
         questions = [_make_question() for _ in range(3)]
         with patch("app.evals.mongo.insert_eval", new_callable=AsyncMock) as mock_ins:
             mock_ins.return_value = "507f1f77bcf86cd799439011"
-            resp = await authed.post(
+            resp = await superuser_authed.post(
                 "/api/v1/evals/run",
                 params={
                     "eval_type": "quiz_format",
@@ -486,11 +496,11 @@ class TestE2E_Evals:
         assert data["passed"] is True
 
     @pytest.mark.asyncio
-    async def test_E2E_EV02_run_planner_decision_eval_default_quiz(self, authed):
+    async def test_E2E_EV02_run_planner_decision_eval_default_quiz(self, superuser_authed):
         """Planner chose 'quiz' with unmastered curriculum → passes."""
         with patch("app.evals.mongo.insert_eval", new_callable=AsyncMock) as mock_ins:
             mock_ins.return_value = "507f1f77bcf86cd799439012"
-            resp = await authed.post(
+            resp = await superuser_authed.post(
                 "/api/v1/evals/run",
                 params={"eval_type": "planner_decision", "agent": "planner_agent"},
                 json={
@@ -508,11 +518,11 @@ class TestE2E_Evals:
         assert resp.json()["passed"] is True
 
     @pytest.mark.asyncio
-    async def test_E2E_EV03_run_doubt_relevance_eval(self, authed):
+    async def test_E2E_EV03_run_doubt_relevance_eval(self, superuser_authed):
         """doubt_relevance eval scores based on topic token overlap."""
         with patch("app.evals.mongo.insert_eval", new_callable=AsyncMock) as mock_ins:
             mock_ins.return_value = "507f1f77bcf86cd799439013"
-            resp = await authed.post(
+            resp = await superuser_authed.post(
                 "/api/v1/evals/run",
                 params={"eval_type": "doubt_relevance", "agent": "doubt_agent"},
                 json={
@@ -525,7 +535,7 @@ class TestE2E_Evals:
         assert data["score"] > 0.0, "Overlapping tokens should produce positive score"
 
     @pytest.mark.asyncio
-    async def test_E2E_EV04_run_curriculum_ordering_eval(self, authed):
+    async def test_E2E_EV04_run_curriculum_ordering_eval(self, superuser_authed):
         """curriculum_ordering eval — ascending elo → 1.0 score."""
         path = [
             {"subtopic": "A", "elo": 200.0},
@@ -534,7 +544,7 @@ class TestE2E_Evals:
         ]
         with patch("app.evals.mongo.insert_eval", new_callable=AsyncMock) as mock_ins:
             mock_ins.return_value = "507f1f77bcf86cd799439014"
-            resp = await authed.post(
+            resp = await superuser_authed.post(
                 "/api/v1/evals/run",
                 params={"eval_type": "curriculum_ordering", "agent": "curriculum_agent"},
                 json={
@@ -547,11 +557,11 @@ class TestE2E_Evals:
         assert resp.json()["passed"] is True
 
     @pytest.mark.asyncio
-    async def test_E2E_EV05_run_guardrail_triggered_eval(self, authed):
+    async def test_E2E_EV05_run_guardrail_triggered_eval(self, superuser_authed):
         """guardrail_triggered eval always returns score=1.0."""
         with patch("app.evals.mongo.insert_eval", new_callable=AsyncMock) as mock_ins:
             mock_ins.return_value = "507f1f77bcf86cd799439015"
-            resp = await authed.post(
+            resp = await superuser_authed.post(
                 "/api/v1/evals/run",
                 params={"eval_type": "guardrail_triggered", "agent": "doubt_agent"},
                 json={
@@ -563,7 +573,7 @@ class TestE2E_Evals:
         assert resp.json()["score"] == 1.0
 
     @pytest.mark.asyncio
-    async def test_E2E_EV06_results_endpoint(self, authed):
+    async def test_E2E_EV06_results_endpoint(self, superuser_authed):
         """GET /evals/results — returns list with count."""
         # Patch at the router module level (not mongo module) to bypass import binding
         with patch("app.routers.evals.query_evals", new_callable=AsyncMock) as mock_q:
@@ -571,7 +581,7 @@ class TestE2E_Evals:
                 {"eval_type": "quiz_format", "agent": "quiz_agent", "score": 1.0, "passed": True},
                 {"eval_type": "planner_decision", "agent": "planner_agent", "score": 1.0, "passed": True},
             ]
-            resp = await authed.get("/api/v1/evals/results", params={"limit": 10})
+            resp = await superuser_authed.get("/api/v1/evals/results", params={"limit": 10})
         assert resp.status_code == 200
         data = resp.json()
         assert "results" in data
@@ -579,7 +589,7 @@ class TestE2E_Evals:
         assert data["count"] == 2
 
     @pytest.mark.asyncio
-    async def test_E2E_EV07_summary_endpoint(self, authed):
+    async def test_E2E_EV07_summary_endpoint(self, superuser_authed):
         """GET /evals/summary — aggregated pass rates."""
         with patch("app.routers.evals.aggregate_summary", new_callable=AsyncMock) as mock_s:
             mock_s.return_value = [
@@ -592,12 +602,12 @@ class TestE2E_Evals:
                     "pass_rate": 1.0,
                 },
             ]
-            resp = await authed.get("/api/v1/evals/summary")
+            resp = await superuser_authed.get("/api/v1/evals/summary")
         assert resp.status_code == 200
         assert "summaries" in resp.json()
 
     @pytest.mark.asyncio
-    async def test_E2E_EV08_batch_quiz_eval(self, authed):
+    async def test_E2E_EV08_batch_quiz_eval(self, superuser_authed):
         """POST /evals/batch/quiz — runs eval over multiple sessions."""
         questions = [_make_question() for _ in range(2)]
         sessions = [
@@ -616,7 +626,7 @@ class TestE2E_Evals:
         ]
         with patch("app.evals.mongo.insert_eval", new_callable=AsyncMock) as mock_ins:
             mock_ins.return_value = "507f1f77bcf86cd799439016"
-            resp = await authed.post("/api/v1/evals/batch/quiz", json=sessions)
+            resp = await superuser_authed.post("/api/v1/evals/batch/quiz", json=sessions)
         assert resp.status_code == 200
         results = resp.json()["results"]
         assert len(results) == 2

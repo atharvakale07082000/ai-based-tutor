@@ -1,11 +1,10 @@
 """Course Planning & AI Interview router."""
 
-import asyncio
-import subprocess
-import sys
+import json
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -19,16 +18,14 @@ from app.agents.course_planner import (
     list_plans,
     start_interview,
 )
+from app.agents.steps import sse_step_stream
 from app.auth.jwt import get_current_user_id
+
+_SSE_HEADERS = {"X-Accel-Buffering": "no", "Cache-Control": "no-cache"}
 
 router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
 log = structlog.get_logger()
-
-_MAX_OUTPUT = 4000  # chars
-_CODE_TIMEOUT = 10  # seconds
-_MEM_LIMIT_BYTES = 128 * 1024 * 1024  # 128 MB virtual memory per subprocess
-_CPU_LIMIT_S = 8  # seconds CPU time (< _CODE_TIMEOUT so it fires first)
 
 
 # ─── Schemas ──────────────────────────────────────────────────────────────────
@@ -45,7 +42,8 @@ class AnswerRequest(BaseModel):
 
 class RunCodeRequest(BaseModel):
     code: str = Field(max_length=10_000)
-    language: str = Field(default="python", max_length=20)
+    language: str = Field(default="python", max_length=40)
+    stdin: str = Field(default="", max_length=10_000)
 
 
 # ─── Course plan endpoints ────────────────────────────────────────────────────
@@ -63,6 +61,52 @@ async def plan_course(request: Request, body: PlanRequest, user_id: str = Depend
         return plan
     except Exception as e:
         raise HTTPException(500, f"Failed to generate plan: {e}")
+
+
+@router.post("/plan/stream")
+@limiter.limit("3/hour")
+async def plan_course_stream(request: Request, body: PlanRequest, user_id: str = Depends(get_current_user_id)):
+    """Generate a course plan while streaming a live step timeline as SSE.
+
+    Emits `step` events (research → design → finalize), then a `plan_created`
+    action carrying the saved plan summary, then `[DONE]`.
+    """
+    if not body.goal.strip():
+        raise HTTPException(400, "Goal cannot be empty")
+    goal = body.goal.strip()
+    log.info("course_plan_stream", user_id=user_id, goal=goal[:80])
+
+    async def event_stream():
+        """Drive create_course_plan with a live emitter and frame events as SSE."""
+
+        async def run(emit):
+            plan = await create_course_plan(goal, user_id, emit=emit)
+            await emit(
+                {
+                    "type": "action",
+                    "kind": "plan_created",
+                    "payload": {
+                        "plan_id": plan["plan_id"],
+                        "title": plan["title"],
+                        "module_count": len(plan["modules"]),
+                        "weeks": plan["total_duration_weeks"],
+                        "url": f"/courses/{plan['plan_id']}",
+                    },
+                }
+            )
+            # Online eval sampling: does the generated plan correctly address the learner's goal?
+            from app.evals.deepeval_metrics import maybe_eval_single_turn
+
+            summary = f"{plan['title']}: {plan.get('description', '')}\nModules: " + ", ".join(
+                m.get("title", "") for m in plan["modules"]
+            )
+            maybe_eval_single_turn("course_planner", goal, summary, learner_id=user_id)
+
+        async for ev in sse_step_stream(run):
+            yield f"data: {json.dumps(ev)}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream", headers=_SSE_HEADERS)
 
 
 @router.get("/")
@@ -127,6 +171,14 @@ async def submit_answer(
         raise HTTPException(500, f"Evaluation failed: {e}")
 
 
+@router.get("/run-code/languages")
+async def run_code_languages(user_id: str = Depends(get_current_user_id)):
+    """List the language ids the code runner supports (for the editor's language picker)."""
+    from app.services.code_runner import supported_language_ids
+
+    return {"languages": supported_language_ids()}
+
+
 @router.post("/{plan_id}/modules/{module_id}/interview/{interview_id}/run-code")
 async def run_code(
     plan_id: str,
@@ -135,49 +187,14 @@ async def run_code(
     body: RunCodeRequest,
     user_id: str = Depends(get_current_user_id),
 ):
-    """Execute a code snippet in a sandboxed subprocess and return stdout/stderr."""
+    """Execute a code snippet (multi-language via Piston; Python subprocess fallback)."""
+    from app.services.code_runner import run_code as _execute
+
     interview = await get_interview(interview_id)
     if not interview or interview["user_id"] != user_id:
         raise HTTPException(404, "Interview not found")
 
-    if body.language not in ("python", "python3"):
-        raise HTTPException(400, "Only Python execution is supported")
-
-    code = body.code.strip()
-    if not code:
-        return {"stdout": "", "stderr": "", "exit_code": 0}
-
-    def _preexec_limits() -> None:
-        """Apply OS-level resource limits inside the child process (Unix only)."""
-        try:
-            import resource
-
-            resource.setrlimit(resource.RLIMIT_AS, (_MEM_LIMIT_BYTES, _MEM_LIMIT_BYTES))
-            resource.setrlimit(resource.RLIMIT_CPU, (_CPU_LIMIT_S, _CPU_LIMIT_S))
-        except Exception:
-            pass  # Windows or no resource module — skip silently
-
-    def _run() -> dict:
-        try:
-            proc = subprocess.run(
-                [sys.executable, "-c", code],
-                capture_output=True,
-                text=True,
-                timeout=_CODE_TIMEOUT,
-                preexec_fn=_preexec_limits if sys.platform != "win32" else None,
-            )
-            return {
-                "stdout": proc.stdout[:_MAX_OUTPUT],
-                "stderr": proc.stderr[:_MAX_OUTPUT],
-                "exit_code": proc.returncode,
-            }
-        except subprocess.TimeoutExpired:
-            return {"stdout": "", "stderr": f"Execution timed out after {_CODE_TIMEOUT}s", "exit_code": 124}
-        except Exception as e:
-            return {"stdout": "", "stderr": str(e)[:500], "exit_code": 1}
-
-    result = await asyncio.to_thread(_run)
-    return result
+    return await _execute(body.language, body.code, getattr(body, "stdin", "") or "")
 
 
 @router.post("/{plan_id}/modules/{module_id}/interview/{interview_id}/complete")
@@ -196,3 +213,33 @@ async def finish_interview(
         return result
     except Exception as e:
         raise HTTPException(500, f"Could not complete interview: {e}")
+
+
+@router.post("/{plan_id}/modules/{module_id}/interview/{interview_id}/complete/stream")
+async def finish_interview_stream(
+    plan_id: str,
+    module_id: str,
+    interview_id: str,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Complete & score an interview while streaming a live step timeline as SSE.
+
+    Emits `step` events (evaluate → score → feedback), then an `interview_scored`
+    action carrying the full result, then `[DONE]`.
+    """
+    interview = await get_interview(interview_id)
+    if not interview or interview["user_id"] != user_id:
+        raise HTTPException(404, "Interview not found")
+
+    async def event_stream():
+        """Drive complete_interview with a live emitter and frame events as SSE."""
+
+        async def run(emit):
+            result = await complete_interview(interview_id, plan_id, module_id, emit=emit)
+            await emit({"type": "action", "kind": "interview_scored", "payload": result})
+
+        async for ev in sse_step_stream(run):
+            yield f"data: {json.dumps(ev)}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream", headers=_SSE_HEADERS)

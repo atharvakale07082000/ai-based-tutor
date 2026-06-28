@@ -121,6 +121,10 @@ def col_reset_tokens() -> AsyncCollection:
     return get_db()["password_reset_tokens"]
 
 
+def col_job_applications() -> AsyncCollection:
+    return get_db()["job_applications"]
+
+
 # ─── Startup ──────────────────────────────────────────────────────────────────
 
 
@@ -151,3 +155,5 @@ async def ensure_indexes() -> None:
     # Reset tokens expire automatically after 1 hour via MongoDB TTL index
     await col_reset_tokens().create_index("created_at", expireAfterSeconds=3600)
     await col_reset_tokens().create_index("token", unique=True)
+
+    await col_job_applications().create_index([("learner_id", ASCENDING), ("updated_at", DESCENDING)])

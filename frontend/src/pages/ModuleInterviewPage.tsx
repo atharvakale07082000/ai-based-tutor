@@ -5,7 +5,9 @@ import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Icon } from '@/components/ui/Icon'
-import { coursesAPI, type Interview } from '@/lib/api'
+import { AgentTimeline } from '@/components/ui/AgentTimeline'
+import { useAgentTimeline } from '@/hooks/useAgentTimeline'
+import { coursesAPI, streamSSE, type Interview } from '@/lib/api'
 
 // Lazy-load Monaco so it doesn't bloat the initial bundle
 const MonacoEditor = lazy(() => import('@monaco-editor/react'))
@@ -139,16 +141,38 @@ interface CodeEnvProps {
   onChange: (v: string) => void
 }
 
+// Languages the editor offers (matches backend code_runner.SUPPORTED_LANGUAGES). `monaco` = the
+// Monaco highlighting id; `id` is what we send to the run-code API.
+const CODE_LANGUAGES: { id: string; label: string; monaco: string }[] = [
+  { id: 'python', label: 'Python', monaco: 'python' },
+  { id: 'javascript', label: 'JavaScript', monaco: 'javascript' },
+  { id: 'typescript', label: 'TypeScript', monaco: 'typescript' },
+  { id: 'java', label: 'Java', monaco: 'java' },
+  { id: 'c', label: 'C', monaco: 'c' },
+  { id: 'cpp', label: 'C++', monaco: 'cpp' },
+  { id: 'csharp', label: 'C#', monaco: 'csharp' },
+  { id: 'go', label: 'Go', monaco: 'go' },
+  { id: 'rust', label: 'Rust', monaco: 'rust' },
+  { id: 'ruby', label: 'Ruby', monaco: 'ruby' },
+  { id: 'php', label: 'PHP', monaco: 'php' },
+  { id: 'kotlin', label: 'Kotlin', monaco: 'kotlin' },
+  { id: 'swift', label: 'Swift', monaco: 'swift' },
+  { id: 'bash', label: 'Bash', monaco: 'shell' },
+]
+const monacoLang = (id: string) => CODE_LANGUAGES.find((l) => l.id === id)?.monaco ?? (id === 'python3' ? 'python' : id)
+
 function CodeEnvironment({ planId, moduleId, interviewId, language, value, onChange }: CodeEnvProps) {
   const [output, setOutput] = useState<{ stdout: string; stderr: string; exit_code: number } | null>(null)
   const [running, setRunning] = useState(false)
+  // Question suggests a language, but the learner can switch.
+  const [selectedLang, setSelectedLang] = useState(language === 'python3' ? 'python' : language)
 
   const handleRun = async () => {
     if (!value.trim()) return
     setRunning(true)
     setOutput(null)
     try {
-      const { data } = await coursesAPI.runCode(planId, moduleId, interviewId, value, language)
+      const { data } = await coursesAPI.runCode(planId, moduleId, interviewId, value, selectedLang)
       setOutput(data)
     } catch {
       setOutput({ stdout: '', stderr: 'Execution failed — check your code and try again.', exit_code: 1 })
@@ -176,7 +200,18 @@ function CodeEnvironment({ planId, moduleId, interviewId, language, value, onCha
           borderBottom: '1px solid #3a3a3a',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 11, color: '#888', fontFamily: 'var(--font-mono)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>{language}</span>
+            <select
+              value={selectedLang}
+              onChange={(e) => setSelectedLang(e.target.value)}
+              aria-label="Language"
+              style={{
+                fontSize: 11, fontFamily: 'var(--font-mono)', letterSpacing: '0.04em',
+                background: '#1e1e1e', color: '#ddd', border: '1px solid #3a3a3a',
+                borderRadius: 4, padding: '2px 6px', cursor: 'pointer',
+              }}
+            >
+              {CODE_LANGUAGES.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
+            </select>
           </div>
           <button
             onClick={handleRun}
@@ -206,7 +241,7 @@ function CodeEnvironment({ planId, moduleId, interviewId, language, value, onCha
         }>
           <MonacoEditor
             height="220px"
-            language={language === 'python3' ? 'python' : language}
+            language={monacoLang(selectedLang)}
             value={value}
             onChange={(v) => onChange(v ?? '')}
             theme="vs-dark"
@@ -299,6 +334,7 @@ export default function ModuleInterviewPage() {
 
   const [interview,          setInterview]          = useState<Interview | null>(null)
   const [phase,              setPhase]              = useState<Phase>('loading')
+  const { steps: scoringSteps, applyStep: applyScoringStep, reset: resetScoring } = useAgentTimeline()
   const [currentQIdx,        setCurrentQIdx]        = useState(0)
   const [isRecording,        setIsRecording]        = useState(false)
   const [transcript,         setTranscript]         = useState('')
@@ -477,12 +513,27 @@ export default function ModuleInterviewPage() {
   const handleComplete = async () => {
     if (!interview) return
     setPhase('scoring')
+    resetScoring()
     window.speechSynthesis?.cancel()
+    let scored: FinalResult | null = null
     try {
-      const { data } = await coursesAPI.completeInterview(planId!, moduleId!, interview.interview_id)
-      setFinalResult(data as FinalResult)
+      await streamSSE(
+        `/courses/${planId}/modules/${moduleId}/interview/${interview.interview_id}/complete/stream`,
+        {},
+        (event) => {
+          if (event.type === 'step') {
+            applyScoringStep(event as unknown as { id: string; label: string; status: 'active' | 'done' | 'error' })
+          } else if (event.type === 'action' && event.kind === 'interview_scored') {
+            scored = event.payload as FinalResult
+          } else if (event.type === 'error') {
+            toast.error(String(event.message ?? 'Could not finalize interview'))
+          }
+        },
+      )
+      if (!scored) throw new Error('no result')
+      const r = scored as FinalResult
+      setFinalResult(r)
       setPhase('complete')
-      const r = data as FinalResult
       const utt = new SpeechSynthesisUtterance(
         r.passed
           ? `Congratulations! You scored ${r.final_score.toFixed(1)} out of 10 and passed.`
@@ -522,13 +573,8 @@ export default function ModuleInterviewPage() {
           </div>
           <h2 className="serif" style={{ fontSize: 22, fontWeight: 400, marginBottom: 8 }}>Computing your score</h2>
           <p className="t-sm fg-2" style={{ marginBottom: 24 }}>AI is cross-checking all answers against module knowledge…</p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {['Analysing answers', 'Building scoring matrix', 'Computing final score'].map((step, i) => (
-              <div key={step} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0, animation: `blink 1.4s ease-in-out ${i * 0.4}s infinite` }} />
-                <span className="t-sm fg-2">{step}</span>
-              </div>
-            ))}
+          <div style={{ display: 'inline-flex', justifyContent: 'flex-start', textAlign: 'left' }}>
+            <AgentTimeline steps={scoringSteps} />
           </div>
         </div>
       </div>

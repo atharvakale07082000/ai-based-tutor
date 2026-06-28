@@ -372,7 +372,7 @@ export default function LearnFeedPage() {
     if (activeTrendId) return // debounce
     setActiveTrendId(topic.id)
     setTimeout(() => {
-      navigate('/assistant', { state: { prefill: `Help me understand ${topic.subtopic}` } })
+      navigate('/atelier', { state: { prefill: `Help me understand ${topic.subtopic}` } })
     }, 350)
   }
 

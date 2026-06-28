@@ -40,8 +40,14 @@ dependencies = [
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
+    # Quality-eval suite (opt-in, marker-gated). Kept out of prod deps (uv sync --no-dev).
+    "deepeval>=2.0",
+    "instructor>=1.6",
 ]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "evals: DeepEval-based quality suite (opt-in; hits the NVIDIA judge LLM). Run with -m evals.",
+]
