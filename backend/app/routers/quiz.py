@@ -70,7 +70,10 @@ async def generate_quiz(
 
     q_text = "\n".join(q.get("question", "") for q in persisted["questions"])
     maybe_eval_single_turn(
-        "quiz_agent", f"Generate a quiz that tests understanding of: {body.topic}", q_text, learner_id=learner["id"]
+        "quiz_agent",
+        f"Generate a quiz that tests understanding of: {body.topic}",
+        q_text,
+        learner_id=learner["id"],
     )
 
     return QuizSessionSchema(
@@ -100,14 +103,20 @@ async def get_quiz(quiz_id: str, user_id: str = Depends(get_current_user_id)):
 def _validate_quiz_answers(questions: list, answers: list) -> None:
     """Raise HTTP 400 if the answer set is the wrong length or has out-of-range indices."""
     if len(answers) != len(questions):
-        raise HTTPException(400, f"Expected {len(questions)} answers, got {len(answers)}")
+        raise HTTPException(
+            400, f"Expected {len(questions)} answers, got {len(answers)}"
+        )
     for i, (ans, q) in enumerate(zip(answers, questions)):
         n_opts = len(q.get("options", []))
         if n_opts and not (0 <= ans < n_opts):
-            raise HTTPException(400, f"Answer for question {i + 1} is out of range (0–{n_opts - 1})")
+            raise HTTPException(
+                400, f"Answer for question {i + 1} is out of range (0–{n_opts - 1})"
+            )
 
 
-async def _grade_and_persist(quiz: dict, learner: dict, answers: list, user_id: str) -> QuizSubmitResult:
+async def _grade_and_persist(
+    quiz: dict, learner: dict, answers: list, user_id: str
+) -> QuizSubmitResult:
     """Score answers, update ELO/XP, persist results, and return the structured result.
 
     Shared by the plain and streaming submit endpoints so scoring lives in one place.
@@ -137,7 +146,10 @@ async def _grade_and_persist(quiz: dict, learner: dict, answers: list, user_id: 
 
     await col_learners().update_one(
         {"user_id": user_id},
-        {"$set": {"topic_proficiency_map": proficiency, "updated_at": now}, "$inc": {"xp": xp_delta}},
+        {
+            "$set": {"topic_proficiency_map": proficiency, "updated_at": now},
+            "$inc": {"xp": xp_delta},
+        },
     )
     await col_progress().insert_one(
         {
@@ -150,7 +162,14 @@ async def _grade_and_persist(quiz: dict, learner: dict, answers: list, user_id: 
     )
     await col_quizzes().update_one(
         {"id": quiz["id"]},
-        {"$set": {"answers": answers, "score": score, "weak_topics": list(set(weak_topics)), "completed_at": now}},
+        {
+            "$set": {
+                "answers": answers,
+                "score": score,
+                "weak_topics": list(set(weak_topics)),
+                "completed_at": now,
+            }
+        },
     )
 
     log.info("quiz_submitted", quiz_id=quiz["id"], score=score, xp_delta=xp_delta)
@@ -214,13 +233,21 @@ async def submit_quiz_stream(
             await asyncio.sleep(0.3)
             await emit(tl.done("feedback"))
 
-            await emit({"type": "action", "kind": "quiz_scored", "payload": result.model_dump()})
+            await emit(
+                {
+                    "type": "action",
+                    "kind": "quiz_scored",
+                    "payload": result.model_dump(),
+                }
+            )
 
         async for ev in sse_step_stream(run):
             yield f"data: {json.dumps(ev)}\n\n"
         yield "data: [DONE]\n\n"
 
-    return StreamingResponse(event_stream(), media_type="text/event-stream", headers=_SSE_HEADERS)
+    return StreamingResponse(
+        event_stream(), media_type="text/event-stream", headers=_SSE_HEADERS
+    )
 
 
 class ExplainRequest(BaseModel):
@@ -268,17 +295,23 @@ async def explain_quiz_answer(
         )
     except Exception as e:
         log.warning("quiz_explain_failed", quiz_id=quiz_id, error=str(e)[:200])
-        raise HTTPException(503, "Explanation is unavailable right now — please try again.")
+        raise HTTPException(
+            503, "Explanation is unavailable right now — please try again."
+        )
     return {"explanation": text}
 
 
-@router.post("/flashcards")
+@router.get("/flashcards")
 async def generate_flashcards(
     topic: str = Query(..., min_length=2),
     count: int = Query(10, ge=5, le=20),
     user_id: str = Depends(get_current_user_id),
 ):
-    """Generate AI-powered recall flashcards for a topic."""
+    """Generate AI-powered recall flashcards for a topic.
+
+    GET (not POST): params are query-only and the frontend loads this as a cached react-query,
+    so the same topic isn't regenerated on every render. (A POST here 404'd the Flashcards page.)
+    """
     from app.hf.flashcard_generator import generate_flashcards as _gen
 
     log.info("flashcards_generate", topic=topic, count=count)

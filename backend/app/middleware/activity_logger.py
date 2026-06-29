@@ -47,7 +47,7 @@ _ACTION_PATTERNS: list[tuple[str, re.Pattern, str]] = [
     ("GET", re.compile(r"^/api/v1/content/[^/]+$"), "Viewed Content Item"),
     ("GET", re.compile(r"^/api/v1/content$"), "Browsed Content"),
     ("POST", re.compile(r"^/api/v1/quiz/generate$"), "Generated Quiz"),
-    ("POST", re.compile(r"^/api/v1/quiz/flashcards$"), "Generated Flashcards"),
+    ("GET", re.compile(r"^/api/v1/quiz/flashcards$"), "Generated Flashcards"),
     ("POST", re.compile(r"^/api/v1/quiz/[^/]+/submit$"), "Submitted Quiz"),
     ("GET", re.compile(r"^/api/v1/quiz/[^/]+$"), "Viewed Quiz"),
     ("POST", re.compile(r"^/api/v1/doubts/stream$"), "Asked Doubt"),
