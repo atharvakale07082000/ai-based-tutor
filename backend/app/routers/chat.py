@@ -40,7 +40,9 @@ _AGENTS: dict[str, object] = {
 
 class HistoryMessage(BaseModel):
     role: Literal["user", "assistant"]
-    content: str = Field(min_length=1, max_length=2000)
+    # No length cap: prior turns include the assistant's own (often long) answers, and capping
+    # them here is what broke multi-turn chat with a 422. Only the last few turns are kept anyway.
+    content: str
 
 
 class ChatRequest(BaseModel):

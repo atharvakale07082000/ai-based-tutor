@@ -764,6 +764,33 @@ class TestSSEEventStructure:
         )
         _assert_full_event_structure(events, expected_tool_step=True)
 
+    @pytest.mark.asyncio
+    async def test_multiturn_with_long_prior_answer(self, v2_client):
+        """Regression: a long assistant answer in history must not 422 (broke multi-turn chat)."""
+        _step_counters.clear()
+        long_answer = (
+            "Transformers are a neural network architecture. " * 60
+        )  # ~2880 chars
+        async with v2_client.stream(
+            "POST",
+            "/api/v1/chat",
+            json={
+                "message": "explain self-attention in more detail",
+                "history": [
+                    {"role": "user", "content": "what are transformers"},
+                    {"role": "assistant", "content": long_answer},
+                ],
+                "context": {},
+            },
+            timeout=60.0,
+        ) as response:
+            assert response.status_code == 200, (
+                f"multi-turn with long history should stream, got {response.status_code}"
+            )
+            events = await _parse_sse_stream(response)
+        assert any(e.get("type") == "routing" for e in events)
+        assert events[-1].get("type") == "done"
+
 
 def _assert_full_event_structure(events: list[dict], expected_tool_step: bool) -> None:
     """Deep-validate SSE event sequence structure."""

@@ -128,7 +128,7 @@ export default function AtelierV2Page() {
       { id: assistantId, role: 'assistant', content: '', streaming: true, steps: [], timeline: [], actions: [] },
     ])
 
-    // Build history from last 6 completed messages
+    // Build history from last 6 completed messages (full content — the backend has no length cap).
     const history = messages
       .filter((m) => !m.streaming && m.content)
       .slice(-6)
