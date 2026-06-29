@@ -85,6 +85,25 @@ async def generate_quiz(
     )
 
 
+@router.get("/flashcards")
+async def generate_flashcards(
+    topic: str = Query(..., min_length=2),
+    count: int = Query(10, ge=5, le=20),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Generate AI-powered recall flashcards for a topic.
+
+    GET (not POST): params are query-only and the frontend loads this as a cached react-query.
+    MUST be declared before ``GET /{quiz_id}`` — otherwise that dynamic route captures
+    ``/flashcards`` as a quiz id and returns 404 (this was the Flashcards-page bug).
+    """
+    from app.hf.flashcard_generator import generate_flashcards as _gen
+
+    log.info("flashcards_generate", topic=topic, count=count)
+    cards = await _gen(topic, count)
+    return {"topic": topic, "cards": cards, "count": len(cards)}
+
+
 @router.get("/{quiz_id}", response_model=QuizSessionSchema)
 async def get_quiz(quiz_id: str, user_id: str = Depends(get_current_user_id)):
     """Fetch a quiz session by ID (questions, bloom level, topic)."""
@@ -299,21 +318,3 @@ async def explain_quiz_answer(
             503, "Explanation is unavailable right now — please try again."
         )
     return {"explanation": text}
-
-
-@router.get("/flashcards")
-async def generate_flashcards(
-    topic: str = Query(..., min_length=2),
-    count: int = Query(10, ge=5, le=20),
-    user_id: str = Depends(get_current_user_id),
-):
-    """Generate AI-powered recall flashcards for a topic.
-
-    GET (not POST): params are query-only and the frontend loads this as a cached react-query,
-    so the same topic isn't regenerated on every render. (A POST here 404'd the Flashcards page.)
-    """
-    from app.hf.flashcard_generator import generate_flashcards as _gen
-
-    log.info("flashcards_generate", topic=topic, count=count)
-    cards = await _gen(topic, count)
-    return {"topic": topic, "cards": cards, "count": len(cards)}

@@ -55,14 +55,18 @@ class TestQuizEndpoints:
 
     @pytest.mark.asyncio
     async def test_quiz_submit_requires_auth(self, client):
-        response = await client.post("/api/v1/quiz/some-id/submit", json={"answers": [0, 1, 2]})
+        response = await client.post(
+            "/api/v1/quiz/some-id/submit", json={"answers": [0, 1, 2]}
+        )
         assert response.status_code == 401
 
 
 class TestDoubtsEndpoints:
     @pytest.mark.asyncio
     async def test_doubts_stream_requires_auth(self, client):
-        response = await client.post("/api/v1/doubts/stream", json={"question": "what is ml?"})
+        response = await client.post(
+            "/api/v1/doubts/stream", json={"question": "what is ml?"}
+        )
         assert response.status_code == 401
 
     @pytest.mark.asyncio
@@ -92,3 +96,46 @@ class TestHFEndpoints:
         # Without auth this returns 401, but the route exists
         response = await client.post("/api/v1/hf/test/INVALID_MODEL")
         assert response.status_code in (401, 404)
+
+
+@pytest.mark.asyncio
+async def test_flashcards_get_not_shadowed_by_quiz_id():
+    """Regression: GET /quiz/flashcards must hit generate_flashcards, not the dynamic
+    /{quiz_id} route (which captured 'flashcards' as an id and 404'd). Needs auth to expose,
+    since both routes 401 before the lookup."""
+    from unittest.mock import AsyncMock, patch
+
+    from httpx import ASGITransport, AsyncClient
+
+    from app.auth.jwt import get_current_user_id
+    from app.main import app
+
+    app.dependency_overrides[get_current_user_id] = lambda: "u1"
+    try:
+        with patch(
+            "app.hf.flashcard_generator.generate_flashcards",
+            new=AsyncMock(
+                return_value=[
+                    {
+                        "id": "1",
+                        "front": "f",
+                        "back": "b",
+                        "hint": "h",
+                        "difficulty": 1,
+                        "topic": "k",
+                    }
+                ]
+            ),
+        ):
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://t"
+            ) as c:
+                r = await c.get(
+                    "/api/v1/quiz/flashcards", params={"topic": "kafka", "count": 10}
+                )
+        assert r.status_code == 200, (
+            f"flashcards shadowed by /{{quiz_id}}: {r.status_code} {r.text[:120]}"
+        )
+        assert "cards" in r.json()
+    finally:
+        app.dependency_overrides.clear()
