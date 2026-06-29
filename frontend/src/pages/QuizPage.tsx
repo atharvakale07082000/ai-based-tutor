@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { quizAPI, hfAPI, streamSSE } from '@/lib/api'
@@ -27,7 +27,10 @@ export default function QuizPage() {
   const { quizId } = useParams<{ quizId: string }>()
   const navigate = useNavigate()
   const [currentIdx, setCurrentIdx] = useState(0)
-  const [answers, setAnswers] = useState<number[]>([])
+  // Authoritative answer log in a ref — handleFinish reads this, not a `answers` state closure, which
+  // can be stale on the last question (handleNext is memoized on currentIdx and captures an old
+  // handleFinish before the final answer state flushes → last answer dropped → submit 400).
+  const answersRef = useRef<number[]>([])
   const [selectedOption, setSelectedOption] = useState<number | null>(null)
   const [revealed, setRevealed] = useState(false)
   const [timeLeft, setTimeLeft] = useState(QUESTION_TIME)
@@ -76,7 +79,7 @@ export default function QuizPage() {
     if (revealed) return
     setSelectedOption(option)
     setRevealed(true)
-    setAnswers((prev) => [...prev, option])
+    answersRef.current = [...answersRef.current, option]
   }, [revealed])
 
   const handleNext = useCallback(() => {
@@ -114,7 +117,7 @@ export default function QuizPage() {
     type QuizScored = { score: number; weak_topics: string[]; elo_update: { topic: string; new_elo: number } }
     let scored: QuizScored | null = null
     try {
-      await streamSSE(`/quiz/${quiz.quiz_id}/submit/stream`, { answers, reflection }, (event) => {
+      await streamSSE(`/quiz/${quiz.quiz_id}/submit/stream`, { answers: answersRef.current, reflection }, (event) => {
         if (event.type === 'step') {
           applyReviewStep(event as unknown as { id: string; label: string; status: 'active' | 'done' | 'error' })
         } else if (event.type === 'action' && event.kind === 'quiz_scored') {

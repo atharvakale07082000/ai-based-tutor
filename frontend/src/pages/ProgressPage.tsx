@@ -1,8 +1,8 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { progressAPI } from '@/lib/api'
+import { progressAPI, quizAPI } from '@/lib/api'
 import { useLearnerStore } from '@/stores/learnerStore'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
@@ -59,6 +59,23 @@ function HeatmapCell({ count }: { count: number }) {
 export default function ProgressPage() {
   const navigate = useNavigate()
   const { xp: storedXp, streak: storedStreak, topicProficiency: storedProficiency } = useLearnerStore()
+  const [generatingQuiz, setGeneratingQuiz] = useState(false)
+
+  // There is no /quiz/new route — generate a quiz first, then navigate to the real id
+  // (mirrors the dashboard "Start skill practice" flow).
+  const startQuiz = async (topic?: string) => {
+    if (generatingQuiz) return
+    setGeneratingQuiz(true)
+    try {
+      const { data } = await quizAPI.generate(topic ?? Object.keys(storedProficiency)[0] ?? 'Python')
+      toast.success('Quiz ready — good luck!', { duration: 2000 })
+      navigate(`/quiz/${data.quiz_id}`)
+    } catch {
+      toast.error('Could not generate quiz')
+    } finally {
+      setGeneratingQuiz(false)
+    }
+  }
 
   const { data: progress, isLoading: loadingProgress, isError: progressError, refetch: refetchProgress } = useQuery({
     queryKey: ['progress'],
@@ -185,7 +202,7 @@ export default function ProgressPage() {
             <div style={{ padding: '24px 0', textAlign: 'center' }}>
               <Icon name="book" size={24} style={{ color: 'var(--ink-3)', marginBottom: 8 }} />
               <div className="t-sm fg-3">No proficiency data yet.</div>
-              <Button size="sm" variant="ghost" style={{ marginTop: 8 }} onClick={() => navigate('/quiz/new')}>
+              <Button size="sm" variant="ghost" style={{ marginTop: 8 }} loading={generatingQuiz} onClick={() => startQuiz()}>
                 Take a quiz
               </Button>
             </div>
@@ -277,7 +294,8 @@ export default function ProgressPage() {
                 <Button
                   size="xs"
                   variant="ghost"
-                  onClick={() => navigate(`/quiz/new?topic=${encodeURIComponent(t.topic)}`)}
+                  loading={generatingQuiz}
+                  onClick={() => startQuiz(t.topic)}
                 >
                   Review
                 </Button>

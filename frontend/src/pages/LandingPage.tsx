@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, Navigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { authAPI, learnerAPI, setAccessToken } from '@/lib/api'
+import { authAPI, setAccessToken } from '@/lib/api'
 import { useLearnerStore } from '@/stores/learnerStore'
 import { Button } from '@/components/ui/Button'
 import { AgentPill } from '@/components/ui/AgentPill'
@@ -53,15 +53,10 @@ function AuthOverlay({ onClose }: { onClose: () => void }) {
         navigate('/onboarding')
         return
       }
-      // Sign-in: check if returning user has goals
-      try {
-        const prof = await learnerAPI.getProfile()
-        const hasGoals = (prof.data.goal_vector?.length ?? 0) > 0
-        toast.success(`Welcome back, ${data.user.name}!`)
-        navigate(hasGoals ? '/dashboard' : '/onboarding')
-      } catch {
-        navigate('/dashboard')
-      }
+      // Sign-in: returning users always go to the dashboard. (Previously, an empty goal_vector
+      // forced them back through onboarding on every login — even after they'd skipped it.)
+      toast.success(`Welcome back, ${data.user.name}!`)
+      navigate('/dashboard')
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
       toast.error(msg ?? 'Could not authenticate. Check your credentials.')
@@ -257,7 +252,14 @@ export default function LandingPage() {
           </div>
           <div style={{ flex: 1, display: 'flex', gap: 18 }}>
             {['Product', 'Agents', 'Pricing'].map((n) => (
-              <a key={n} className="t-sm fg-2" style={{ cursor: 'pointer' }}>{n}</a>
+              <a
+                key={n}
+                className="t-sm fg-2"
+                style={{ cursor: 'pointer' }}
+                onClick={() => document.getElementById('agents')?.scrollIntoView({ behavior: 'smooth' })}
+              >
+                {n}
+              </a>
             ))}
           </div>
           <Button size="sm" variant="ghost" onClick={() => setShowAuth(true)}>Sign in</Button>
@@ -286,7 +288,7 @@ export default function LandingPage() {
         </div>
 
         {/* Agents row */}
-        <div style={{ marginTop: 48, padding: 20, background: 'var(--paper-1)', border: '1px solid var(--line-1)', borderRadius: 'var(--r-3)', maxWidth: 640 }}>
+        <div id="agents" style={{ marginTop: 48, padding: 20, background: 'var(--paper-1)', border: '1px solid var(--line-1)', borderRadius: 'var(--r-3)', maxWidth: 640, scrollMarginTop: 80 }}>
           <div className="caps" style={{ color: 'var(--ink-3)', marginBottom: 12 }}>Agents on call</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             {([

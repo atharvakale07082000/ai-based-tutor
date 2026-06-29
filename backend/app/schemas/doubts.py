@@ -7,7 +7,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class MessageSchema(BaseModel):
     role: Literal["user", "assistant"]
-    content: str = Field(min_length=1, max_length=2000)
+    # No max_length: prior assistant answers (often > 2000 chars) are replayed here as history;
+    # capping it rejected follow-up doubts with a 422. Matches the chat HistoryMessage fix.
+    content: str = Field(min_length=1)
 
 
 class DoubtStreamRequest(BaseModel):
