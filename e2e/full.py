@@ -231,18 +231,29 @@ def tc_doubts(page: Page):
 
 
 def tc_flashcards(page: Page):
-    with testcase("Flashcards — load + generate"):
+    with testcase("Flashcards — load deck + reveal"):
+        # Cards auto-generate for ?topic (default "Python Programming"); the deck UI ("Tap to reveal",
+        # an "N / M" counter) renders after the fetch. Validate that, not a (nonexistent) gen button.
         goto(page, "/flashcards")
-        # No generate control was found on the page in the inventory; validate how cards are loaded.
+        step("wait for the card deck to render (up to 60s; AI gen + cold start)")
+        card = page.get_by_text(re.compile(r"tap to reveal|\d+\s*/\s*\d+", re.I))
+        rendered = False
+        for _ in range(60):
+            if card.count() or last_status(r"/quiz/flashcards") not in (None, 404):
+                rendered = True
+                break
+            if page.get_by_text(re.compile("went wrong|failed|not found", re.I)).count():
+                break
+            page.wait_for_timeout(1000)
         s = last_status(r"/quiz/flashcards")
-        detail(f"flashcards fetch on load: {s if s is not None else 'no fetch fired'}")
-        gen = page.get_by_role("button", name=re.compile("generate|new cards|create", re.I)).count()
-        ta = page.locator("input,textarea").count()
-        detail(f"generate control present: {bool(gen)} · inputs on page: {ta}")
-        if s is not None:
-            assert s != 404, "flashcards endpoint still 404 (backend not redeployed?)"
-        if not gen and ta == 0 and s is None:
-            raise AssertionError("Flashcards page has no way to generate cards (no input/button, no fetch)")
+        detail(f"/quiz/flashcards status: {s}; deck UI present: {bool(card.count())}")
+        assert s != 404, "flashcards endpoint 404 (route shadowing regressed?)"
+        assert rendered, "flashcards deck did not render"
+        # reveal a card to confirm interactivity
+        if card.count():
+            page.get_by_text(re.compile("tap to reveal", re.I)).first.click(timeout=5000)
+            page.wait_for_timeout(800)
+            detail("revealed a card ✓")
 
 
 def tc_progress(page: Page):
