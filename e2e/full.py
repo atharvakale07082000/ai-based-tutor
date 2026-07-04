@@ -24,7 +24,7 @@ from playwright.sync_api import Page, sync_playwright
 BASE = os.environ.get("E2E_BASE_URL", "https://ai-based-tutor.vercel.app").rstrip("/")
 EMAIL = os.environ.get("E2E_EMAIL", "admin@test.com")
 PASSWORD = os.environ.get("E2E_PASSWORD", "admin@1234")
-API_HOST = "onrender.com"  # backend host fragment, for tagging network calls
+API_HOST = os.environ.get("E2E_API_HOST", "onrender.com")  # backend host fragment, for tagging network calls
 IGNORE = re.compile(r"favicon|fonts\.googleapis|analytics|sentry|hotjar", re.I)
 
 # ── detailed logging ──────────────────────────────────────────────────────────
@@ -229,6 +229,27 @@ def tc_doubts(page: Page):
         assert last_status(r"/doubts/stream") == 200, "doubt stream did not return 200"
         assert grew, "doubt answer did not render (stream opened but produced no visible content)"
 
+        # H3 regression guard: a follow-up replays the (often >2000-char) prior answer as history.
+        # The old schema capped history content at 2000 chars → 422. Validate the follow-up succeeds.
+        _net.clear()
+        step('follow-up doubt "Can you give a concrete example?" + Send (exercises history replay)')
+        msg.first.fill("Can you give a concrete example?")
+        base_len2 = len(page.inner_text("body"))
+        click_text(page, "Send")
+        grew2 = False
+        for _ in range(90):
+            s = last_status(r"/doubts/stream")
+            if s == 200 and len(page.inner_text("body")) > base_len2 + 80:
+                grew2 = True
+                break
+            if s == 422:
+                break
+            page.wait_for_timeout(1000)
+        detail(f"follow-up /doubts/stream status: {last_status(r'/doubts/stream')}; answer rendered: {grew2}")
+        assert last_status(r"/doubts/stream") != 422, "follow-up 422 — H3 history cap regressed"
+        assert last_status(r"/doubts/stream") == 200, "follow-up doubt did not return 200"
+        assert grew2, "follow-up answer did not render"
+
 
 def tc_flashcards(page: Page):
     with testcase("Flashcards — load deck + reveal"):
@@ -268,29 +289,47 @@ def tc_progress(page: Page):
 
 
 def tc_job_tracker(page: Page):
-    with testcase("Job Tracker — add a job"):
+    with testcase("Job Tracker — paste JD, analyze fit, save to board"):
+        # Real flow: "Add a job" opens a JD-paste panel → "Analyze fit" runs the skill-gap agent
+        # (SSE) → "Save to board" persists it. There is one textarea by design (role/company are
+        # extracted by the AI), so validate the analyze→save outcome, not a raw multi-field form.
         goto(page, "/tracker")
         assert page.get_by_text("Job Tracker").count() > 0, "tracker didn't render"
         opener = page.get_by_role("button", name=re.compile("add (a job|your first job)", re.I))
         assert opener.count() > 0, "no 'Add a job' button"
-        step("click 'Add a job'")
+        step("click 'Add a job' → open JD panel")
         opener.first.click()
-        page.wait_for_timeout(1500)
-        inputs = page.locator("input, textarea")
-        detail(f"job form inputs revealed: {inputs.count()}")
-        if inputs.count() >= 2:
-            step("fill job role + company")
-            inputs.nth(0).fill("Senior Data Engineer")
-            if inputs.count() > 1:
-                inputs.nth(1).fill("Confluent")
-            save = page.get_by_role("button", name=re.compile("save|add|create", re.I))
-            if save.count():
-                step("click save")
-                save.last.click()
-                page.wait_for_timeout(2500)
-                detail(f"/jobs status: {last_status(r'/jobs')}")
-        else:
-            detail("no form fields appeared — possible UX gap")
+        jd = page.get_by_placeholder(re.compile("paste the full job description", re.I))
+        jd.first.wait_for(timeout=10000)
+        step("paste a job description")
+        jd.first.fill(
+            "Senior Data Engineer at Confluent. Build streaming data pipelines with Apache Kafka, "
+            "Flink, and Spark. Strong Python and SQL required. Experience with AWS, Airflow, and "
+            "data modeling. You will own ETL infrastructure and mentor junior engineers."
+        )
+        click_text(page, "Analyze fit")
+        step("wait for skill-gap analysis to render (SSE, up to 120s)")
+        saved_btn = page.get_by_role("button", name=re.compile("save to board", re.I))
+        analyzed = False
+        for _ in range(120):
+            if saved_btn.count():
+                analyzed = True
+                break
+            if page.get_by_text(re.compile("could not analyze", re.I)).count():
+                break
+            page.wait_for_timeout(1000)
+        detail(f"/jobs/analyze status: {last_status(r'/jobs/analyze')}; analysis rendered: {analyzed}")
+        assert page.get_by_text(re.compile("could not analyze", re.I)).count() == 0, "analyze showed an error"
+        assert last_status(r"/jobs/analyze") in (None, 200), "jobs analyze stream failed"
+        assert analyzed, "skill-gap analysis never rendered (no 'Save to board' button)"
+        step("click 'Save to board' → persist application")
+        saved_btn.first.click(timeout=10000)
+        page.wait_for_timeout(2500)
+        detail(f"/jobs POST status: {last_status(r'/jobs$|/jobs/')}")
+        assert page.get_by_text(re.compile("could not save", re.I)).count() == 0, "save showed an error"
+        post = last_status(r"/jobs$")
+        assert post in (None, 200, 201), f"job save failed ({post})"
+        detail("job saved to board ✓")
 
 
 def tc_profile(page: Page):
@@ -323,6 +362,66 @@ def tc_evals(page: Page):
         assert s in (None, 200), f"evals dashboard fetch failed ({s})"
 
 
+def tc_quiz(page: Page):
+    with testcase("Quiz — generate, answer every question, submit, see results"):
+        # Entry is the Dashboard practice button ("Practice {topic}" or "Start skill practice"),
+        # which calls quizAPI.generate then routes to /quiz/{id}. This exercises the H1 area:
+        # the last answer must not be dropped on submit.
+        goto(page, "/dashboard")
+        practice = page.get_by_role("button", name=re.compile("^(practice |start skill practice)", re.I))
+        assert practice.count() > 0, "no quiz practice button on dashboard"
+        step("click dashboard practice button → generate quiz")
+        practice.first.click(timeout=15000)
+        step("wait for navigation to /quiz/{id} (gen can take ~45s)")
+        page.wait_for_url(re.compile(r"/quiz/(?!new)[\w-]+"), timeout=120000)
+        detail(f"landed on {page.url}; generate status: {last_status(r'/quiz/generate')}")
+        assert last_status(r"/quiz/generate") in (None, 200), "quiz generate failed"
+
+        # Wait for the first question to render (the "1 / N" counter)
+        counter = page.get_by_text(re.compile(r"\b1\s*/\s*(\d+)\b"))
+        for _ in range(60):
+            if counter.count():
+                break
+            page.wait_for_timeout(1000)
+        assert counter.count() > 0, "quiz question card never rendered"
+        m = re.search(r"1\s*/\s*(\d+)", counter.first.inner_text(timeout=5000))
+        total = int(m.group(1)) if m else 0
+        detail(f"quiz has {total} questions")
+        assert total > 0, "could not read question count"
+
+        # Answer every question: pick option A, then advance.
+        for i in range(total):
+            step(f"answer question {i + 1}/{total}")
+            opts = page.get_by_role("radio")
+            for _ in range(20):
+                if opts.count() > 0:
+                    break
+                page.wait_for_timeout(500)
+            assert opts.count() > 0, f"no options on question {i + 1}"
+            opts.first.click(timeout=10000)
+            adv = page.get_by_role("button", name=re.compile("next question|see results", re.I))
+            adv.first.wait_for(timeout=10000)
+            adv.first.click(timeout=10000)
+            page.wait_for_timeout(600)
+
+        step("wait for scoring → results screen ('Quiz Complete' + score %)")
+        done = False
+        for _ in range(90):
+            if page.get_by_text(re.compile("quiz complete", re.I)).count():
+                done = True
+                break
+            if page.get_by_text(re.compile("could not submit|went wrong", re.I)).count():
+                break
+            page.wait_for_timeout(1000)
+        submit_status = last_status(r"/quiz/.*/submit")
+        detail(f"submit stream status: {submit_status}; results rendered: {done}")
+        assert page.get_by_text(re.compile("could not submit", re.I)).count() == 0, "submit showed error toast"
+        assert submit_status in (None, 200), f"quiz submit stream failed ({submit_status})"
+        assert done, "results screen ('Quiz Complete') never rendered after answering all questions"
+        score = page.get_by_text(re.compile(r"\d+%")).first.inner_text(timeout=5000)
+        detail(f"results rendered → score {score.strip()}")
+
+
 def tc_logout(page: Page):
     with testcase("Auth — logout"):
         goto(page, "/dashboard")
@@ -351,6 +450,7 @@ def main():
         tc_profile(page)
         tc_interview(page)
         tc_evals(page)
+        tc_quiz(page)
         tc_logout(page)
 
     print("\n" + "#" * 78)

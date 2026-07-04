@@ -253,22 +253,53 @@ def main():
     if pid:
         rec("courses", "GET /courses/{id}", "plan detail", get(f"/courses/{pid}").status_code, {200})
         pdata = get(f"/courses/{pid}").json()
-        mid = (pdata.get("modules") or [{}])[0].get("module_id")
+        m0 = (pdata.get("modules") or [{}])[0]
+        mid = m0.get("id") or m0.get("module_id")  # modules key is `id`, not `module_id`
         if mid:
-            rc = post(
-                f"/courses/{pid}/modules/{mid}/interview/run-code", json={"language": "python", "code": "print(2+2)"}
-            )
-            rec("courses", "POST .../interview/run-code", "run python code", rc.status_code, {200})
-            rec(
-                "courses",
-                "POST .../interview/run-code",
-                "run javascript",
-                post(
-                    f"/courses/{pid}/modules/{mid}/interview/run-code",
-                    json={"language": "javascript", "code": "console.log(1+1)"},
-                ).status_code,
-                {200},
-            )
+            # Full interview chain: start → run-code (needs interview_id) → answer → complete.
+            iv = post(f"/courses/{pid}/modules/{mid}/interview/start")
+            rec("courses", "POST .../interview/start", "start interview", iv.status_code, {200})
+            if iv.status_code == 200:
+                ivid = iv.json().get("interview_id")
+                qs = iv.json().get("questions", [])
+                rc = post(
+                    f"/courses/{pid}/modules/{mid}/interview/{ivid}/run-code",
+                    json={"language": "python", "code": "print(2+2)"},
+                )
+                rec("courses", "POST .../interview/{iv}/run-code", "run python code", rc.status_code, {200})
+                rec(
+                    "courses",
+                    "POST .../interview/{iv}/run-code",
+                    "run javascript",
+                    post(
+                        f"/courses/{pid}/modules/{mid}/interview/{ivid}/run-code",
+                        json={"language": "javascript", "code": "console.log(1+1)"},
+                    ).status_code,
+                    {200},
+                )
+                for q in qs:
+                    ans = (
+                        "def solution(x):\n    return sorted(set(x))"
+                        if q.get("is_coding_question")
+                        else "Lists are mutable ordered sequences; tuples are immutable; dicts give O(1) key lookups."
+                    )
+                    rec(
+                        "courses",
+                        "POST .../interview/{iv}/answer",
+                        "evaluate answer",
+                        post(
+                            f"/courses/{pid}/modules/{mid}/interview/{ivid}/answer",
+                            json={"question_id": q["id"], "answer_text": ans},
+                        ).status_code,
+                        {200},
+                    )
+                rec(
+                    "courses",
+                    "POST .../interview/{iv}/complete",
+                    "complete interview",
+                    post(f"/courses/{pid}/modules/{mid}/interview/{ivid}/complete").status_code,
+                    {200},
+                )
     rec("courses", "GET /courses/{id}", "bad plan id", get("/courses/nope").status_code, {404})
 
     # ---------- FEED ----------

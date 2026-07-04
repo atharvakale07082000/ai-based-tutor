@@ -114,7 +114,9 @@ Return ONLY the JSON array."""
 def _node_build_scoring_matrix(state: ScoringState) -> dict:
     """Assign numeric scores 0-10 to each answer based on the analysis."""
     if not state["analyses"]:
-        log.warning("scorer_no_analyses", transcription_count=len(state["transcriptions"]))
+        log.warning(
+            "scorer_no_analyses", transcription_count=len(state["transcriptions"])
+        )
         matrix = [
             {
                 "question_id": t.get("question_id"),
@@ -180,7 +182,11 @@ def _node_compute_final_score(state: ScoringState) -> dict:
     """Compute final score out of 10 and generate a holistic summary."""
     matrix = state["scoring_matrix"]
     if not matrix:
-        return {"final_score": 0.0, "summary": "No answers were evaluated.", "passed": False}
+        return {
+            "final_score": 0.0,
+            "summary": "No answers were evaluated.",
+            "passed": False,
+        }
 
     scores = [int(entry.get("score", 0)) for entry in matrix]
     avg = sum(scores) / len(scores)
@@ -237,12 +243,21 @@ def run_scoring_agent(
 ) -> dict:
     """Synchronous entry point — call via asyncio.to_thread in async contexts."""
     import signal
+    import threading
 
     def _timeout_handler(signum, frame):
         raise TimeoutError(f"Scoring agent timed out after {_SCORING_TIMEOUT_S}s")
 
-    # Install alarm on Unix only; on Windows just run without timeout
-    if hasattr(signal, "SIGALRM"):
+    # signal.alarm only works in the main thread. This function is designed to be called via
+    # asyncio.to_thread (a worker thread), where installing a SIGALRM handler raises
+    # "signal only works in main thread of the main interpreter" and 500s the whole interview
+    # completion. Only arm the alarm when we truly are on the main thread; otherwise rely on the
+    # per-call network timeouts of the underlying LLM client (same as the Windows fallback).
+    use_alarm = (
+        hasattr(signal, "SIGALRM")
+        and threading.current_thread() is threading.main_thread()
+    )
+    if use_alarm:
         signal.signal(signal.SIGALRM, _timeout_handler)
         signal.alarm(_SCORING_TIMEOUT_S)
 
@@ -261,7 +276,7 @@ def run_scoring_agent(
             }
         )
     finally:
-        if hasattr(signal, "SIGALRM"):
+        if use_alarm:
             signal.alarm(0)  # cancel any pending alarm
 
     return {

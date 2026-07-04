@@ -110,10 +110,18 @@ const TrendChip = memo(function TrendChip({ topic, onClick, isActive }: { topic:
       style={{
         display: 'inline-flex', flexDirection: 'column', gap: 3,
         padding: '10px 14px', borderRadius: 'var(--r-2)',
-        border: `1px solid ${isActive ? domainColor(topic.domain) : 'var(--line-1)'}`,
+        // Fully per-side longhands — no shorthand anywhere. React warns if a shorthand
+        // (`border`, `borderColor`, `borderWidth`) coexists with a matching longhand
+        // (`borderLeftColor`) and one changes on re-render, so decompose every side.
+        borderStyle: 'solid',
+        borderTopWidth: '1px', borderRightWidth: '1px', borderBottomWidth: '1px',
+        borderLeftWidth: '3px',
+        borderTopColor: isActive ? domainColor(topic.domain) : 'var(--line-1)',
+        borderRightColor: isActive ? domainColor(topic.domain) : 'var(--line-1)',
+        borderBottomColor: isActive ? domainColor(topic.domain) : 'var(--line-1)',
+        borderLeftColor: domainColor(topic.domain),
         background: isActive ? `color-mix(in srgb, ${domainColor(topic.domain)} 8%, var(--paper-1))` : 'var(--paper-1)',
         minWidth: 160, maxWidth: 220, cursor: 'pointer',
-        borderLeft: `3px solid ${domainColor(topic.domain)}`,
         transition: 'all 0.15s ease',
         outline: 'none',
         position: 'relative',
@@ -122,13 +130,19 @@ const TrendChip = memo(function TrendChip({ topic, onClick, isActive }: { topic:
       onMouseEnter={(e) => {
         if (!isActive) {
           e.currentTarget.style.background = 'var(--paper-2)'
-          e.currentTarget.style.borderColor = domainColor(topic.domain)
+          // Touch only the non-left sides so the left accent stays; setting the `borderColor`
+          // shorthand would clobber borderLeftColor and re-introduce the conflict.
+          e.currentTarget.style.borderTopColor = domainColor(topic.domain)
+          e.currentTarget.style.borderRightColor = domainColor(topic.domain)
+          e.currentTarget.style.borderBottomColor = domainColor(topic.domain)
         }
       }}
       onMouseLeave={(e) => {
         if (!isActive) {
           e.currentTarget.style.background = 'var(--paper-1)'
-          e.currentTarget.style.borderColor = 'var(--line-1)'
+          e.currentTarget.style.borderTopColor = 'var(--line-1)'
+          e.currentTarget.style.borderRightColor = 'var(--line-1)'
+          e.currentTarget.style.borderBottomColor = 'var(--line-1)'
         }
       }}
     >
