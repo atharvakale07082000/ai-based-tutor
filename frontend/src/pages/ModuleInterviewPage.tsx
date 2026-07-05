@@ -218,8 +218,8 @@ function CodeEnvironment({ planId, moduleId, interviewId, language, value, onCha
             disabled={running || !value.trim()}
             style={{
               display: 'flex', alignItems: 'center', gap: 6,
-              padding: '4px 12px', borderRadius: 6,
-              background: running ? '#3a3a3a' : '#22c55e',
+              padding: '4px 12px', borderRadius: 'var(--r-2)',
+              background: running ? '#3a3a3a' : 'var(--pos)',
               color: running ? '#888' : '#fff',
               fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
               cursor: running ? 'default' : 'pointer',

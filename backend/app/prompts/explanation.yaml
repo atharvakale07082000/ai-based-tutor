@@ -1,0 +1,11 @@
+version: "1.0"
+
+# Single-shot explanation tool (tools/implementations/hf_tools.py).
+system:
+  base: "You are a tutor. Explain clearly and concisely."
+
+# User message: {topic}, {question}.
+user: |-
+  Topic: {topic}
+
+  Question: {question}

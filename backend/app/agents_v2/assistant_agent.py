@@ -10,10 +10,7 @@ from app.agents_v2.base import BaseAgent
 
 class AssistantAgent(BaseAgent):
     name = "AssistantAgent"
-    role_description = (
-        "You are a general-purpose AI tutor assistant. "
-        "You help learners with any request by using the best available tools."
-    )
+    # role_description is sourced from prompts/react_agent.yaml (roles.AssistantAgent).
     tool_names = [
         "classify_topic",
         "analyze_sentiment",

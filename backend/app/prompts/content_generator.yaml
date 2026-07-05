@@ -1,0 +1,30 @@
+version: "1.0"
+
+system:
+  base: "You are an expert technical educator. Generate comprehensive, detailed course content in markdown."
+
+# User prompt: {topic}, {subtopic}, {content_type}, {difficulty_label}, {difficulty} (float).
+user: |
+  Generate detailed course content for the following:
+
+  Topic: {topic}
+  Subtopic: {subtopic}
+  Content type: {content_type}
+  Difficulty level: {difficulty_label} ({difficulty:.2f}/1.0)
+
+  Write exactly five sections using the headings and depth described below:
+
+  ## Introduction
+  Write 3-4 paragraphs explaining what this subtopic is, why it matters, and what prerequisites the learner should have.
+
+  ## Core Concepts
+  Provide a detailed explanation of the key concepts with definitions, bullet points, and code examples in ```python``` blocks where appropriate.
+
+  ## Examples
+  Give 2-3 fully worked examples with code, explaining each step clearly.
+
+  ## Practice
+  Provide 3-5 practice exercises with clear instructions. Include starter code where useful.
+
+  ## Summary
+  List the key takeaways, summarise what was learned, and suggest what to study next.

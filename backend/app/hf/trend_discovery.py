@@ -127,26 +127,11 @@ def _llm_distill(raw_items: list[dict]) -> list[dict]:
         for item in raw_items[:40]
     )
 
-    prompt = f"""You are a tech curriculum expert. Below are recent search results about trending IT topics.
+    from app.prompts.loader import render_prompt
 
-Extract exactly {TARGET_TOPICS} distinct, actionable learning subtopics that are trending right now across:
-Data Engineering, DevOps, Cloud Computing, Machine Learning, Deep Learning, Data Science, Cybersecurity, AI Engineering, Software Engineering.
-
-Search results:
-{snippets}
-
-Return ONLY valid JSON array, no explanation:
-[
-  {{"domain": "Data Engineering", "subtopic": "Apache Kafka Streams", "description": "Real-time stream processing with Kafka Streams API"}},
-  ...
-]
-
-Rules:
-- Each subtopic must be a specific, learnable skill (not a vague category)
-- No duplicates
-- Prioritize topics with high demand in 2025
-- Exactly {TARGET_TOPICS} items
-"""
+    prompt = render_prompt(
+        "trend_discovery", "distill", target_topics=TARGET_TOPICS, snippets=snippets
+    )
 
     try:
         resp = client.chat_completion(
@@ -198,7 +183,9 @@ async def discover_trends() -> TrendResult:
 
             title = r.get("title", "")
             body = r.get("body", "")
-            raw_items.append({"domain": domain, "title": title, "body": body, "url": url})
+            raw_items.append(
+                {"domain": domain, "title": title, "body": body, "url": url}
+            )
 
             feed_items.append(
                 FeedItem(
@@ -280,9 +267,21 @@ def _fallback_topics() -> list[dict]:
             "subtopic": "Platform Engineering",
             "description": "Internal developer platforms and golden paths",
         },
-        {"domain": "DevOps", "subtopic": "GitOps with ArgoCD", "description": "Git-driven Kubernetes deployments"},
-        {"domain": "DevOps", "subtopic": "OpenTelemetry Observability", "description": "Unified traces, metrics, logs"},
-        {"domain": "DevOps", "subtopic": "Helm Chart Development", "description": "Kubernetes package management"},
+        {
+            "domain": "DevOps",
+            "subtopic": "GitOps with ArgoCD",
+            "description": "Git-driven Kubernetes deployments",
+        },
+        {
+            "domain": "DevOps",
+            "subtopic": "OpenTelemetry Observability",
+            "description": "Unified traces, metrics, logs",
+        },
+        {
+            "domain": "DevOps",
+            "subtopic": "Helm Chart Development",
+            "description": "Kubernetes package management",
+        },
         {
             "domain": "Cloud Computing",
             "subtopic": "Serverless Containers",
@@ -313,7 +312,11 @@ def _fallback_topics() -> list[dict]:
             "subtopic": "AI Agent Orchestration",
             "description": "LangGraph, AutoGen, CrewAI patterns",
         },
-        {"domain": "AI Engineering", "subtopic": "Model Quantization", "description": "Running LLMs on edge devices"},
+        {
+            "domain": "AI Engineering",
+            "subtopic": "Model Quantization",
+            "description": "Running LLMs on edge devices",
+        },
         {
             "domain": "Machine Learning",
             "subtopic": "MLflow & Experiment Tracking",
@@ -329,7 +332,11 @@ def _fallback_topics() -> list[dict]:
             "subtopic": "Vision Transformers (ViT)",
             "description": "Attention-based vision models",
         },
-        {"domain": "Deep Learning", "subtopic": "Multimodal LLMs", "description": "Vision-language models like GPT-4V"},
+        {
+            "domain": "Deep Learning",
+            "subtopic": "Multimodal LLMs",
+            "description": "Vision-language models like GPT-4V",
+        },
         {
             "domain": "Data Science",
             "subtopic": "Causal Inference",

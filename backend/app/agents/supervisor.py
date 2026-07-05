@@ -19,40 +19,25 @@ import re
 import structlog
 
 from app.agents.state import MASTERY_THRESHOLD_DEFAULT, AgentState
+from app.prompts.loader import get_section
 from app.tracing import get_tracer
 
 log = structlog.get_logger()
 
 VALID_AGENTS = {"curriculum", "quiz", "progress", "doubt", "FINISH"}
 
-_SYSTEM_PROMPT = """\
-You are the supervisor of an AI tutoring system that coordinates specialist agents.
-
-Specialist agents available:
-- curriculum  : Builds a personalized learning path from learner goals + proficiency gaps
-- quiz        : Generates Bloom-calibrated quiz questions for the current topic
-- progress    : Re-scores Elo proficiency after a quiz attempt
-- doubt       : Answers a learner's question (only when messages contain a new question)
-- FINISH      : End the session (all topics mastered, quota reached, or nothing left to do)
-
-Rules:
-1. If there is no curriculum_path yet → curriculum.
-2. If curriculum exists but quiz_questions is empty and task_type is "quiz" → quiz.
-3. If progress_delta contains a new score that hasn't been processed → progress.
-4. If the latest message is a human question and task_type is "doubt" → doubt.
-5. If all topics in curriculum_path are mastered (Elo ≥ mastery_threshold) → FINISH.
-6. If iteration_count ≥ max_iterations → FINISH.
-7. Otherwise use agent_reports to decide: what did agents find, what is still missing?
-
-Reply with ONLY a JSON object: {"next": "<agent_name>", "reason": "<one sentence>"}
-"""
+_SYSTEM_PROMPT = get_section("supervisor", "system")
 
 
 def _build_state_summary(state: AgentState) -> str:
     curriculum = state.get("curriculum_path") or []
     proficiency = state.get("topic_proficiency") or {}
     mastery_threshold = state.get("mastery_threshold") or MASTERY_THRESHOLD_DEFAULT
-    mastered = sum(1 for item in curriculum if proficiency.get(item["subtopic"], 0) >= mastery_threshold)
+    mastered = sum(
+        1
+        for item in curriculum
+        if proficiency.get(item["subtopic"], 0) >= mastery_threshold
+    )
     reports = state.get("agent_reports") or []
 
     last_reports_text = ""
@@ -95,7 +80,8 @@ async def supervisor_node(state: AgentState) -> dict:
         proficiency = state.get("topic_proficiency") or {}
         mastery_threshold = state.get("mastery_threshold") or MASTERY_THRESHOLD_DEFAULT
         all_mastered = curriculum and all(
-            proficiency.get(item["subtopic"], 0) >= mastery_threshold for item in curriculum
+            proficiency.get(item["subtopic"], 0) >= mastery_threshold
+            for item in curriculum
         )
         if all_mastered:
             log.info("supervisor_all_mastered")
@@ -116,7 +102,9 @@ async def supervisor_node(state: AgentState) -> dict:
             # Ambiguous: ask LLM
             decision, reason = await _llm_decide(state)
 
-        log.info("supervisor_decision", decision=decision, reason=reason, iteration=iteration)
+        log.info(
+            "supervisor_decision", decision=decision, reason=reason, iteration=iteration
+        )
         span.update(output={"decision": decision, "reason": reason})
 
         update: dict = {
@@ -124,7 +112,9 @@ async def supervisor_node(state: AgentState) -> dict:
             "iteration_count": iteration,
             "session_complete": decision == "FINISH",
             "next_action": decision.lower() if decision != "FINISH" else "end",
-            "agent_reports": [{"agent": "supervisor", "summary": f"Decided → {decision}: {reason}"}],
+            "agent_reports": [
+                {"agent": "supervisor", "summary": f"Decided → {decision}: {reason}"}
+            ],
         }
 
         # When routing to quiz, ensure current_topic is set
@@ -132,15 +122,26 @@ async def supervisor_node(state: AgentState) -> dict:
             if not state.get("current_topic"):
                 curriculum = state.get("curriculum_path") or []
                 proficiency = state.get("topic_proficiency") or {}
-                mastery_threshold = state.get("mastery_threshold") or MASTERY_THRESHOLD_DEFAULT
-                unmastered = [i for i in curriculum if proficiency.get(i["subtopic"], 0) < mastery_threshold]
+                mastery_threshold = (
+                    state.get("mastery_threshold") or MASTERY_THRESHOLD_DEFAULT
+                )
+                unmastered = [
+                    i
+                    for i in curriculum
+                    if proficiency.get(i["subtopic"], 0) < mastery_threshold
+                ]
                 if unmastered:
                     update["current_topic"] = unmastered[0]["subtopic"]
 
             # Negative mood → soften Bloom level to "remember" on the same topic
             progress_delta = state.get("progress_delta") or {}
-            current_topic = update.get("current_topic") or state.get("current_topic", "")
-            if progress_delta.get("mood") == "NEGATIVE" and progress_delta.get("topic") == current_topic:
+            current_topic = update.get("current_topic") or state.get(
+                "current_topic", ""
+            )
+            if (
+                progress_delta.get("mood") == "NEGATIVE"
+                and progress_delta.get("topic") == current_topic
+            ):
                 update["bloom_level"] = "remember"
                 log.info("supervisor_bloom_softened", topic=current_topic)
 
@@ -203,7 +204,9 @@ def _is_ambiguous(state: AgentState) -> bool:
         return False  # clear: need curriculum
     if task in {"quiz", "doubt"}:
         return False  # clear: task is set
-    if progress_delta.get("score") is not None and not progress_delta.get("elo_processed"):
+    if progress_delta.get("score") is not None and not progress_delta.get(
+        "elo_processed"
+    ):
         return False  # clear: need progress update
     return True  # curriculum exists, no pending task → genuinely ambiguous
 
@@ -225,14 +228,24 @@ def _rule_based_fallback(state: AgentState) -> tuple[str, str]:
     if task == "doubt":
         return "doubt", "doubt requested"
 
-    if progress_delta.get("score") is not None and not progress_delta.get("elo_processed"):
+    if progress_delta.get("score") is not None and not progress_delta.get(
+        "elo_processed"
+    ):
         return "progress", "quiz score needs Elo update"
 
-    unmastered = [i for i in curriculum if proficiency.get(i["subtopic"], 0) < mastery_threshold]
+    unmastered = [
+        i for i in curriculum if proficiency.get(i["subtopic"], 0) < mastery_threshold
+    ]
     if unmastered:
         mood = progress_delta.get("mood", "NEUTRAL")
-        if mood == "NEGATIVE" and progress_delta.get("topic") == unmastered[0]["subtopic"]:
-            return "quiz", f"NEGATIVE mood on '{unmastered[0]['subtopic']}', re-queuing at lower Bloom"
+        if (
+            mood == "NEGATIVE"
+            and progress_delta.get("topic") == unmastered[0]["subtopic"]
+        ):
+            return (
+                "quiz",
+                f"NEGATIVE mood on '{unmastered[0]['subtopic']}', re-queuing at lower Bloom",
+            )
         return "quiz", f"{len(unmastered)} topics still unmastered"
 
     return "FINISH", "all topics mastered"

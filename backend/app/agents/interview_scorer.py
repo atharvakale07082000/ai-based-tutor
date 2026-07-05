@@ -16,6 +16,7 @@ from langgraph.graph import END, StateGraph
 
 from app.hf.client import get_hf_client
 from app.hf.models import HF_MODELS
+from app.prompts.loader import render_prompt
 
 log = structlog.get_logger()
 
@@ -77,24 +78,13 @@ def _node_analyze_answers(state: ScoringState) -> dict:
 
     qa_block = "\n\n".join(pairs) if pairs else "No Q&A pairs available."
 
-    prompt = f"""You are a senior technical interviewer assessing answers for the module: "{state["module_title"]}"
-Key topics: {", ".join(state["module_topics"][:8])}
-
-Analyze each candidate answer below for factual correctness and conceptual depth.
-Return ONLY a JSON array (one entry per question):
-
-{qa_block}
-
-[
-  {{
-    "question_id": <same integer id as shown in [Qx]>,
-    "correctness": "correct|partial|incorrect",
-    "concepts_addressed": ["concept1", "concept2"],
-    "key_gaps": ["gap1", "gap2"],
-    "depth_achieved": "surface|adequate|deep"
-  }}
-]
-Return ONLY the JSON array."""
+    prompt = render_prompt(
+        "interview_scorer",
+        "analyze_answers",
+        module_title=state["module_title"],
+        topics=", ".join(state["module_topics"][:8]),
+        qa_block=qa_block,
+    )
 
     try:
         text = _chat(prompt, 900, 0.1)
@@ -131,27 +121,12 @@ def _node_build_scoring_matrix(state: ScoringState) -> dict:
 
     analyses_text = json.dumps(state["analyses"], indent=2)
 
-    prompt = f"""Based on this analysis of interview answers for "{state["module_title"]}":
-
-{analyses_text}
-
-Assign a numeric score 0-10 to each answer using this rubric:
-0-3 = incorrect, missing, or off-topic
-4-6 = partially correct, key points missing
-7-8 = good understanding demonstrated
-9-10 = excellent, comprehensive, well-articulated
-
-Return ONLY a JSON array:
-[
-  {{
-    "question_id": <id>,
-    "score": <integer 0-10>,
-    "justification": "one clear sentence explaining the score",
-    "concepts_covered": ["c1", "c2"],
-    "concepts_missed": ["m1", "m2"]
-  }}
-]
-Return ONLY the JSON array."""
+    prompt = render_prompt(
+        "interview_scorer",
+        "scoring_matrix",
+        module_title=state["module_title"],
+        analyses_text=analyses_text,
+    )
 
     try:
         text = _chat(prompt, 900, 0.1)
@@ -191,16 +166,13 @@ def _node_compute_final_score(state: ScoringState) -> dict:
     scores = [int(entry.get("score", 0)) for entry in matrix]
     avg = sum(scores) / len(scores)
 
-    prompt = f"""Interview performance summary for module "{state["module_title"]}":
-
-Scoring matrix:
-{json.dumps(matrix, indent=2)}
-
-Average score: {avg:.1f}/10
-
-Write exactly 2 sentences: first sentence highlights what the candidate did well,
-second sentence identifies the most important area to improve.
-Be specific and constructive. Return ONLY the 2 sentences."""
+    prompt = render_prompt(
+        "interview_scorer",
+        "final_summary",
+        module_title=state["module_title"],
+        matrix_json=json.dumps(matrix, indent=2),
+        avg=f"{avg:.1f}",
+    )
 
     try:
         summary = _chat(prompt, 200, 0.3)

@@ -9,35 +9,9 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from app.config import settings
 from app.hf.client import get_hf_client, record_auth_failure, record_auth_success
 from app.hf.models import HF_MODELS
-from app.prompts.loader import get_quiz_limits
+from app.prompts.loader import get_quiz_limits, get_section, render_prompt
 
 log = structlog.get_logger()
-
-_SYSTEM_PROMPT = """You are an expert quiz question generator for an AI tutoring platform.
-
-Output ONLY a JSON object in this exact schema — no prose, no markdown fences:
-{
-  "question": "<full question sentence, at least 10 words>",
-  "options": ["<correct answer>", "<wrong 1>", "<wrong 2>", "<wrong 3>"],
-  "correct_index": 0,
-  "explanation": "<one sentence why the correct answer is right>"
-}
-
-Rules:
-- options must be exactly 4 real, specific answers (never placeholders like Option A)
-- correct_index is always 0 (shuffle happens client-side)
-- question must be directly about the specified topic
-- distractors must be plausible but clearly wrong on reflection
-"""
-
-_USER_TEMPLATE = {
-    "remember": "Generate a factual recall question about: {topic}.",
-    "understand": "Generate a comprehension/explanation question about: {topic}. Ask the learner to explain or paraphrase the concept.",
-    "apply": "Generate an application question about: {topic}. Include a real-world scenario in the question stem.",
-    "analyze": "Generate an analysis question about: {topic}. The learner must identify relationships, causes, or components.",
-    "evaluate": "Generate an evaluation question about: {topic}. The learner must judge, critique, or justify a design decision.",
-    "create": "Generate a synthesis question about: {topic}. The learner must propose, design, or construct something.",
-}
 
 
 def _parse_response(text: str, topic: str, bloom_level: str) -> dict | None:
@@ -107,7 +81,9 @@ async def generate_quiz_questions(
     model_id = model_cfg["model_id"]
     limits = get_quiz_limits()
 
-    user_prompt = _USER_TEMPLATE.get(bloom_level, _USER_TEMPLATE["understand"]).format(
+    system_prompt = get_section("quiz_generator", "system", "base")
+    templates = get_section("quiz_generator", "user_templates")
+    user_prompt = templates.get(bloom_level, templates["understand"]).format(
         topic=topic
     )
     log.info("quiz_generator_start", topic=topic, bloom_level=bloom_level, count=count)
@@ -119,9 +95,8 @@ async def generate_quiz_questions(
         asked = [q["question"] for q in questions]
         turn_prompt = user_prompt
         if asked:
-            turn_prompt += (
-                "\n\nAsk something genuinely different. Do NOT repeat or paraphrase any of these already-asked questions:\n- "
-                + "\n- ".join(asked[-8:])
+            turn_prompt += render_prompt(
+                "quiz_generator", "dedup_suffix", asked="\n- ".join(asked[-8:])
             )
         # Up to 2 attempts per question so a single bad generation doesn't shrink the quiz.
         for attempt in range(2):
@@ -131,7 +106,7 @@ async def generate_quiz_questions(
                         client.chat_completion,
                         model=model_id,
                         messages=[
-                            {"role": "system", "content": _SYSTEM_PROMPT},
+                            {"role": "system", "content": system_prompt},
                             {"role": "user", "content": turn_prompt},
                         ],
                         max_tokens=limits.get("max_tokens", 300),

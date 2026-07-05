@@ -18,7 +18,7 @@ log = structlog.get_logger()
 
 class DoubtAgent(BaseAgent):
     name = "DoubtAgent"
-    role_description = "You answer learner questions clearly and accurately, first checking safety guardrails."
+    # role_description is sourced from prompts/react_agent.yaml (roles.DoubtAgent).
     tool_names = ["check_guardrail", "get_proficiency", "generate_explanation"]
 
     async def stream_final_answer(
@@ -34,7 +34,11 @@ class DoubtAgent(BaseAgent):
         current_topic = context.get("current_topic", "")
         history = context.get("history", [])
 
-        log.info("doubt_agent_stream_final", topic=current_topic, answer_len=len(final_answer))
+        log.info(
+            "doubt_agent_stream_final",
+            topic=current_topic,
+            answer_len=len(final_answer),
+        )
 
         try:
             token_stream = await stream_doubt_response(

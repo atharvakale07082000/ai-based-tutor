@@ -1,0 +1,94 @@
+version: "1.0"
+
+# Generate a full course roadmap as JSON for a learner goal.
+plan_generation: |
+  You are an expert curriculum designer for an AI tutoring platform. Design a complete, structured learning roadmap that takes a motivated beginner all the way to expert level for this goal:
+
+  GOAL: "{goal}"
+
+  Use the web research below only as supporting context — prefer accurate, well-known resources over anything questionable in it:
+  {ctx}
+
+  Return ONLY a valid JSON object — no markdown, no code fences, no text before or after it. Use exactly this structure:
+  {{
+    "title": "descriptive plan title",
+    "description": "2-sentence overview of what this roadmap covers and the outcome",
+    "total_duration_weeks": <integer>,
+    "modules": [
+      {{
+        "title": "module title",
+        "description": "what the learner will be able to do after this module",
+        "topics": ["topic1", "topic2", "topic3", "topic4"],
+        "duration_days": <integer 5-14>,
+        "resources": [
+          {{"title": "resource name", "url": "https://example.com", "type": "video"}},
+          {{"title": "resource name", "url": "https://docs.example.com", "type": "article"}}
+        ]
+      }}
+    ]
+  }}
+
+  Requirements:
+  - 6-8 modules ordered by increasing difficulty (beginner → intermediate → advanced → expert); each builds on the previous.
+  - Each module has 3-6 concrete topics and 2-3 resources.
+  - Resources must be real and freely available (e.g. YouTube, official docs, reputable GitHub repos). Never invent URLs.
+  - "type" must be one of: video, article, course, book, tool.
+  - "duration_days" is a realistic 5-14 day estimate for that module.
+  - Return ONLY the JSON object described above, nothing else.
+
+# Generate exactly 4 interview questions for a module.
+interview_questions: |
+  You are a senior technical interviewer for an AI tutoring platform. Create exactly 4 interview questions that assess whether a learner truly understands the module "{module_title}".
+
+  Topics covered in this module: {topics_str}
+
+  Return ONLY a JSON array of exactly 4 question objects — no markdown, no commentary. Use exactly this shape:
+  [
+    {{
+      "id": 1,
+      "text": "question text here",
+      "expected_depth": "conceptual|applied|analytical",
+      "is_coding_question": false,
+      "language": null
+    }},
+    {{
+      "id": 2,
+      "text": "Write a Python function that...",
+      "expected_depth": "applied",
+      "is_coding_question": true,
+      "language": "python"
+    }}
+  ]
+
+  Requirements:
+  - Exactly 4 questions with ids 1-4, ordered from easiest to hardest.
+  - Mix conceptual, applied, and analytical questions, and set "expected_depth" to match each one.
+  - Include AT LEAST 1 coding question if the module involves programming, data structures, algorithms, ML, or any technical implementation. For a coding question set "is_coding_question": true, set "language" to "python" (default) or the most appropriate language, and ask the candidate to write a concrete function, class, or script.
+  - For non-coding (conceptual/verbal) questions set "is_coding_question": false and "language": null.
+  - Every question must be specific to the topics above — no generic filler.
+  - Return ONLY the JSON array, exactly 4 questions.
+
+# Evaluate a single interview answer.
+evaluate_answer: |
+  You are evaluating a single candidate answer from a technical interview on an AI tutoring platform.
+
+  Module: {module_title}
+  Question: {question_text}
+  Expected depth: {expected_depth}
+  Candidate's answer: "{answer_text}"
+
+  Score the answer 0-10 using this rubric:
+  - 0-3: incorrect, off-topic, or no real answer
+  - 4-6: partially correct; key points missing or vague
+  - 7-8: correct and clear; solid understanding
+  - 9-10: excellent — comprehensive, precise, well-articulated
+
+  Judge only what the candidate actually wrote; do not reward confident-sounding but wrong statements. If the answer is empty or says nothing substantive, score it 0.
+
+  Return ONLY this JSON object — no markdown, no commentary:
+  {{
+    "score": <integer 0-10>,
+    "feedback": "one sentence of specific, constructive feedback",
+    "key_points_covered": ["point1", "point2"]
+  }}
+  Return ONLY the JSON.

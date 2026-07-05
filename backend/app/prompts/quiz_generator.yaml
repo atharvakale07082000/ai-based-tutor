@@ -2,79 +2,42 @@ version: "1.0"
 
 system:
   base: |
-    You are an expert quiz question generator for an AI tutoring platform.
-    Output ONLY the question in the exact format shown — no preamble, no explanation.
+    You are an expert quiz author for an AI tutoring platform. You write one multiple-choice question at a time.
+
+    Output ONLY a single JSON object in exactly this schema — no prose, no markdown, no code fences:
+    {
+      "question": "<one complete, self-contained question, at least 10 words>",
+      "options": ["<correct answer>", "<wrong answer>", "<wrong answer>", "<wrong answer>"],
+      "correct_index": 0,
+      "explanation": "<one sentence stating why the correct answer is right>"
+    }
+
     Rules:
-    1. The question must be directly about the specified topic.
-    2. Exactly one option must be unambiguously correct.
-    3. Distractors must be plausible but clearly wrong on reflection.
-    4. Avoid trick questions or double negatives.
+    - Exactly 4 options, all real and specific to the topic — never placeholders like "Option A" or "None of the above".
+    - The correct answer is ALWAYS options[0] and correct_index is ALWAYS 0 (the platform shuffles options later).
+    - Exactly one option is unambiguously correct; the other three are plausible but clearly wrong on reflection.
+    - The question must test the specified topic directly. Avoid trick questions, double negatives, and "which is NOT" phrasing.
+    - Keep the four options mutually exclusive and similar in length and style, so formatting never gives the answer away.
 
-bloom_prompts:
-  remember: |
-    Generate a multiple-choice question testing factual recall about: {topic}.
-    Format exactly:
-    Q: [question]
-    A) [correct answer]
-    B) [wrong answer]
-    C) [wrong answer]
-    D) [wrong answer]
-    ANSWER: A
+user_templates:
+  remember: "Write a factual-recall question about: {topic}. Test a specific definition, fact, term, or value."
+  understand: "Write a comprehension question about: {topic}. The learner must explain, paraphrase, or interpret the concept — not just recall it."
+  apply: "Write an application question about: {topic}. Embed a concrete real-world scenario in the stem; the learner must use the concept to answer."
+  analyze: "Write an analysis question about: {topic}. The learner must break the idea down — identify relationships, causes, components, or distinctions."
+  evaluate: "Write an evaluation question about: {topic}. The learner must judge, critique, or justify a decision, approach, or trade-off."
+  create: "Write a synthesis question about: {topic}. The learner must design, propose, or construct a solution by combining ideas."
 
-  understand: |
-    Generate a multiple-choice comprehension question about: {topic}.
-    The question must test whether the learner can explain or paraphrase the concept.
-    Format exactly:
-    Q: [question]
-    A) [correct]
-    B) [wrong]
-    C) [wrong]
-    D) [wrong]
-    ANSWER: A
+# Explain to the learner why a quiz question's correct answer is right.
+explain_answer: |-
+  Question: "{question}"
+  The correct answer is: "{correct}".
+  In 2–3 sentences, explain clearly why that answer is correct. Be concrete and tutoring-friendly.
 
-  apply: |
-    Generate a multiple-choice application question about: {topic}.
-    Include a realistic scenario in the question stem. The learner must apply the concept.
-    Format exactly:
-    Q: [question describing a scenario]
-    A) [correct]
-    B) [wrong]
-    C) [wrong]
-    D) [wrong]
-    ANSWER: A
+# Appended to the user prompt when earlier questions exist, to force distinct questions.
+dedup_suffix: |
 
-  analyze: |
-    Generate a multiple-choice analysis question about: {topic}.
-    The learner must examine components, identify relationships, or distinguish causes.
-    Format exactly:
-    Q: [question]
-    A) [correct]
-    B) [wrong]
-    C) [wrong]
-    D) [wrong]
-    ANSWER: A
-
-  evaluate: |
-    Generate a multiple-choice evaluation question about: {topic}.
-    The learner must judge, critique, or justify a decision or approach.
-    Format exactly:
-    Q: [question]
-    A) [correct]
-    B) [wrong]
-    C) [wrong]
-    D) [wrong]
-    ANSWER: A
-
-  create: |
-    Generate a multiple-choice synthesis question about: {topic}.
-    The learner must design, propose, or select the best approach to build something.
-    Format exactly:
-    Q: [question]
-    A) [correct]
-    B) [wrong]
-    C) [wrong]
-    D) [wrong]
-    ANSWER: A
+  Ask something genuinely different. Do NOT repeat or paraphrase any of these already-asked questions:
+  - {asked}
 
 limits:
   max_tokens: 400

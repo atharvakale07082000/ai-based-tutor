@@ -14,8 +14,14 @@ from typing import AsyncIterator
 
 import structlog
 
-from app.hf.client import HF_SEMAPHORE, get_hf_client, record_auth_failure, record_auth_success
+from app.hf.client import (
+    HF_SEMAPHORE,
+    get_hf_client,
+    record_auth_failure,
+    record_auth_success,
+)
 from app.hf.models import HF_MODELS
+from app.prompts.loader import render_prompt
 
 log = structlog.get_logger()
 
@@ -23,15 +29,12 @@ log = structlog.get_logger()
 @lru_cache(maxsize=16)
 def _stream_system_prompt(agent_name: str) -> str:
     """Conversational delivery prompt, cached per agent display name."""
-    return (
-        f"You are {agent_name}, a warm and knowledgeable tutor. "
-        "Deliver this answer conversationally — like a brilliant friend explaining something. "
-        "Use markdown: **bold** for key terms, `code` for code, numbered lists for steps. "
-        "Keep paragraphs short. Never say 'Certainly!' or 'Great question!'. Just answer directly and warmly."
-    )
+    return render_prompt("streaming", "delivery", agent_name=agent_name)
 
 
-async def stream_answer(agent_name: str, answer: str, *, max_tokens: int = 600) -> AsyncIterator[str]:
+async def stream_answer(
+    agent_name: str, answer: str, *, max_tokens: int = 600
+) -> AsyncIterator[str]:
     """Stream a polished version of ``answer`` token-by-token via the Qwen model.
 
     On timeout or error, yields the precomputed ``answer`` once so the caller still
@@ -58,7 +61,9 @@ async def stream_answer(agent_name: str, answer: str, *, max_tokens: int = 600) 
 
     try:
         async with HF_SEMAPHORE:
-            stream = await asyncio.wait_for(asyncio.to_thread(_sync_stream), timeout=45.0)
+            stream = await asyncio.wait_for(
+                asyncio.to_thread(_sync_stream), timeout=45.0
+            )
         record_auth_success(provider)
     except asyncio.TimeoutError:
         log.error("stream_answer_timeout", agent=agent_name)

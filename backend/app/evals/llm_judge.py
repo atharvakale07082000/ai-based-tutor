@@ -13,17 +13,14 @@ import re
 
 import structlog
 
+from app.prompts.loader import get_section
+
 log = structlog.get_logger()
 
 _MODEL = "Qwen/Qwen2.5-7B-Instruct"
 _TIMEOUT = 20.0
 
-_SYSTEM_PROMPT = """\
-You are an impartial educational quality assessor.
-Given the context below, rate it on each criterion from 1 (very poor) to 5 (excellent).
-Reply ONLY with compact JSON mapping each criterion name to an integer score.
-Example output: {"correctness": 4, "clarity": 3}
-Do not include any explanation or extra text."""
+_SYSTEM_PROMPT = get_section("eval_judge", "system")
 
 
 async def score(
@@ -44,7 +41,9 @@ async def score(
 
         client = get_hf_client("together")
         criteria_lines = "\n".join(f"- {c}" for c in criteria)
-        full_prompt = f"{user_prompt}\n\nRate on these criteria (1–5 each):\n{criteria_lines}"
+        full_prompt = (
+            f"{user_prompt}\n\nRate on these criteria (1–5 each):\n{criteria_lines}"
+        )
 
         response = await asyncio.wait_for(
             asyncio.to_thread(

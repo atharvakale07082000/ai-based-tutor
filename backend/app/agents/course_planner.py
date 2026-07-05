@@ -19,6 +19,7 @@ from ddgs import DDGS
 from app.db.mongo import col_course_plans, col_interviews
 from app.hf.client import get_hf_client
 from app.hf.models import HF_MODELS
+from app.prompts.loader import render_prompt
 
 log = structlog.get_logger()
 
@@ -49,14 +50,21 @@ async def get_plan(plan_id: str) -> dict | None:
 
 
 async def list_plans(user_id: str) -> list[dict]:
-    return await col_course_plans().find({"user_id": user_id}, PROJ).sort("created_at", -1).to_list(length=None)
+    return (
+        await col_course_plans()
+        .find({"user_id": user_id}, PROJ)
+        .sort("created_at", -1)
+        .to_list(length=None)
+    )
 
 
 async def _save_plan(plan: dict) -> None:
     await col_course_plans().insert_one({**plan})
 
 
-async def _update_module_interview(plan_id: str, module_id: str, status: str, score: float) -> None:
+async def _update_module_interview(
+    plan_id: str, module_id: str, status: str, score: float
+) -> None:
     await col_course_plans().update_one(
         {"plan_id": plan_id, "modules.id": module_id},
         {
@@ -72,7 +80,9 @@ async def get_interview(interview_id: str) -> dict | None:
     return await col_interviews().find_one({"interview_id": interview_id}, PROJ)
 
 
-async def get_module_interview(plan_id: str, module_id: str, user_id: str) -> dict | None:
+async def get_module_interview(
+    plan_id: str, module_id: str, user_id: str
+) -> dict | None:
     return await col_interviews().find_one(
         {"plan_id": plan_id, "module_id": module_id, "user_id": user_id},
         PROJ,
@@ -120,39 +130,11 @@ def _search_web(goal: str) -> list[dict]:
 
 async def _generate_plan_json(goal: str, search_results: list[dict]) -> dict:
     ctx = "\n".join(f"- {r['title']}: {r['body']}" for r in search_results[:12])
-    prompt = f"""You are an expert curriculum designer. Create a comprehensive learning roadmap for: "{goal}"
+    prompt = render_prompt("course_planner", "plan_generation", goal=goal, ctx=ctx)
 
-Web research context:
-{ctx}
-
-Return ONLY a valid JSON object (no markdown, no explanation) with this exact structure:
-{{
-  "title": "descriptive plan title",
-  "description": "2-sentence overview",
-  "total_duration_weeks": <integer>,
-  "modules": [
-    {{
-      "title": "module title",
-      "description": "what the learner will achieve",
-      "topics": ["topic1", "topic2", "topic3", "topic4"],
-      "duration_days": <integer 5-14>,
-      "resources": [
-        {{"title": "resource name", "url": "https://example.com", "type": "video"}},
-        {{"title": "resource name", "url": "https://docs.example.com", "type": "article"}}
-      ]
-    }}
-  ]
-}}
-
-Requirements:
-- 6-8 progressive modules (beginner → intermediate → advanced → expert)
-- Each module must have 3-6 topics and 2-3 resources
-- Resources must be real, freely available (YouTube, official docs, GitHub)
-- Resource type must be one of: video, article, course, book, tool
-- Realistic time estimates per module
-- Return ONLY the JSON, nothing else."""
-
-    raw = await asyncio.wait_for(asyncio.to_thread(_chat, prompt, 3000, 0.2), timeout=90.0)
+    raw = await asyncio.wait_for(
+        asyncio.to_thread(_chat, prompt, 3000, 0.2), timeout=90.0
+    )
     raw = raw.strip()
     match = re.search(r"\{[\s\S]*\}", raw)
     text = match.group(0) if match else raw
@@ -218,46 +200,26 @@ async def create_course_plan(goal: str, user_id: str, emit: StepEmit = None) -> 
     from app.agents.workflow import run_workflow
 
     log.info("course_planner_start", goal=goal, user_id=user_id)
-    ctx = await run_workflow("course_gen", {"goal": goal, "user_id": user_id}, emit=emit)
+    ctx = await run_workflow(
+        "course_gen", {"goal": goal, "user_id": user_id}, emit=emit
+    )
     return ctx.result("finalize")
 
 
 # ─── Interview ────────────────────────────────────────────────────────────────
 
 
-async def start_interview(plan_id: str, module_id: str, user_id: str, module_title: str, topics: list[str]) -> dict:
+async def start_interview(
+    plan_id: str, module_id: str, user_id: str, module_title: str, topics: list[str]
+) -> dict:
     log.info("interview_generating", module=module_title, topics=topics[:6])
     topics_str = ", ".join(topics[:6])
-    prompt = f"""You are a technical interviewer. Create exactly 4 interview questions to assess understanding of "{module_title}".
-
-Topics covered: {topics_str}
-
-Return ONLY a JSON array of question objects:
-[
-  {{
-    "id": 1,
-    "text": "question text here",
-    "expected_depth": "conceptual|applied|analytical",
-    "is_coding_question": false,
-    "language": null
-  }},
-  {{
-    "id": 2,
-    "text": "Write a Python function that...",
-    "expected_depth": "applied",
-    "is_coding_question": true,
-    "language": "python"
-  }}
-]
-
-Requirements:
-- Mix conceptual, applied, and analytical questions
-- Progressive difficulty (easier first)
-- Include AT LEAST 1 coding question if the topic involves programming, data structures, algorithms, ML, or any technical implementation
-- For coding questions set is_coding_question=true and language to "python" (default) or the most appropriate language
-- For non-coding conceptual/verbal questions set is_coding_question=false and language=null
-- Coding questions should ask the candidate to write a function, class, or script
-- Return ONLY the JSON array, exactly 4 questions"""
+    prompt = render_prompt(
+        "course_planner",
+        "interview_questions",
+        module_title=module_title,
+        topics_str=topics_str,
+    )
 
     t0 = time.perf_counter()
     text = await asyncio.to_thread(_chat, prompt, 800, 0.4)
@@ -298,7 +260,9 @@ Requirements:
     return interview
 
 
-async def evaluate_answer(interview_id: str, question_id: int, answer_text: str) -> dict:
+async def evaluate_answer(
+    interview_id: str, question_id: int, answer_text: str
+) -> dict:
     interview = await col_interviews().find_one({"interview_id": interview_id})
     if not interview:
         raise ValueError("Interview not found")
@@ -316,22 +280,14 @@ async def evaluate_answer(interview_id: str, question_id: int, answer_text: str)
         answer_preview=answer_preview,
     )
 
-    prompt = f"""You are evaluating a technical interview answer.
-
-Module: {interview["module_title"]}
-Question: {question["text"]}
-Expected depth: {question.get("expected_depth", "conceptual")}
-Candidate's answer: "{answer_text}"
-
-Evaluate and return ONLY this JSON:
-{{
-  "score": <integer 0-10>,
-  "feedback": "one sentence of specific, constructive feedback",
-  "key_points_covered": ["point1", "point2"]
-}}
-
-Scoring guide: 0-3 incorrect/missing, 4-6 partially correct, 7-8 good, 9-10 excellent.
-Return ONLY the JSON."""
+    prompt = render_prompt(
+        "course_planner",
+        "evaluate_answer",
+        module_title=interview["module_title"],
+        question_text=question["text"],
+        expected_depth=question.get("expected_depth", "conceptual"),
+        answer_text=answer_text,
+    )
 
     t0 = time.perf_counter()
     text = await asyncio.to_thread(_chat, prompt, 300, 0.1)
@@ -361,7 +317,9 @@ Return ONLY the JSON."""
     return evaluation
 
 
-async def complete_interview(interview_id: str, plan_id: str, module_id: str, emit: StepEmit = None) -> dict:
+async def complete_interview(
+    interview_id: str, plan_id: str, module_id: str, emit: StepEmit = None
+) -> dict:
     """Score an interview via the ``interview_review`` workflow (evaluate → score → feedback).
 
     Thin entry point: the steps now live as sequential tasks in app.agents.workflow. If ``emit`` is

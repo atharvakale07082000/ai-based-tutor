@@ -40,6 +40,18 @@ def _blocked_patterns() -> list[str]:
     return _config()["input"]["blocked_patterns"]
 
 
+_compiled_regexes: list[tuple[str, re.Pattern]] | None = None
+
+
+def _blocked_regexes() -> list[tuple[str, re.Pattern]]:
+    """Compile (and cache) the optional regex injection patterns from config."""
+    global _compiled_regexes
+    if _compiled_regexes is None:
+        raw = _config()["input"].get("blocked_regexes", []) or []
+        _compiled_regexes = [(p, re.compile(p, re.IGNORECASE)) for p in raw]
+    return _compiled_regexes
+
+
 # ── Input guardrails ──────────────────────────────────────────────────────────
 
 
@@ -61,13 +73,22 @@ def check_input(text: str, *, context: str = "") -> GuardrailResult:
     if len(stripped) > cfg["max_length"]:
         # Truncate rather than hard-reject — long but legitimate questions exist
         stripped = stripped[: cfg["max_length"]]
-        log.warning("guardrail_input_truncated", original_len=len(text), context=context)
+        log.warning(
+            "guardrail_input_truncated", original_len=len(text), context=context
+        )
 
     lower = stripped.lower()
     for pattern in _blocked_patterns():
         if pattern.lower() in lower:
             log.warning("guardrail_blocked_pattern", pattern=pattern, context=context)
             return GuardrailResult(passed=False, reason=f"blocked_pattern:{pattern}")
+
+    # Regex layer: catches injections with filler words the substring list misses
+    # (e.g. "ignore all previous instructions", "reveal your system prompt").
+    for raw, rx in _blocked_regexes():
+        if rx.search(lower):
+            log.warning("guardrail_blocked_pattern", pattern=raw, context=context)
+            return GuardrailResult(passed=False, reason=f"blocked_pattern:{raw}")
 
     return GuardrailResult(passed=True, sanitized=stripped)
 
@@ -87,7 +108,9 @@ def check_output(text: str, *, context: str = "") -> GuardrailResult:
 
     if len(text) > cfg["max_length"]:
         truncated = text[: cfg["max_length"]]
-        log.warning("guardrail_output_truncated", original_len=len(text), context=context)
+        log.warning(
+            "guardrail_output_truncated", original_len=len(text), context=context
+        )
         return GuardrailResult(passed=True, sanitized=truncated)
 
     return GuardrailResult(passed=True, sanitized=text.strip())
@@ -109,7 +132,10 @@ def check_quiz_question(q: dict, *, bloom_level: str = "") -> GuardrailResult:
     if missing:
         return GuardrailResult(passed=False, reason=f"missing_fields:{missing}")
 
-    if not isinstance(q["options"], list) or len(q["options"]) < cfg["min_option_count"]:
+    if (
+        not isinstance(q["options"], list)
+        or len(q["options"]) < cfg["min_option_count"]
+    ):
         return GuardrailResult(passed=False, reason="insufficient_options")
 
     if not valid_range[0] <= q["correct_index"] <= valid_range[1]:
@@ -119,7 +145,9 @@ def check_quiz_question(q: dict, *, bloom_level: str = "") -> GuardrailResult:
         return GuardrailResult(passed=False, reason="question_too_short")
 
     if bloom_level and q.get("bloom_level") != bloom_level:
-        log.warning("guardrail_bloom_mismatch", expected=bloom_level, got=q.get("bloom_level"))
+        log.warning(
+            "guardrail_bloom_mismatch", expected=bloom_level, got=q.get("bloom_level")
+        )
 
     return GuardrailResult(passed=True)
 

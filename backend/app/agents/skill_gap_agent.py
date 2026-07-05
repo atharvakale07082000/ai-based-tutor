@@ -12,11 +12,14 @@ StepTimeline backbone.
 
 from __future__ import annotations
 
+import re
+
 import structlog
 
 from app.agents.json_utils import extract_json
 from app.hf.client import hf_chat_completion_with_resilience
 from app.hf.models import HF_MODELS, TOKEN_BUDGETS
+from app.prompts.loader import render_prompt
 
 log = structlog.get_logger()
 
@@ -31,18 +34,7 @@ _STATUS_WEIGHT = {"have": 1.0, "partial": 0.5, "missing": 0.0}
 async def parse_jd(jd_text: str) -> dict:
     """Extract {company, role, seniority, required_skills} from a job description via the LLM."""
     model_cfg = HF_MODELS["DOUBT_SOLVER"]
-    prompt = (
-        "You are an expert technical recruiter. Extract structured data from this job description.\n\n"
-        f'Job description:\n"""\n{jd_text[:6000]}\n"""\n\n'
-        "Return ONLY a JSON object (no markdown, no prose) with this exact shape:\n"
-        '{"company": "<name or empty>", "role": "<title>", '
-        '"seniority": "<junior|mid|senior|staff|lead or empty>", '
-        '"required_skills": ["skill1", "skill2"]}\n\n'
-        "Rules:\n"
-        "- required_skills: 5–15 concrete technical skills, tools, or topics "
-        '(e.g. "Python", "System Design", "PyTorch", "SQL", "Kubernetes"). No soft skills.\n'
-        "- Return ONLY the JSON."
-    )
+    prompt = render_prompt("skill_gap", "parse_jd", jd_text=jd_text[:6000])
     raw = await hf_chat_completion_with_resilience(
         provider=model_cfg["provider"],
         model_id=model_cfg["model_id"],
@@ -71,11 +63,21 @@ async def parse_jd(jd_text: str) -> dict:
     }
 
 
+def _phrase_in(needle: str, haystack: str) -> bool:
+    """Whole-word/phrase containment: ``needle`` appears in ``haystack`` on word boundaries.
+
+    Prevents short-token false positives (e.g. "Go" ⊄ "algorithms", "R" ⊄ "control flow") while
+    still matching "Python" ⊆ "Python Programming".
+    """
+    return re.search(rf"\b{re.escape(needle)}\b", haystack) is not None
+
+
 def _match_elo(skill: str, proficiency_map: dict[str, float]) -> float | None:
     """Best-effort match a required skill to a proficiency-map topic; return its ELO or None.
 
-    Matches case-insensitively in either direction (skill ⊆ topic or topic ⊆ skill), preferring
-    the topic with the highest ELO so a strong related skill counts.
+    Matches case-insensitively in either direction (skill ⊆ topic or topic ⊆ skill) using
+    whole-word boundaries, preferring the topic with the highest ELO so a strong related skill
+    counts.
     """
     s = skill.strip().lower()
     if not s:
@@ -85,7 +87,7 @@ def _match_elo(skill: str, proficiency_map: dict[str, float]) -> float | None:
         t = str(topic).strip().lower()
         if not t:
             continue
-        if s == t or s in t or t in s:
+        if s == t or _phrase_in(s, t) or _phrase_in(t, s):
             if best is None or elo > best:
                 best = float(elo)
     return best
@@ -108,7 +110,9 @@ def analyze_gap(required_skills: list[str], proficiency_map: dict[str, float]) -
         gaps.append({"skill": skill, "have_elo": elo, "status": status})
 
     if gaps:
-        readiness = round(sum(_STATUS_WEIGHT[g["status"]] for g in gaps) / len(gaps) * 100, 1)
+        readiness = round(
+            sum(_STATUS_WEIGHT[g["status"]] for g in gaps) / len(gaps) * 100, 1
+        )
     else:
         readiness = 0.0
 
@@ -117,11 +121,21 @@ def analyze_gap(required_skills: list[str], proficiency_map: dict[str, float]) -
     for g in gaps:
         if g["status"] == "partial":
             recommendations.append(
-                {"type": "quiz", "skill": g["skill"], "label": f"Quiz: sharpen {g['skill']}", "url": "/quiz"}
+                {
+                    "type": "quiz",
+                    "skill": g["skill"],
+                    "label": f"Quiz: sharpen {g['skill']}",
+                    "url": "/quiz",
+                }
             )
         elif g["status"] == "missing":
             recommendations.append(
-                {"type": "course", "skill": g["skill"], "label": f"Build a path for {g['skill']}", "url": "/courses"}
+                {
+                    "type": "course",
+                    "skill": g["skill"],
+                    "label": f"Build a path for {g['skill']}",
+                    "url": "/courses",
+                }
             )
 
     return {

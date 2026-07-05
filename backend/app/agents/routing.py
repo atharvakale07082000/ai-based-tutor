@@ -20,6 +20,7 @@ import structlog
 
 from app.hf.client import get_hf_client, record_auth_failure, record_auth_success
 from app.hf.models import HF_MODELS, TOKEN_BUDGETS
+from app.prompts.loader import get_section
 
 log = structlog.get_logger()
 
@@ -34,20 +35,41 @@ AGENT_DISPLAY_NAMES: dict[str, str] = {
 }
 
 # Module-level constant — a byte-identical prefix on every routing call lets the
-# provider KV cache hit without reprocessing in-flight tokens.
-ROUTING_SYSTEM_PROMPT = (
-    "Route the learner query to the correct agent. "
-    "Agents: quiz, curriculum, progress, doubt, assistant. "
-    'Reply ONLY with JSON: {"agent": "<name>", "reason": "<one sentence>"}'
-)
+# provider KV cache hit without reprocessing in-flight tokens. Sourced once from
+# prompts/routing.yaml at import time so the value stays constant per process.
+ROUTING_SYSTEM_PROMPT = get_section("routing", "system")
 
 # Keyword sets are matched as whole words (see ``_word_in``) so that, e.g.,
 # "why" does not fire inside "anywhere" and short keywords don't over-trigger.
 KEYWORD_MAP: dict[str, set[str]] = {
     "quiz": {"quiz", "test me", "question", "assess", "examine"},
-    "curriculum": {"learn", "path", "roadmap", "curriculum", "plan my", "study plan", "learning goal"},
-    "progress": {"score", "elo", "my progress", "how am i doing", "update my", "progress"},
-    "doubt": {"explain", "what is", "how does", "why", "confused", "understand", "clarify", "difference between"},
+    "curriculum": {
+        "learn",
+        "path",
+        "roadmap",
+        "curriculum",
+        "plan my",
+        "study plan",
+        "learning goal",
+    },
+    "progress": {
+        "score",
+        "elo",
+        "my progress",
+        "how am i doing",
+        "update my",
+        "progress",
+    },
+    "doubt": {
+        "explain",
+        "what is",
+        "how does",
+        "why",
+        "confused",
+        "understand",
+        "clarify",
+        "difference between",
+    },
 }
 
 

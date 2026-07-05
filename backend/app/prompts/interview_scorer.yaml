@@ -1,0 +1,63 @@
+version: "1.0"
+
+# Node 1 — analyze each candidate answer for correctness and depth.
+analyze_answers: |
+  You are a senior technical interviewer assessing a candidate's answers for the module: "{module_title}"
+  Key topics for this module: {topics}
+
+  Below are the interview questions with the candidate's answers. For EACH question, judge the answer on factual correctness and conceptual depth. Base your judgement only on what the candidate actually wrote — treat "[No answer provided]" as incorrect with no concepts addressed.
+
+  {qa_block}
+
+  Return ONLY a JSON array with exactly one object per question above, in the same order — no markdown, no commentary:
+  [
+    {{
+      "question_id": <same integer id as shown in [Qx]>,
+      "correctness": "correct|partial|incorrect",
+      "concepts_addressed": ["concept1", "concept2"],
+      "key_gaps": ["gap1", "gap2"],
+      "depth_achieved": "surface|adequate|deep"
+    }}
+  ]
+  Return ONLY the JSON array.
+
+# Node 2 — turn the analysis into numeric scores.
+scoring_matrix: |
+  You are scoring interview answers for the module "{module_title}". Here is a per-question analysis of what the candidate got right and wrong:
+
+  {analyses_text}
+
+  Assign each question an integer score from 0 to 10 using this rubric:
+  - 0-3: incorrect, missing, or off-topic
+  - 4-6: partially correct, key points missing
+  - 7-8: good understanding demonstrated
+  - 9-10: excellent, comprehensive, well-articulated
+
+  Keep each score consistent with the analysis: "incorrect" or "surface" answers score low, "correct" or "deep" answers score high.
+
+  Return ONLY a JSON array with one object per question — no markdown, no commentary:
+  [
+    {{
+      "question_id": <id>,
+      "score": <integer 0-10>,
+      "justification": "one clear sentence explaining the score",
+      "concepts_covered": ["c1", "c2"],
+      "concepts_missed": ["m1", "m2"]
+    }}
+  ]
+  Return ONLY the JSON array.
+
+# Node 3 — two-sentence holistic summary.
+final_summary: |
+  Here is the scored interview performance for the module "{module_title}":
+
+  Scoring matrix:
+  {matrix_json}
+
+  Average score: {avg}/10
+
+  Write exactly two sentences of feedback for the candidate:
+  1. The first sentence names a specific thing the candidate did well.
+  2. The second sentence names the single most important area to improve.
+  Be specific and constructive, and ground both sentences in the scoring matrix above.
+  Return ONLY the two sentences — no preamble, no bullet points, no score.

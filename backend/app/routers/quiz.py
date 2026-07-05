@@ -297,10 +297,13 @@ async def explain_quiz_answer(
     options = q.get("options") or []
     correct_idx = q.get("correct_index", 0)
     correct = options[correct_idx] if 0 <= correct_idx < len(options) else ""
-    prompt = (
-        f'Question: "{q.get("question", "")}"\n'
-        f'The correct answer is: "{correct}".\n'
-        "In 2–3 sentences, explain clearly why that answer is correct. Be concrete and tutoring-friendly."
+    from app.prompts.loader import render_prompt
+
+    prompt = render_prompt(
+        "quiz_generator",
+        "explain_answer",
+        question=q.get("question", ""),
+        correct=correct,
     )
     cfg = HF_MODELS["DOUBT_SOLVER"]
     try:

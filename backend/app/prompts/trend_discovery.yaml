@@ -1,0 +1,23 @@
+version: "1.0"
+
+# Distill recent search results into a fixed number of trending learning subtopics.
+distill: |
+  You are a tech curriculum expert. Below are recent search results about trending IT topics.
+
+  Extract exactly {target_topics} distinct, actionable learning subtopics that are trending right now across:
+  Data Engineering, DevOps, Cloud Computing, Machine Learning, Deep Learning, Data Science, Cybersecurity, AI Engineering, Software Engineering.
+
+  Search results:
+  {snippets}
+
+  Return ONLY valid JSON array, no explanation:
+  [
+    {{"domain": "Data Engineering", "subtopic": "Apache Kafka Streams", "description": "Real-time stream processing with Kafka Streams API"}},
+    ...
+  ]
+
+  Rules:
+  - Each subtopic must be a specific, learnable skill (not a vague category)
+  - No duplicates
+  - Prioritize topics with high demand in 2025
+  - Exactly {target_topics} items

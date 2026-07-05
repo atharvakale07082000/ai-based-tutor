@@ -1,6 +1,33 @@
+from contextlib import contextmanager
 from unittest.mock import AsyncMock, patch
 
 import pytest
+
+# Agents do `from app.agents.tools import call_tool`, binding the name locally at import
+# time — so patching `app.agents.tools.call_tool` has NO effect and the test silently hits
+# the real network. Patch each agent module's own binding instead.
+_AGENT_MODULES = (
+    "curriculum_agent",
+    "quiz_agent",
+    "progress_agent",
+    "doubt_agent",
+    "planner_agent",
+)
+
+
+@contextmanager
+def _patch_tools(*, return_value=None, side_effect=None):
+    """Patch call_tool across every agent module with one shared AsyncMock (yielded)."""
+    mock = AsyncMock(return_value=return_value, side_effect=side_effect)
+    patches = [patch(f"app.agents.{m}.call_tool", mock) for m in _AGENT_MODULES]
+    for p in patches:
+        p.start()
+    try:
+        yield mock
+    finally:
+        for p in patches:
+            p.stop()
+
 
 # ── Shared state factory ──────────────────────────────────────────────────────
 
@@ -40,7 +67,7 @@ class TestCurriculumAgent:
     @pytest.mark.asyncio
     async def test_curriculum_generates_path(self):
         # classify_topic is now invoked via call_tool → mock at the tools layer
-        with patch("app.agents.tools.call_tool", new_callable=AsyncMock) as mock_tool:
+        with _patch_tools() as mock_tool:
             mock_tool.return_value = {"labels": ["Python Programming"], "scores": [0.9]}
             from app.agents.curriculum_agent import curriculum_agent_node
 
@@ -64,14 +91,20 @@ class TestCurriculumAgent:
 
     @pytest.mark.asyncio
     async def test_curriculum_prioritizes_low_proficiency(self):
-        with patch("app.agents.tools.call_tool", new_callable=AsyncMock) as mock_tool:
-            mock_tool.return_value = {"labels": ["Python Programming"], "scores": [0.95]}
+        with _patch_tools() as mock_tool:
+            mock_tool.return_value = {
+                "labels": ["Python Programming"],
+                "scores": [0.95],
+            }
             from app.agents.curriculum_agent import curriculum_agent_node
 
             state = _base_state(
                 task_type="curriculum",
                 learner_profile={"goal_vector": ["python functions"]},
-                topic_proficiency={"Variables & Data Types": 800.0, "Control Flow & Loops": 200.0},
+                topic_proficiency={
+                    "Variables & Data Types": 800.0,
+                    "Control Flow & Loops": 200.0,
+                },
             )
             result = await curriculum_agent_node(state)
             path = result["curriculum_path"]
@@ -105,7 +138,7 @@ class TestQuizAgent:
                 }
             return {}
 
-        with patch("app.agents.tools.call_tool", side_effect=_mock_tool):
+        with patch("app.agents.quiz_agent.call_tool", side_effect=_mock_tool):
             from app.agents.quiz_agent import quiz_agent_node
 
             state = _base_state(
@@ -165,7 +198,7 @@ class TestProgressAgent:
 
     @pytest.mark.asyncio
     async def test_progress_agent_updates_proficiency(self):
-        with patch("app.agents.tools.call_tool", new_callable=AsyncMock) as mock_tool:
+        with _patch_tools() as mock_tool:
             mock_tool.return_value = {"label": "POSITIVE", "score": 0.95}
             from app.agents.progress_agent import progress_agent_node
 
@@ -186,7 +219,7 @@ class TestProgressAgent:
 class TestPlannerAgent:
     @pytest.mark.asyncio
     async def test_planner_no_curriculum_returns_curriculum_action(self):
-        with patch("app.agents.tools.call_tool", new_callable=AsyncMock) as mock_tool:
+        with _patch_tools() as mock_tool:
             mock_tool.return_value = {"labels": ["Python Programming"], "scores": [0.9]}
             from app.agents.planner_agent import planner_agent_node
 
@@ -200,12 +233,25 @@ class TestPlannerAgent:
         from app.agents.planner_agent import planner_agent_node
 
         path = [
-            {"domain": "Python Programming", "subtopic": "Functions & Closures", "priority": 0, "elo": 500.0},
-            {"domain": "Python Programming", "subtopic": "Variables & Data Types", "priority": 1, "elo": 300.0},
+            {
+                "domain": "Python Programming",
+                "subtopic": "Functions & Closures",
+                "priority": 0,
+                "elo": 500.0,
+            },
+            {
+                "domain": "Python Programming",
+                "subtopic": "Variables & Data Types",
+                "priority": 1,
+                "elo": 300.0,
+            },
         ]
         state = _base_state(
             curriculum_path=path,
-            topic_proficiency={"Functions & Closures": 500.0, "Variables & Data Types": 300.0},
+            topic_proficiency={
+                "Functions & Closures": 500.0,
+                "Variables & Data Types": 300.0,
+            },
         )
         result = await planner_agent_node(state)
         assert result["next_action"] == "quiz"
@@ -216,12 +262,25 @@ class TestPlannerAgent:
         from app.agents.planner_agent import planner_agent_node
 
         path = [
-            {"domain": "Python", "subtopic": "Variables & Data Types", "priority": 0, "elo": 800.0},
-            {"domain": "Python", "subtopic": "Control Flow & Loops", "priority": 1, "elo": 400.0},
+            {
+                "domain": "Python",
+                "subtopic": "Variables & Data Types",
+                "priority": 0,
+                "elo": 800.0,
+            },
+            {
+                "domain": "Python",
+                "subtopic": "Control Flow & Loops",
+                "priority": 1,
+                "elo": 400.0,
+            },
         ]
         state = _base_state(
             curriculum_path=path,
-            topic_proficiency={"Variables & Data Types": 800.0, "Control Flow & Loops": 400.0},
+            topic_proficiency={
+                "Variables & Data Types": 800.0,
+                "Control Flow & Loops": 400.0,
+            },
         )
         result = await planner_agent_node(state)
         assert result["next_action"] == "quiz"
@@ -231,7 +290,14 @@ class TestPlannerAgent:
     async def test_planner_all_mastered_ends_session(self):
         from app.agents.planner_agent import planner_agent_node
 
-        path = [{"domain": "Python", "subtopic": "Variables & Data Types", "priority": 0, "elo": 850.0}]
+        path = [
+            {
+                "domain": "Python",
+                "subtopic": "Variables & Data Types",
+                "priority": 0,
+                "elo": 850.0,
+            }
+        ]
         state = _base_state(
             curriculum_path=path,
             topic_proficiency={"Variables & Data Types": 850.0},
@@ -244,7 +310,14 @@ class TestPlannerAgent:
     async def test_planner_max_iterations_ends_session(self):
         from app.agents.planner_agent import planner_agent_node
 
-        path = [{"domain": "Python", "subtopic": "Async Programming", "priority": 0, "elo": 400.0}]
+        path = [
+            {
+                "domain": "Python",
+                "subtopic": "Async Programming",
+                "priority": 0,
+                "elo": 400.0,
+            }
+        ]
         state = _base_state(
             curriculum_path=path,
             topic_proficiency={},
@@ -259,7 +332,14 @@ class TestPlannerAgent:
     async def test_planner_negative_mood_softens_bloom(self):
         from app.agents.planner_agent import planner_agent_node
 
-        path = [{"domain": "Python", "subtopic": "Async Programming", "priority": 0, "elo": 400.0}]
+        path = [
+            {
+                "domain": "Python",
+                "subtopic": "Async Programming",
+                "priority": 0,
+                "elo": 400.0,
+            }
+        ]
         state = _base_state(
             curriculum_path=path,
             topic_proficiency={"Async Programming": 400.0},
@@ -274,8 +354,17 @@ class TestPlannerAgent:
     async def test_planner_increments_iteration_count(self):
         from app.agents.planner_agent import planner_agent_node
 
-        path = [{"domain": "Python", "subtopic": "Testing & Debugging", "priority": 0, "elo": 400.0}]
-        state = _base_state(curriculum_path=path, topic_proficiency={}, iteration_count=2)
+        path = [
+            {
+                "domain": "Python",
+                "subtopic": "Testing & Debugging",
+                "priority": 0,
+                "elo": 400.0,
+            }
+        ]
+        state = _base_state(
+            curriculum_path=path, topic_proficiency={}, iteration_count=2
+        )
         result = await planner_agent_node(state)
         assert result["iteration_count"] == 3
 
@@ -315,7 +404,7 @@ class TestAutonomousOrchestrator:
             return ("curriculum", "no curriculum yet")
 
         with (
-            patch("app.agents.tools.call_tool", side_effect=_mock_tool),
+            _patch_tools(side_effect=_mock_tool),
             patch("app.agents.supervisor._llm_decide", side_effect=_mock_llm_decide),
         ):
             from app.agents.orchestrator import orchestrator
@@ -349,19 +438,32 @@ class TestAutonomousOrchestrator:
             return ("progress", "quiz score needs Elo update")
 
         with (
-            patch("app.agents.tools.call_tool", side_effect=_mock_tool),
+            _patch_tools(side_effect=_mock_tool),
             patch("app.agents.supervisor._llm_decide", side_effect=_mock_llm_decide),
         ):
             from app.agents.orchestrator import orchestrator
 
             curriculum_path = [
-                {"domain": "Python", "subtopic": "Variables & Data Types", "priority": 0, "elo": 500.0},
-                {"domain": "Python", "subtopic": "Control Flow & Loops", "priority": 1, "elo": 500.0},
+                {
+                    "domain": "Python",
+                    "subtopic": "Variables & Data Types",
+                    "priority": 0,
+                    "elo": 500.0,
+                },
+                {
+                    "domain": "Python",
+                    "subtopic": "Control Flow & Loops",
+                    "priority": 1,
+                    "elo": 500.0,
+                },
             ]
             state = _base_state(
                 task_type="progress",
                 current_topic="Variables & Data Types",
-                topic_proficiency={"Variables & Data Types": 500.0, "Control Flow & Loops": 500.0},
+                topic_proficiency={
+                    "Variables & Data Types": 500.0,
+                    "Control Flow & Loops": 500.0,
+                },
                 curriculum_path=curriculum_path,
                 progress_delta={"score": 0.9},
             )
@@ -372,12 +474,17 @@ class TestAutonomousOrchestrator:
     @pytest.mark.asyncio
     async def test_session_ends_when_all_mastered(self):
         """When all topics are above mastery threshold, supervisor ends session."""
-        with patch("app.agents.tools.call_tool", new_callable=AsyncMock) as mock_tool:
+        with _patch_tools() as mock_tool:
             mock_tool.return_value = {"label": "POSITIVE", "score": 0.99}
             from app.agents.orchestrator import orchestrator
 
             curriculum_path = [
-                {"domain": "Python", "subtopic": "Variables & Data Types", "priority": 0, "elo": 750.0},
+                {
+                    "domain": "Python",
+                    "subtopic": "Variables & Data Types",
+                    "priority": 0,
+                    "elo": 750.0,
+                },
             ]
             state = _base_state(
                 task_type="progress",
@@ -424,7 +531,9 @@ class TestGuardrails:
     def test_output_passes_valid_response(self):
         from app.guardrails import check_output
 
-        result = check_output("Python list comprehensions provide a concise way to create lists.")
+        result = check_output(
+            "Python list comprehensions provide a concise way to create lists."
+        )
         assert result.passed
 
     def test_output_rejects_empty(self):
@@ -470,7 +579,9 @@ class TestGuardrails:
     def test_topic_grounding_passes_overlap(self):
         from app.guardrails import check_topic_grounding
 
-        result = check_topic_grounding("Python uses indentation for block structure.", "Python")
+        result = check_topic_grounding(
+            "Python uses indentation for block structure.", "Python"
+        )
         assert result.passed
 
     def test_sanitize_quiz_batch_filters_bad_questions(self):
@@ -504,14 +615,28 @@ class TestPromptsLoader:
     def test_get_system_prompt_formats_topic(self):
         from app.prompts.loader import get_system_prompt
 
-        prompt = get_system_prompt("doubt_solver", topic_context="Python", bloom_level="apply", curriculum_context="")
+        prompt = get_system_prompt(
+            "doubt_solver",
+            topic_context="Python",
+            bloom_level="apply",
+            curriculum_context="",
+        )
         assert "Python" in prompt
 
-    def test_get_bloom_prompt_formats_topic(self):
-        from app.prompts.loader import get_bloom_prompt
+    def test_quiz_user_template_formats_topic(self):
+        from app.prompts.loader import get_section
 
-        prompt = get_bloom_prompt("Machine Learning", "analyze")
+        template = get_section("quiz_generator", "user_templates")["analyze"]
+        prompt = template.format(topic="Machine Learning")
         assert "Machine Learning" in prompt
+
+    def test_render_prompt_escapes_literal_json_braces(self):
+        from app.prompts.loader import render_prompt
+
+        # JSON braces in the template must survive rendering while placeholders fill in.
+        prompt = render_prompt("skill_gap", "parse_jd", jd_text="Senior Python role")
+        assert "Senior Python role" in prompt
+        assert '"required_skills"' in prompt
 
     def test_get_curriculum_config_has_topic_graph(self):
         from app.prompts.loader import get_curriculum_config
@@ -543,7 +668,9 @@ class TestEvaluator:
                 "bloom_level": "remember",
             }
         ]
-        score, passed, details = eval_quiz_format({}, {"quiz_questions": questions, "bloom_level": "remember"})
+        score, passed, details = eval_quiz_format(
+            {}, {"quiz_questions": questions, "bloom_level": "remember"}
+        )
         assert score == 1.0
         assert passed
 
@@ -560,7 +687,9 @@ class TestEvaluator:
             },
             {"bad": "missing fields"},
         ]
-        score, passed, _ = eval_quiz_format({}, {"quiz_questions": questions, "bloom_level": "remember"})
+        score, passed, _ = eval_quiz_format(
+            {}, {"quiz_questions": questions, "bloom_level": "remember"}
+        )
         assert score == 0.5
         assert not passed
 
@@ -635,7 +764,14 @@ class TestEvaluator:
     def test_progress_elo_eval_good_score_passes(self):
         from app.evals.evaluator import eval_progress_elo
 
-        output = {"progress_delta": {"old_elo": 500.0, "new_elo": 516.0, "score": 1.0, "elo_processed": True}}
+        output = {
+            "progress_delta": {
+                "old_elo": 500.0,
+                "new_elo": 516.0,
+                "score": 1.0,
+                "elo_processed": True,
+            }
+        }
         score, passed, details = eval_progress_elo({"score": 1.0}, output)
         assert passed
         assert score == 1.0
@@ -644,7 +780,14 @@ class TestEvaluator:
         from app.evals.evaluator import eval_progress_elo
 
         # score > 0.5 but new_elo < old_elo — should not happen normally, but eval catches it
-        output = {"progress_delta": {"old_elo": 500.0, "new_elo": 480.0, "score": 0.9, "elo_processed": True}}
+        output = {
+            "progress_delta": {
+                "old_elo": 500.0,
+                "new_elo": 480.0,
+                "score": 0.9,
+                "elo_processed": True,
+            }
+        }
         score, passed, details = eval_progress_elo({"score": 0.9}, output)
         assert not passed
 

@@ -28,8 +28,11 @@ interface AgentStoreState {
   setHFModels: (models: Record<string, HFModelStatus>) => void
 }
 
+// Agents rest at 'idle' ("Ready") and flip to 'active'/'processing' only while a
+// run is in flight (via updateAgentStatus from SSE). Defaulting to 'active' made the
+// status bar show a permanent, misleading "Working…" on every page load.
 const defaultAgentStatus: AgentStatus = {
-  status: 'active',
+  status: 'idle',
   lastPing: Date.now(),
   latencyMs: 0,
 }

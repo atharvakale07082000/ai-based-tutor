@@ -30,29 +30,9 @@ async def generate_flashcards(topic: str, count: int = 10) -> list[dict]:
     model_cfg = HF_MODELS["QUIZ_GENERATOR"]
     client = get_hf_client(model_cfg["provider"])
 
-    prompt = f"""Generate exactly {count} flashcards for studying "{topic}".
+    from app.prompts.loader import render_prompt
 
-Return ONLY a valid JSON array. No explanation. Format:
-[
-  {{
-    "front": "What is a Python decorator?",
-    "back": "A function that wraps another function to add behaviour without modifying it. Uses @syntax.",
-    "hint": "Think: function wrapper",
-    "difficulty": 0.4
-  }},
-  ...
-]
-
-Rules:
-- front: a crisp question or term (max 12 words)
-- back: concise answer + 1 concrete example (max 30 words)
-- hint: 2-4 word memory hook
-- difficulty: float 0.0 (easy) to 1.0 (hard)
-- Cover a range of difficulty levels
-- Vary between definition, application, and comparison cards
-- No duplicate concepts
-- Exactly {count} cards
-Topic: {topic}"""
+    prompt = render_prompt("flashcard", "generate", count=count, topic=topic)
 
     try:
         result = await asyncio.to_thread(

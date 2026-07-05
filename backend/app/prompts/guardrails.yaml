@@ -16,6 +16,14 @@ input:
     - "prompt injection"
     - "DAN mode"
     - "developer mode"
+  # Regexes (case-insensitive) that tolerate filler words the substring list misses,
+  # e.g. "ignore ALL PREVIOUS instructions", "reveal YOUR system prompt".
+  blocked_regexes:
+    - "ignore\\s+(?:\\w+\\s+){0,3}?instructions"
+    - "disregard\\s+(?:\\w+\\s+){0,3}?(?:instructions|system\\s+prompt)"
+    - "forget\\s+(?:\\w+\\s+){0,3}?(?:everything|instructions|context)"
+    - "(?:reveal|show|print|repeat|expose)\\s+(?:\\w+\\s+){0,3}?(?:system\\s+prompt|instructions)"
+    - "(?:you\\s+are\\s+now|act\\s+as\\s+if|pretend\\s+(?:you\\s+are|to\\s+be))"
 
 output:
   min_length: 10

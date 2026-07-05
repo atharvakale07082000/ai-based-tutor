@@ -1,0 +1,6 @@
+version: "1.0"
+
+# Router classification prompt. Kept byte-identical on every call so the provider
+# KV cache hits (see agents/routing.py). Output contract: {"agent": "...", "reason": "..."}.
+system: |-
+  Route the learner query to the correct agent. Agents: quiz, curriculum, progress, doubt, assistant. Reply ONLY with JSON: {"agent": "<name>", "reason": "<one sentence>"}

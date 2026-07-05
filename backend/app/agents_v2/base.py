@@ -21,8 +21,14 @@ import structlog
 
 from app.agents.json_utils import extract_json
 from app.agents.prompt_utils import history_messages, truncate_observation
-from app.hf.client import HF_SEMAPHORE, get_hf_client, record_auth_failure, record_auth_success
+from app.hf.client import (
+    HF_SEMAPHORE,
+    get_hf_client,
+    record_auth_failure,
+    record_auth_success,
+)
 from app.hf.models import HF_MODELS, TOKEN_BUDGETS
+from app.prompts.loader import get_section, render_prompt
 from app.tools import tool_registry
 
 log = structlog.get_logger()
@@ -37,12 +43,7 @@ _HF_SEMAPHORE = HF_SEMAPHORE
 @lru_cache(maxsize=16)
 def _streaming_system_prompt(agent_name: str) -> str:
     """Return the streaming-answer system prompt for a given agent name, cached per name."""
-    return (
-        f"You are {agent_name}, a warm and knowledgeable tutor. "
-        "Deliver this answer conversationally — like a brilliant friend explaining something. "
-        "Use markdown: **bold** for key terms, `code` for code, numbered lists for steps. "
-        "Keep paragraphs short. Never say 'Certainly!' or 'Great question!'. Just answer directly and warmly."
-    )
+    return render_prompt("streaming", "delivery", agent_name=agent_name)
 
 
 class BaseAgent:
@@ -55,21 +56,14 @@ class BaseAgent:
     def _system_prompt(self) -> str:
         """Build the ReAct system prompt once per agent instance."""
         tools_desc = tool_registry.describe_tools(self.tool_names)
-        return (
-            f"You are {self.name}, {self.role_description}\n\n"
-            f"You have access to these tools:\n{tools_desc}\n\n"
-            f"INSTRUCTIONS:\n"
-            f"Work step by step. Each step produce JSON with this exact structure:\n"
-            f'{{"thought": "your reasoning here", "action": {{"tool": "tool_name", "args": {{...}}}}}}\n\n'
-            f"When you have enough information to answer, produce:\n"
-            f'{{"thought": "your final reasoning", "final_answer": "your answer here", "side_effects": [{{"kind": "...", "payload": {{...}}}}]}}\n\n'
-            f"side_effects is an optional list of structured actions for the frontend "
-            f"(e.g. quiz_created, plan_created, progress_updated). "
-            f"Only produce side_effects when a concrete resource was created (quiz saved, progress updated).\n\n"
-            f"Rules:\n"
-            f"- Always produce valid JSON. No markdown fences, no extra text outside the JSON.\n"
-            f"- Only use tools from the list above.\n"
-            f"- Maximum {self.max_steps} steps before you must give a final_answer."
+        role = get_section("react_agent", "roles").get(self.name, self.role_description)
+        return render_prompt(
+            "react_agent",
+            "system",
+            agent_name=self.name,
+            role_description=role,
+            tools=tools_desc,
+            max_steps=self.max_steps,
         )
 
     @cached_property
@@ -115,10 +109,7 @@ class BaseAgent:
                     {"role": "assistant", "content": raw[:500]},
                     {
                         "role": "user",
-                        "content": (
-                            "That was not valid JSON. Reply with ONLY the JSON object described "
-                            "in the instructions — no prose, no markdown fences."
-                        ),
+                        "content": get_section("react_agent", "retry_json"),
                     },
                 ]
                 async with _HF_SEMAPHORE:
@@ -133,7 +124,9 @@ class BaseAgent:
                 parsed = extract_json(raw)
 
             if parsed is None:
-                log.error("base_agent_decide_parse_error", agent=self.name, raw=raw[:200])
+                log.error(
+                    "base_agent_decide_parse_error", agent=self.name, raw=raw[:200]
+                )
                 return {
                     "thought": "parse error",
                     "final_answer": "I got a bit tangled up there — let me try that again with a fresh approach.",
@@ -213,7 +206,12 @@ class BaseAgent:
                     yield delta
                     token_count += 1
         except Exception as e:
-            log.error("base_agent_stream_chunk_error", agent=self.name, error=str(e), tokens=token_count)
+            log.error(
+                "base_agent_stream_chunk_error",
+                agent=self.name,
+                error=str(e),
+                tokens=token_count,
+            )
 
     async def run(
         self,
@@ -271,7 +269,11 @@ class BaseAgent:
 
                 tool_result = await tool_registry.call(tool_name, tool_args)
 
-                result_payload = tool_result.result if tool_result.result is not None else {"error": tool_result.error}
+                result_payload = (
+                    tool_result.result
+                    if tool_result.result is not None
+                    else {"error": tool_result.error}
+                )
                 yield {
                     "type": "tool_result",
                     "step": step_num,
@@ -314,7 +316,10 @@ class BaseAgent:
             else:
                 # Unexpected response shape — treat as final answer with error
                 log.warning(
-                    "base_agent_unexpected_step_shape", agent=self.name, step=step_num, keys=list(step_result.keys())
+                    "base_agent_unexpected_step_shape",
+                    agent=self.name,
+                    step=step_num,
+                    keys=list(step_result.keys()),
                 )
                 messages.append(
                     {
@@ -324,4 +329,7 @@ class BaseAgent:
                 )
 
         # Exhausted max_steps without a final_answer
-        yield {"type": "error", "message": "Agent reached max steps without completing."}
+        yield {
+            "type": "error",
+            "message": "Agent reached max steps without completing.",
+        }

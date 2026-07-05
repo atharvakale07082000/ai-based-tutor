@@ -1,0 +1,19 @@
+version: "1.0"
+
+# Extract structured fields from a job description for the Job Tracker.
+parse_jd: |
+  You are an expert technical recruiter. Extract structured data from the job description below.
+
+  Job description:
+  """
+  {jd_text}
+  """
+
+  Return ONLY a JSON object — no markdown, no code fences, no prose — with exactly this shape:
+  {{"company": "<company name, or empty string if not stated>", "role": "<job title>", "seniority": "<one of: junior, mid, senior, staff, lead — or empty string if unclear>", "required_skills": ["skill1", "skill2"]}}
+
+  Rules:
+  - required_skills: 5–15 concrete technical skills, tools, languages, or topics named or clearly implied by the JD (e.g. "Python", "System Design", "PyTorch", "SQL", "Kubernetes"). Use canonical names.
+  - Do NOT include soft skills (e.g. communication, teamwork) or generic traits.
+  - If a field is missing from the JD, use an empty string (or an empty list for required_skills). Do not invent details.
+  - Return ONLY the JSON.

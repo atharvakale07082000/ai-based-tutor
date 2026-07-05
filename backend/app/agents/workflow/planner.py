@@ -42,7 +42,9 @@ async def build_plan(workflow: str, ctx, *, adapt: bool = False) -> Plan:
 
     if adapt and any(t.optional for t in skeleton):
         try:
-            included_optional, param_overrides = await _llm_adapt(workflow, ctx, skeleton)
+            included_optional, param_overrides = await _llm_adapt(
+                workflow, ctx, skeleton
+            )
             ctx.params.update(param_overrides)
         except Exception as e:  # noqa: BLE001 - planning must never hard-fail; skeleton is the floor
             log.warning("workflow.adapt_failed", workflow=workflow, error=str(e)[:200])
@@ -60,13 +62,18 @@ async def _llm_adapt(workflow: str, ctx, skeleton: list[Task]) -> tuple[set[str]
     from app.hf.models import HF_MODELS, TOKEN_BUDGETS
 
     optional_ids = [t.id for t in skeleton if t.optional]
-    skeleton_desc = "\n".join(f"- {t.id}: {t.label}{' (optional)' if t.optional else ''}" for t in skeleton)
-    prompt = (
-        f"You are planning the '{workflow}' workflow. Here is the fixed task list:\n{skeleton_desc}\n\n"
-        f"Request: {json.dumps(ctx.request, default=str)[:1500]}\n\n"
-        f"Decide which OPTIONAL tasks (ids: {optional_ids}) to include for THIS request. "
-        "You may not add, remove, or reorder non-optional tasks.\n"
-        'Reply ONLY with JSON: {"include": ["<optional id>", ...], "params": {"<task id>": {...}}}'
+    skeleton_desc = "\n".join(
+        f"- {t.id}: {t.label}{' (optional)' if t.optional else ''}" for t in skeleton
+    )
+    from app.prompts.loader import render_prompt
+
+    prompt = render_prompt(
+        "workflow_planner",
+        "adapt",
+        workflow=workflow,
+        skeleton_desc=skeleton_desc,
+        request=json.dumps(ctx.request, default=str)[:1500],
+        optional_ids=optional_ids,
     )
     model_cfg = HF_MODELS["DOUBT_SOLVER"]
     raw = await hf_chat_completion_with_resilience(
@@ -82,5 +89,9 @@ async def _llm_adapt(workflow: str, ctx, skeleton: list[Task]) -> tuple[set[str]
     valid_optional = {t.id for t in skeleton if t.optional}
     valid_all = {t.id for t in skeleton}
     include = {i for i in data.get("include", []) if i in valid_optional}
-    params = {k: v for k, v in (data.get("params") or {}).items() if k in valid_all and isinstance(v, dict)}
+    params = {
+        k: v
+        for k, v in (data.get("params") or {}).items()
+        if k in valid_all and isinstance(v, dict)
+    }
     return include, params

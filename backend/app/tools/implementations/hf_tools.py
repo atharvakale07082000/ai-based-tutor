@@ -63,12 +63,14 @@ async def _generate_explanation(
     from app.hf.client import get_hf_client
     from app.hf.models import HF_MODELS
 
+    from app.prompts.loader import get_section, render_prompt
+
     model_cfg = HF_MODELS["DOUBT_SOLVER"]
     client = get_hf_client(provider=model_cfg["provider"])
     model_id = model_cfg["model_id"]
 
-    system_prompt = "You are a tutor. Explain clearly and concisely."
-    user_message = f"Topic: {topic}\n\nQuestion: {question}"
+    system_prompt = get_section("explanation", "system", "base")
+    user_message = render_prompt("explanation", "user", topic=topic, question=question)
 
     result = await asyncio.to_thread(
         client.chat_completion,
@@ -156,7 +158,14 @@ TOOLS: list[Tool] = [
                 "topic": {"type": "string"},
                 "bloom_level": {
                     "type": "string",
-                    "enum": ["remember", "understand", "apply", "analyze", "evaluate", "create"],
+                    "enum": [
+                        "remember",
+                        "understand",
+                        "apply",
+                        "analyze",
+                        "evaluate",
+                        "create",
+                    ],
                 },
                 "count": {
                     "type": "integer",
