@@ -14,6 +14,10 @@ const buttonVariants = cva(
         accent:
           'bg-[var(--accent-btn)] text-white border-[var(--accent-btn)] ' +
           'hover:bg-[var(--accent-btn-hover)] hover:border-[var(--accent-btn-hover)]',
+        // Amber signal — the single "do this" action on a view (ratings, key CTAs).
+        signal:
+          'bg-[var(--signal-btn)] text-[var(--on-signal)] border-[var(--signal-btn)] ' +
+          'hover:bg-[var(--signal-btn-hover)] hover:border-[var(--signal-btn-hover)]',
         // paper-2 fill (not paper-1) so the button stays visible on paper-1 cards in both themes.
         secondary: 'bg-paper-2 text-ink-0 border-line-2 hover:bg-paper-3',
         ghost: 'bg-transparent text-ink-1 border-transparent hover:bg-paper-2',

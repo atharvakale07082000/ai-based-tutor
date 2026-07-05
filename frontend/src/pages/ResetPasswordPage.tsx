@@ -57,7 +57,7 @@ export default function ResetPasswordPage() {
         {/* Header */}
         <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid var(--line-1)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span className="serif" style={{ fontSize: 20, fontWeight: 400, color: 'var(--ink-0)' }}>
+            <span className="display" style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink-0)' }}>
               Atelier
             </span>
           </div>
@@ -66,7 +66,7 @@ export default function ResetPasswordPage() {
         {/* Form */}
         <form onSubmit={handleSubmit} style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div>
-            <h2 className="serif" style={{ fontSize: 22, fontWeight: 400, margin: '0 0 4px', color: 'var(--ink-0)' }}>
+            <h2 className="display" style={{ fontSize: 24, fontWeight: 600, letterSpacing: '-0.03em', margin: '0 0 4px', color: 'var(--ink-0)' }}>
               Set a new password.
             </h2>
             <p className="t-sm fg-2">Choose something secure and memorable.</p>

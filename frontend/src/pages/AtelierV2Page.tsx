@@ -237,7 +237,7 @@ export default function AtelierV2Page() {
     <div className="grid h-full grid-cols-1 overflow-hidden lg:grid-cols-[220px_1fr]">
       {/* Left rail */}
       <div className="hidden lg:block" style={{ borderRight: '1px solid var(--line-1)', background: 'var(--paper-1)', overflow: 'auto', padding: 14 }}>
-        <div className="caps" style={{ color: 'var(--ink-3)', marginBottom: 8 }}>Try asking</div>
+        <div className="eyebrow" style={{ marginBottom: 8 }}>// try asking</div>
         {[
           'Help me understand transformers',
           'Build me a machine learning course',
@@ -267,7 +267,7 @@ export default function AtelierV2Page() {
           </button>
         ))}
 
-        <div className="caps" style={{ color: 'var(--ink-3)', margin: '20px 0 8px' }}>About Atelier</div>
+        <div className="eyebrow" style={{ margin: '20px 0 8px' }}>// about atelier</div>
         <div className="t-xs fg-3" style={{ lineHeight: 1.6, padding: '0 4px' }}>
           Atelier exposes full reasoning traces — routing decisions, tool calls, and latencies — as your answer streams in.
         </div>
@@ -302,15 +302,17 @@ export default function AtelierV2Page() {
                   color: 'var(--paper-0)',
                   display: 'grid',
                   placeItems: 'center',
-                  fontFamily: 'var(--font-serif)',
-                  fontSize: 20,
-                  fontStyle: 'italic',
+                  fontFamily: 'var(--font-display)',
+                  fontSize: 18,
+                  fontWeight: 700,
+                  letterSpacing: '-0.04em',
                   margin: '0 auto 16px',
                 }}
               >
                 æ
               </div>
-              <div className="serif" style={{ fontSize: 24, color: 'var(--ink-0)' }}>
+              <div className="eyebrow" style={{ marginBottom: 8 }}>// six agents, one thread</div>
+              <div className="display" style={{ fontSize: 26, fontWeight: 600, color: 'var(--ink-0)', letterSpacing: '-0.03em' }}>
                 What would you like to learn?
               </div>
               <div className="t-md fg-3" style={{ marginTop: 8 }}>
@@ -333,9 +335,10 @@ export default function AtelierV2Page() {
                     color: 'var(--paper-0)',
                     display: 'grid',
                     placeItems: 'center',
-                    fontFamily: 'var(--font-serif)',
-                    fontSize: 13,
-                    fontStyle: 'italic',
+                    fontFamily: 'var(--font-display)',
+                    fontSize: 12,
+                    fontWeight: 700,
+                    letterSpacing: '-0.04em',
                     flexShrink: 0,
                   }}
                 >
@@ -457,7 +460,7 @@ export default function AtelierV2Page() {
                 <span className="hidden sm:inline t-xs fg-3">
                   <kbd>⌘</kbd><kbd>↵</kbd> to send
                 </span>
-                <Button size="sm" variant="primary" icon="send" onClick={sendMessage} loading={streaming}>
+                <Button size="sm" variant="signal" icon="send" onClick={sendMessage} loading={streaming}>
                   Send
                 </Button>
               </div>

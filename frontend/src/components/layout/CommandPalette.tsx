@@ -86,7 +86,7 @@ export function CommandPalette() {
       style={{
         position: 'fixed',
         inset: 0,
-        background: 'rgba(20,17,13,0.45)',
+        background: 'rgba(8,12,18,0.5)',
         display: 'flex',
         alignItems: 'flex-start',
         justifyContent: 'center',

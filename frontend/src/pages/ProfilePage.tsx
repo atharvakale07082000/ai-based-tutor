@@ -88,8 +88,8 @@ export default function ProfilePage() {
     <div style={{ padding: '24px 28px', maxWidth: 1240, margin: '0 auto' }}>
       <div style={{ marginBottom: 18, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
         <div>
-          <div className="caps fg-3">Account</div>
-          <h1 className="serif" style={{ fontSize: 36, fontWeight: 400, margin: 0, letterSpacing: '-0.02em' }}>Profile</h1>
+          <div className="eyebrow">Account</div>
+          <h1 className="display" style={{ fontSize: 38, fontWeight: 600, margin: 0, letterSpacing: '-0.03em' }}>Profile</h1>
         </div>
         {!editing && (
           <Button size="sm" variant="secondary" icon="edit" onClick={() => {
@@ -134,22 +134,22 @@ export default function ProfilePage() {
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
               <div style={{ padding: '8px 0', borderTop: '1px solid var(--line-1)' }}>
-                <div className="caps fg-3">Level</div>
-                <div className="serif" style={{ fontSize: 20, marginTop: 2 }}>{level}</div>
+                <div className="readout-label">Level</div>
+                <div className="readout-value tnum" style={{ fontSize: 22, marginTop: 5 }}>{level}</div>
               </div>
               <div style={{ padding: '8px 0', borderTop: '1px solid var(--line-1)' }}>
-                <div className="caps fg-3">XP</div>
-                <div className="serif" style={{ fontSize: 20, marginTop: 2 }}>{xp.toLocaleString()}</div>
+                <div className="readout-label">XP</div>
+                <div className="readout-value tnum" style={{ fontSize: 22, marginTop: 5 }}>{xp.toLocaleString()}</div>
               </div>
               <div style={{ padding: '8px 0' }}>
-                <div className="caps fg-3">Streak</div>
-                <div className="serif" style={{ fontSize: 20, marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
+                <div className="readout-label">Streak</div>
+                <div className="readout-value tnum" style={{ fontSize: 22, marginTop: 5, display: 'flex', alignItems: 'center', gap: 4 }}>
                   <Icon name="flame" size={16} />{streak}d
                 </div>
               </div>
               <div style={{ padding: '8px 0' }}>
-                <div className="caps fg-3">Skills</div>
-                <div className="serif" style={{ fontSize: 20, marginTop: 2 }}>{skillCount}</div>
+                <div className="readout-label">Skills</div>
+                <div className="readout-value tnum" style={{ fontSize: 22, marginTop: 5 }}>{skillCount}</div>
               </div>
             </div>
           </Card>

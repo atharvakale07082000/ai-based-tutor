@@ -69,6 +69,12 @@ export default function OnboardingPage() {
     learnerAPI.getRoles().then((r) => setAllRoles(r.data.roles)).catch(() => { /* silent */ })
   }, [])
 
+  // Seed the target role when the landing page hands one off via ?role=
+  useEffect(() => {
+    const seeded = new URLSearchParams(window.location.search).get('role')
+    if (seeded) { setTargetRole(seeded); setRoleQuery(seeded) }
+  }, [])
+
   // Role autocomplete
   useEffect(() => {
     if (!roleQuery.trim()) { setRoleSuggestions([]); return }
@@ -162,7 +168,7 @@ export default function OnboardingPage() {
     return (
       <div style={{ minHeight: '100%', background: 'var(--paper-0)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 32, padding: 32 }}>
         <div style={{ textAlign: 'center' }}>
-          <div className="serif" style={{ fontSize: 36, color: 'var(--ink-0)', marginBottom: 8 }}>
+          <div className="display" style={{ fontSize: 34, fontWeight: 600, letterSpacing: '-0.03em', color: 'var(--ink-0)', marginBottom: 8 }}>
             Building your career plan
             <span style={{ display: 'inline-flex', gap: 3, marginLeft: 6, verticalAlign: 'middle' }}>
               {[0, 1, 2].map((i) => (
@@ -196,12 +202,12 @@ export default function OnboardingPage() {
 
   const leftHeadings: Record<number, React.ReactNode> = {
     0: authMode === 'signup'
-      ? <><span>Land your next</span><br /><span style={{ fontStyle: 'italic', color: 'var(--accent)' }}>dream role.</span></>
-      : <><span>Welcome</span><br /><span style={{ fontStyle: 'italic', color: 'var(--accent)' }}>back.</span></>,
-    1: <><span>What should we</span><br /><span style={{ fontStyle: 'italic', color: 'var(--ink-2)' }}>call you?</span></>,
-    2: <><span>What role are</span><br /><span style={{ fontStyle: 'italic', color: 'var(--accent)' }}>you targeting?</span></>,
-    3: <><span>How urgently are</span><br /><span style={{ fontStyle: 'italic', color: 'var(--accent)' }}>you searching?</span></>,
-    4: <><span>Tell us about</span><br /><span style={{ fontStyle: 'italic', color: 'var(--accent)' }}>your background.</span></>,
+      ? <><span>Land your next</span><br /><span style={{ color: 'var(--accent)' }}>dream role.</span></>
+      : <><span>Welcome</span><br /><span style={{ color: 'var(--accent)' }}>back.</span></>,
+    1: <><span>What should we</span><br /><span style={{ color: 'var(--ink-2)' }}>call you?</span></>,
+    2: <><span>What role are</span><br /><span style={{ color: 'var(--accent)' }}>you targeting?</span></>,
+    3: <><span>How urgently are</span><br /><span style={{ color: 'var(--accent)' }}>you searching?</span></>,
+    4: <><span>Tell us about</span><br /><span style={{ color: 'var(--accent)' }}>your background.</span></>,
   }
 
   const leftSubtext: Record<number, string> = {
@@ -219,7 +225,7 @@ export default function OnboardingPage() {
       {/* LEFT — context panel */}
       <div style={{ padding: '64px 56px', borderRight: '1px solid var(--line-1)', background: 'var(--paper-1)', display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 48 }}>
-          <div style={{ width: 22, height: 22, borderRadius: 5, background: 'var(--ink-0)', color: 'var(--paper-0)', display: 'grid', placeItems: 'center', fontFamily: 'var(--font-serif)', fontSize: 13, fontStyle: 'italic' }}>æ</div>
+          <div style={{ width: 22, height: 22, borderRadius: 5, background: 'var(--ink-0)', color: 'var(--paper-0)', display: 'grid', placeItems: 'center', fontFamily: 'var(--font-display)', fontSize: 12, fontWeight: 700, letterSpacing: '-0.04em' }}>æ</div>
           <span className="t-md fg-0" style={{ fontWeight: 600 }}>Atelier</span>
         </div>
 
@@ -433,7 +439,7 @@ export default function OnboardingPage() {
               <div>
                 <label className="caps" style={{ color: 'var(--ink-2)' }}>Years of experience</label>
                 <div style={{ marginTop: 16, display: 'flex', alignItems: 'baseline', gap: 6 }}>
-                  <span className="serif" style={{ fontSize: 72, color: 'var(--ink-0)', fontWeight: 400, letterSpacing: '-0.03em' }}>{yearsExp}</span>
+                  <span className="display tnum" style={{ fontSize: 72, color: 'var(--ink-0)', fontWeight: 600, letterSpacing: '-0.03em' }}>{yearsExp}</span>
                   <span className="t-lg fg-2">{yearsExp === 1 ? 'year' : 'years'}</span>
                 </div>
                 <input type="range" min={0} max={20} value={yearsExp} onChange={(e) => setYearsExp(+e.target.value)}

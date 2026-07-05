@@ -283,7 +283,7 @@ export default function CourseDetailPage() {
             <Badge tone="pos" size="xs">Completed</Badge>
           )}
         </div>
-        <h1 className="serif" style={{ fontSize: 32, fontWeight: 400, margin: 0, letterSpacing: '-0.02em' }}>{plan.title}</h1>
+        <h1 className="display" style={{ fontSize: 32, fontWeight: 600, margin: 0, letterSpacing: '-0.03em' }}>{plan.title}</h1>
         <p className="t-md fg-2" style={{ marginTop: 6 }}>{plan.description}</p>
 
         {/* Progress bar */}

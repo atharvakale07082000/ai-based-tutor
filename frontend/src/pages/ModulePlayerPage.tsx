@@ -109,7 +109,7 @@ export default function ModulePlayerPage() {
               <Badge tone="outline" size="xs">{module.topic}</Badge>
             </div>
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 20 }}>
-              <h1 className="serif" style={{ fontSize: 32, fontWeight: 400, margin: 0, letterSpacing: '-0.02em', lineHeight: 1.2, flex: 1 }}>{module.title}</h1>
+              <h1 className="display" style={{ fontSize: 32, fontWeight: 600, margin: 0, letterSpacing: '-0.03em', lineHeight: 1.2, flex: 1 }}>{module.title}</h1>
               <Button
                 size="sm"
                 variant="ghost"

@@ -29,6 +29,12 @@ const config: Config = {
           soft: 'var(--accent-soft)',
           line: 'var(--accent-line)',
         },
+        signal: {
+          DEFAULT: 'var(--signal)',
+          hover: 'var(--signal-hover)',
+          soft: 'var(--signal-soft)',
+          line: 'var(--signal-line)',
+        },
         pos:  { DEFAULT: 'var(--pos)',  soft: 'var(--pos-soft)' },
         warn: { DEFAULT: 'var(--warn)', soft: 'var(--warn-soft)' },
         neg:  { DEFAULT: 'var(--neg)',  soft: 'var(--neg-soft)' },
@@ -49,10 +55,10 @@ const config: Config = {
       },
       fontFamily: {
         sans:    ['Geist', 'ui-sans-serif', 'system-ui', '-apple-system', 'sans-serif'],
-        serif:   ['Instrument Serif', 'ui-serif', 'Georgia', 'serif'],
+        // serif/display retired to Space Grotesk (Instrument Serif dropped)
+        serif:   ['Space Grotesk', 'Geist', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        display: ['Space Grotesk', 'Geist', 'ui-sans-serif', 'system-ui', 'sans-serif'],
         mono:    ['Geist Mono', 'ui-monospace', 'JetBrains Mono', 'Menlo', 'monospace'],
-        // legacy
-        display: ['Instrument Serif', 'ui-serif', 'Georgia', 'serif'],
         body:    ['Geist', 'ui-sans-serif', 'system-ui', 'sans-serif'],
       },
       fontSize: {

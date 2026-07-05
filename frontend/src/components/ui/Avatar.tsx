@@ -1,6 +1,8 @@
 import { cn } from '@/lib/cn'
 
-const PALETTE = ['#A8553A', '#6B5B95', '#4F6F4A', '#4A6B7A', '#B5832C']
+// Deterministic avatar hues — warm-leaning and chosen to read on both the cream
+// light ground and the ink-blue dark ground (used as full-strength text + 13% fill).
+const PALETTE = ['#B4700E', '#A8553A', '#2F8C82', '#4A6B9A', '#8A5A6E']
 
 interface AvatarProps {
   name?: string

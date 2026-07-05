@@ -228,7 +228,8 @@ export default function DoubtChatPage() {
               <div style={{ width: 44, height: 44, borderRadius: 'var(--r-2)', background: 'var(--paper-2)', display: 'grid', placeItems: 'center', marginBottom: 16 }}>
                 <Icon name="sparkle" size={20} style={{ color: 'var(--accent)' }} />
               </div>
-              <div className="serif" style={{ fontSize: 22, marginBottom: 8 }}>What would you like to understand?</div>
+              <div className="eyebrow" style={{ marginBottom: 8 }}>// career coach</div>
+              <div className="display" style={{ fontSize: 24, fontWeight: 600, letterSpacing: '-0.03em', marginBottom: 8 }}>What would you like to understand?</div>
               <div className="t-md fg-3">No question is too basic or too advanced — I'll meet you exactly where you are.</div>
             </div>
           )}
@@ -237,7 +238,7 @@ export default function DoubtChatPage() {
             {messages.map((msg) => (
               <div key={msg.id} style={{ display: 'flex', gap: 10, justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
                 {msg.role === 'assistant' && (
-                  <div style={{ width: 26, height: 26, borderRadius: 'var(--r-pill)', background: 'var(--ink-0)', color: 'var(--paper-0)', display: 'grid', placeItems: 'center', fontFamily: 'var(--font-serif)', fontSize: 13, fontStyle: 'italic', flexShrink: 0 }}>æ</div>
+                  <div style={{ width: 26, height: 26, borderRadius: 'var(--r-pill)', background: 'var(--ink-0)', color: 'var(--paper-0)', display: 'grid', placeItems: 'center', fontFamily: 'var(--font-display)', fontSize: 12, fontWeight: 700, letterSpacing: '-0.04em', flexShrink: 0 }}>æ</div>
                 )}
                 <div
                   style={{

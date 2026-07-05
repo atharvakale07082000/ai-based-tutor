@@ -62,9 +62,10 @@ function PageLoader() {
             color: 'var(--paper-0)',
             display: 'grid',
             placeItems: 'center',
-            fontFamily: 'var(--font-serif)',
-            fontSize: 18,
-            fontStyle: 'italic',
+            fontFamily: 'var(--font-display)',
+            fontSize: 16,
+            fontWeight: 700,
+            letterSpacing: '-0.04em',
           }}
         >
           æ

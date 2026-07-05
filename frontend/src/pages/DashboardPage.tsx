@@ -11,30 +11,32 @@ import { Icon } from '@/components/ui/Icon'
 import { ValueBar } from '@/components/ui/Progress'
 import { EmptyState } from '@/components/ui/EmptyState'
 
-function Stat({ label, value, change, sub, icon }: { label: string; value: string; change?: string; sub?: string; icon?: string }) {
+// Instrument readout: mono label over a big tabular display number.
+// `signal` marks the one headline metric (job readiness) in amber.
+function Stat({ label, value, sub, signal }: { label: string; value: string; sub?: string; signal?: boolean }) {
   return (
-    <div style={{ flex: 1, padding: 14, background: 'var(--paper-1)', border: '1px solid var(--line-1)', borderRadius: 'var(--r-3)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-        <span className="caps" style={{ color: 'var(--ink-2)' }}>{label}</span>
-        {icon && <Icon name={icon} size={12} style={{ color: 'var(--ink-3)' }} />}
-      </div>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-        <span className="serif" style={{ fontSize: 28, color: 'var(--ink-0)', letterSpacing: '-0.02em' }}>{value}</span>
-        {change && <span className="t-xs" style={{ color: change.startsWith('+') ? 'var(--pos)' : 'var(--neg)', fontWeight: 500 }}>{change}</span>}
-      </div>
-      {sub && <div className="t-xs fg-3" style={{ marginTop: 2 }}>{sub}</div>}
+    <div style={{
+      flex: 1, padding: '13px 15px 14px',
+      background: 'var(--paper-1)', border: '1px solid var(--line-1)', borderRadius: 'var(--r-3)',
+      borderTop: `2px solid ${signal ? 'var(--signal)' : 'var(--line-2)'}`,
+    }}>
+      <div className="readout-label">{label}</div>
+      <div className="readout-value tnum" style={{ fontSize: 30, marginTop: 9, color: signal ? 'var(--signal)' : 'var(--ink-0)' }}>{value}</div>
+      {sub && <div className="t-xs fg-3" style={{ marginTop: 4 }}>{sub}</div>}
     </div>
   )
 }
 
+// Skill rating row: terracotta→amber fill under the concept's ELO, in mono figures.
 function SkillBar({ name, value }: { name: string; value: number }) {
+  const pct = Math.min(value * 100, 100)
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0' }}>
-      <span className="t-sm fg-1" style={{ width: 110, fontWeight: 500 }}>{name}</span>
-      <div style={{ flex: 1, height: 4, background: 'var(--paper-3)', borderRadius: 2, overflow: 'hidden' }}>
-        <div style={{ width: `${value * 100}%`, height: '100%', background: 'var(--ink-0)', borderRadius: 2 }} />
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '5px 0' }}>
+      <span className="t-sm fg-1" style={{ width: 108, fontWeight: 500 }}>{name}</span>
+      <div style={{ flex: 1, height: 6, background: 'var(--paper-3)', borderRadius: 3, overflow: 'hidden' }}>
+        <div style={{ width: `${pct}%`, height: '100%', background: 'linear-gradient(90deg, var(--accent), var(--signal))', borderRadius: 3 }} />
       </div>
-      <span className="t-xs fg-3 mono" style={{ width: 30, textAlign: 'right' }}>{Math.round(value * 100)}</span>
+      <span className="mono tnum t-xs fg-2" style={{ width: 34, textAlign: 'right' }}>{Math.round(value * 1000)}</span>
     </div>
   )
 }
@@ -105,12 +107,12 @@ export default function DashboardPage() {
       {/* Greeting */}
       <div style={{ marginBottom: 20, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
         <div>
-          <div className="caps" style={{ color: 'var(--ink-3)', marginBottom: 4 }}>
+          <div className="eyebrow" style={{ marginBottom: 6 }}>
             {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
           </div>
-          <h1 className="serif" style={{ fontSize: 36, fontWeight: 400, margin: 0, color: 'var(--ink-0)', letterSpacing: '-0.02em' }}>
+          <h1 className="display" style={{ fontSize: 38, fontWeight: 600, margin: 0, color: 'var(--ink-0)', letterSpacing: '-0.03em' }}>
             Good {new Date().getHours() < 12 ? 'morning' : 'afternoon'},{' '}
-            <span style={{ fontStyle: 'italic', color: 'var(--accent)' }}>{name || 'Learner'}</span>.
+            <span style={{ color: 'var(--accent)' }}>{name || 'Learner'}</span>.
           </h1>
           <p className="t-md fg-2" style={{ marginTop: 4 }}>
             {learnerProfile?.target_role
@@ -129,12 +131,13 @@ export default function DashboardPage() {
         <Stat
           label="Job Readiness"
           value={learnerProfile?.job_readiness_score != null ? `${Math.round(learnerProfile.job_readiness_score)}%` : `${Math.min(Math.round((Object.keys(topicProficiency).length / 10) * 100), 100)}%`}
-          icon="target"
+          sub="toward your target role"
+          signal
         />
-        <Stat label="Streak" value={String(streak)} sub="days · keep going!" icon="flame" />
-        <Stat label="XP" value={xp.toLocaleString()} icon="bolt" />
-        <Stat label="Coaching sessions" value={String(sessions.length || 0)} sub="total" icon="chat" />
-        <Stat label="Skills" value={String(Object.keys(topicProficiency).length)} sub="topics tracked" icon="book" />
+        <Stat label="Streak" value={String(streak)} sub="days · keep going!" />
+        <Stat label="XP" value={xp.toLocaleString()} sub="lifetime" />
+        <Stat label="Coaching sessions" value={String(sessions.length || 0)} sub="total" />
+        <Stat label="Skills tracked" value={String(Object.keys(topicProficiency).length)} sub="topics rated" />
       </div>
 
       {/* Main grid */}
@@ -287,7 +290,7 @@ export default function DashboardPage() {
               <a className="t-xs fg-2" style={{ cursor: 'pointer' }} onClick={() => navigate('/progress')}>Full activity →</a>
             </div>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 6 }}>
-              <span className="serif" style={{ fontSize: 40, letterSpacing: '-0.02em', color: streak > 0 ? 'var(--ink-0)' : 'var(--ink-3)' }}>{streak}</span>
+              <span className="display tnum" style={{ fontSize: 42, fontWeight: 600, letterSpacing: '-0.03em', color: streak > 0 ? 'var(--ink-0)' : 'var(--ink-3)' }}>{streak}</span>
               <span className="t-sm fg-2">day{streak !== 1 ? 's' : ''} in a row</span>
             </div>
             {streak > 0 ? (
@@ -320,7 +323,7 @@ export default function DashboardPage() {
               </div>
             )}
             <div style={{ padding: 10, borderTop: '1px solid var(--line-1)' }}>
-              <Button size="sm" variant="primary" full iconRight="arrow" onClick={handleStartQuiz} loading={isGeneratingQuiz}>
+              <Button size="sm" variant="signal" full iconRight="arrow" onClick={handleStartQuiz} loading={isGeneratingQuiz}>
                 {dueTopics[0] ? `Practice ${dueTopics[0].topic}` : 'Start skill practice'}
               </Button>
             </div>

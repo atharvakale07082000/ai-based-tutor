@@ -132,8 +132,8 @@ export default function ProgressPage() {
     <div style={{ padding: '24px 28px', maxWidth: 1240, margin: '0 auto' }}>
       <div style={{ marginBottom: 18, display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
         <div>
-          <div className="caps fg-3">Live Progress · Updated now</div>
-          <h1 className="serif" style={{ fontSize: 36, fontWeight: 400, margin: 0, letterSpacing: '-0.02em' }}>Progress</h1>
+          <div className="eyebrow">Live readiness · updated now</div>
+          <h1 className="display" style={{ fontSize: 38, fontWeight: 600, margin: '4px 0 0', letterSpacing: '-0.03em' }}>Readiness</h1>
         </div>
         <Button
           size="sm"
@@ -167,15 +167,15 @@ export default function ProgressPage() {
           { l: 'Quiz accuracy',v: statsLoading ? null : `${Math.round(quizAccuracy * 100)}%`,     s: 'avg score' },
           { l: 'Doubts',       v: statsLoading ? null : String(doubtsResolved),                   s: 'resolved' },
           { l: 'Time',         v: statsLoading ? null : totalMinutes >= 60 ? `${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m` : `${totalMinutes}m`, s: 'total studied' },
-          { l: 'Mastery',      v: statsLoading ? null : `${masteryPct}%`,                         s: `${masteredCount}/${skills.length} topics` },
+          { l: 'Mastery',      v: statsLoading ? null : `${masteryPct}%`,                         s: `${masteredCount}/${skills.length} topics`, signal: true },
         ].map((s, i) => (
-          <div key={i} style={{ padding: 14, borderRight: i < 5 ? '1px solid var(--line-1)' : 'none' }}>
-            <div className="caps fg-2">{s.l}</div>
+          <div key={i} style={{ padding: '14px 15px', borderRight: i < 5 ? '1px solid var(--line-1)' : 'none', borderTop: `2px solid ${s.signal ? 'var(--signal)' : 'transparent'}` }}>
+            <div className="readout-label">{s.l}</div>
             {s.v == null
-              ? <div style={{ height: 32, marginTop: 2 }}><Skeleton style={{ height: 28, width: 60, borderRadius: 4 }} /></div>
-              : <div className="serif" style={{ fontSize: 26, color: 'var(--ink-0)', marginTop: 2 }}>{s.v}</div>
+              ? <div style={{ height: 32, marginTop: 8 }}><Skeleton style={{ height: 26, width: 60, borderRadius: 4 }} /></div>
+              : <div className="readout-value tnum" style={{ fontSize: 26, marginTop: 8, color: s.signal ? 'var(--signal)' : 'var(--ink-0)' }}>{s.v}</div>
             }
-            <div className="t-xs fg-3">{s.s}</div>
+            <div className="t-xs fg-3" style={{ marginTop: 4 }}>{s.s}</div>
           </div>
         ))}
       </div>
@@ -231,13 +231,13 @@ export default function ProgressPage() {
                     style={{
                       width: `${pct}%`,
                       height: '100%',
-                      background: s.elo >= MASTERY_THRESHOLD ? 'var(--pos)' : 'var(--ink-0)',
+                      background: s.elo >= MASTERY_THRESHOLD ? 'var(--pos)' : 'linear-gradient(90deg, var(--accent), var(--signal))',
                       borderRadius: 'var(--r-pill)',
                       transition: 'width 0.6s var(--ease-out)',
                     }}
                   />
                 </div>
-                <span className="t-sm fg-0 mono" style={{ textAlign: 'right' }}>{Math.round(s.elo)}</span>
+                <span className="t-sm fg-0 mono tnum" style={{ textAlign: 'right' }}>{Math.round(s.elo)}</span>
                 <Badge size="xs" tone={badge.tone}>{badge.label}</Badge>
               </div>
             )

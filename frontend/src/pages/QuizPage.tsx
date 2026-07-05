@@ -189,7 +189,7 @@ export default function QuizPage() {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, background: 'var(--paper-0)' }}>
         <div className="fade-in" style={{ background: 'var(--paper-1)', border: '1px solid var(--line-1)', borderRadius: 'var(--r-3)', padding: 32, maxWidth: 420, width: '100%' }}>
-          <h2 className="serif" style={{ fontSize: 24, fontWeight: 400, textAlign: 'center', marginBottom: 20 }}>Reviewing your quiz</h2>
+          <h2 className="display" style={{ fontSize: 24, fontWeight: 600, letterSpacing: '-0.03em', textAlign: 'center', marginBottom: 20 }}>Reviewing your quiz</h2>
           <AgentTimeline steps={reviewSteps} />
         </div>
       </div>
@@ -206,7 +206,8 @@ export default function QuizPage() {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, background: 'var(--paper-0)' }}>
         <div style={{ background: 'var(--paper-1)', border: '1px solid var(--line-1)', borderRadius: 'var(--r-3)', padding: 32, maxWidth: 440, width: '100%' }}>
-          <h2 className="serif" style={{ fontSize: 28, fontWeight: 400, textAlign: 'center', marginBottom: 24 }}>Quiz Complete</h2>
+          <div className="eyebrow" style={{ textAlign: 'center', marginBottom: 6 }}>// results in</div>
+          <h2 className="display" style={{ fontSize: 30, fontWeight: 600, letterSpacing: '-0.03em', textAlign: 'center', marginBottom: 24 }}>Quiz complete</h2>
 
           {/* Score ring */}
           <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 24 }}>
@@ -222,8 +223,8 @@ export default function QuizPage() {
                 />
               </svg>
               <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                <span className="serif" style={{ fontSize: 30, fontWeight: 400 }}>{scorePercent}%</span>
-                <span className="t-xs fg-3">Score</span>
+                <span className="display tnum" style={{ fontSize: 32, fontWeight: 600 }}>{scorePercent}%</span>
+                <span className="readout-label">Score</span>
               </div>
             </div>
           </div>
@@ -282,7 +283,7 @@ export default function QuizPage() {
       {currentQuestion && (
         <div style={{ width: '100%', maxWidth: 560, background: 'var(--paper-1)', border: '1px solid var(--line-1)', borderRadius: 'var(--r-3)', padding: 28 }}>
           <div className="caps fg-3" style={{ marginBottom: 12 }}>Question {currentIdx + 1}</div>
-          <h2 className="serif" style={{ fontSize: 22, fontWeight: 400, marginBottom: 20, lineHeight: 1.45 }}>{currentQuestion.question}</h2>
+          <h2 className="display" style={{ fontSize: 22, fontWeight: 500, letterSpacing: '-0.02em', marginBottom: 20, lineHeight: 1.4 }}>{currentQuestion.question}</h2>
 
           {/* Options */}
           <div role="radiogroup" aria-label="Answer options" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

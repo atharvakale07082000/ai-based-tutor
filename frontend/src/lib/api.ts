@@ -175,6 +175,13 @@ export interface LoginResponse {
   user: { id: string; email: string; name: string; role: string }
 }
 
+// Origin without the /api/v1 suffix — ops endpoints (/health) live at the root.
+const ORIGIN = BASE_URL.replace(/\/api\/v1\/?$/, '')
+
+export const systemAPI = {
+  health: () => axios.get<{ status: string; agent: string; version: string }>(`${ORIGIN}/health`),
+}
+
 export const authAPI = {
   login: (email: string, password: string) =>
     api.post<LoginResponse>('/auth/login', { email, password }),
