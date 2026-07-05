@@ -11,8 +11,11 @@ const buttonVariants = cva(
     variants: {
       variant: {
         primary: 'bg-ink-0 text-paper-0 border-ink-0 hover:bg-accent hover:border-accent',
-        accent: 'bg-accent text-white border-accent hover:bg-accent-hover hover:border-accent-hover',
-        secondary: 'bg-paper-1 text-ink-0 border-line-2 hover:bg-paper-2',
+        accent:
+          'bg-[var(--accent-btn)] text-white border-[var(--accent-btn)] ' +
+          'hover:bg-[var(--accent-btn-hover)] hover:border-[var(--accent-btn-hover)]',
+        // paper-2 fill (not paper-1) so the button stays visible on paper-1 cards in both themes.
+        secondary: 'bg-paper-2 text-ink-0 border-line-2 hover:bg-paper-3',
         ghost: 'bg-transparent text-ink-1 border-transparent hover:bg-paper-2',
         outline: 'bg-transparent text-ink-0 border-line-2 hover:bg-paper-1',
         danger: 'bg-neg-soft text-neg border-transparent hover:bg-neg-soft',

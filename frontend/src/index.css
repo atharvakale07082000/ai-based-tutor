@@ -26,6 +26,11 @@
   --accent-hover: #94472E;
   --accent-soft:  #F0DACE;
   --accent-line:  #D4A992;
+  /* On-accent button fill — kept separate from --accent so the decorative accent
+     (links, rings, agent-quiz) stays vibrant while the button meets WCAG AA with
+     white text in both themes. Light: same as accent. */
+  --accent-btn:       var(--accent);
+  --accent-btn-hover: var(--accent-hover);
 
   --pos:       #4F6F4A;
   --pos-soft:  #DCE5D5;
@@ -121,6 +126,10 @@
   --accent-hover: #D67E5B;
   --accent-soft:  #3A2418;
   --accent-line:  #5A382A;
+  /* Darker than --accent so white button text clears WCAG AA (~4.6:1); hover
+     brightens back to the vibrant accent for a clear affordance lift. */
+  --accent-btn:       #B65A38;
+  --accent-btn-hover: #C66B45;
 
   --pos:       #8DA886;
   --pos-soft:  #2A3326;
