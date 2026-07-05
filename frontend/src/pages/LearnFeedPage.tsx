@@ -399,8 +399,8 @@ export default function LearnFeedPage() {
       {/* Header */}
       <div style={{ marginBottom: 20, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
         <div>
-          <div className="caps fg-3">{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</div>
-          <h1 className="serif" style={{ fontSize: 34, fontWeight: 400, margin: '2px 0 4px', letterSpacing: '-0.02em', color: 'var(--ink-0)' }}>
+          <div className="eyebrow">{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</div>
+          <h1 className="display" style={{ fontSize: 36, fontWeight: 600, margin: '2px 0 4px', letterSpacing: '-0.03em', color: 'var(--ink-0)' }}>
             Today's feed
           </h1>
           <div className="t-sm fg-3">AI-curated content from across the tech industry</div>

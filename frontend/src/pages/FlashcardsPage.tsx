@@ -42,7 +42,7 @@ function FlipCard({ card, revealed, onReveal }: {
           }}
         >
           <div className="caps fg-3" style={{ alignSelf: 'flex-start' }}>{card.topic}</div>
-          <div className="serif" style={{ fontSize: 22, lineHeight: 1.4, color: 'var(--ink-0)', fontWeight: 400 }}>
+          <div className="display" style={{ fontSize: 23, lineHeight: 1.35, color: 'var(--ink-0)', fontWeight: 600, letterSpacing: '-0.02em' }}>
             {card.front}
           </div>
           {card.hint && (
@@ -119,7 +119,7 @@ export default function FlashcardsPage() {
     return (
       <div style={{ padding: '48px 28px', maxWidth: 600, margin: '0 auto', textAlign: 'center' }}>
         <div style={{ fontSize: 48, marginBottom: 16 }}>🎉</div>
-        <h2 className="serif" style={{ fontSize: 28, fontWeight: 400, marginBottom: 8 }}>Session complete</h2>
+        <h2 className="display" style={{ fontSize: 28, fontWeight: 600, letterSpacing: '-0.03em', marginBottom: 8 }}>Session complete</h2>
         <div className="t-sm fg-2" style={{ marginBottom: 24 }}>
           {easy} easy · {hard} need review · {cards.length} total
         </div>

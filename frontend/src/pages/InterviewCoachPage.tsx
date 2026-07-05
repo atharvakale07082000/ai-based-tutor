@@ -33,8 +33,8 @@ export default function InterviewCoachPage() {
   return (
     <div style={{ padding: '24px 28px', maxWidth: 1100, margin: '0 auto' }}>
       <div style={{ marginBottom: 20 }}>
-        <div className="caps fg-3">Workspace</div>
-        <h1 className="serif" style={{ fontSize: 36, fontWeight: 400, margin: 0, letterSpacing: '-0.02em' }}>Interview Coach</h1>
+        <div className="eyebrow">Workspace</div>
+        <h1 className="display" style={{ fontSize: 38, fontWeight: 600, margin: 0, letterSpacing: '-0.03em' }}>Interview Coach</h1>
         <p className="t-md fg-2" style={{ marginTop: 6 }}>Practice a voice mock interview for any module in your learning paths — the AI asks questions, reviews your answers, and scores you against a rubric.</p>
       </div>
 
@@ -77,7 +77,7 @@ export default function InterviewCoachPage() {
                     </div>
                     <Button
                       size="sm"
-                      variant={m.interview_status === 'passed' ? 'outline' : 'primary'}
+                      variant={m.interview_status === 'passed' ? 'outline' : 'signal'}
                       icon="mic"
                       onClick={() => navigate(`/courses/${plan.plan_id}/modules/${m.id}/interview`)}
                     >

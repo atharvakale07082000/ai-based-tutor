@@ -44,8 +44,8 @@ function AdminOverview() {
     <div style={{ padding: '24px 28px', maxWidth: 1240, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
         <div>
-          <div className="caps fg-3">Admin</div>
-          <h1 className="serif" style={{ fontSize: 36, fontWeight: 400, margin: 0, letterSpacing: '-0.02em' }}>Dashboard</h1>
+          <div className="eyebrow">Admin</div>
+          <h1 className="display" style={{ fontSize: 38, fontWeight: 600, margin: 0, letterSpacing: '-0.03em' }}>Dashboard</h1>
         </div>
         <Link to="models" style={{ textDecoration: 'none' }}>
           <Button variant="secondary" size="sm" icon="sparkle">AI Model Status</Button>
@@ -195,7 +195,7 @@ function HFModelsPanel() {
           <span className="t-sm fg-3">Back to Admin</span>
         </Link>
         <div className="caps fg-3">HuggingFace Inference</div>
-        <h1 className="serif" style={{ fontSize: 36, fontWeight: 400, margin: 0, letterSpacing: '-0.02em' }}>AI Model Status</h1>
+        <h1 className="display" style={{ fontSize: 38, fontWeight: 600, margin: 0, letterSpacing: '-0.03em' }}>AI Model Status</h1>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>

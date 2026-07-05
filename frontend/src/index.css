@@ -1,5 +1,5 @@
 /* @import must come before all other CSS (incl. @tailwind), per the CSS spec. */
-@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -32,6 +32,24 @@
   --accent-btn:       var(--accent);
   --accent-btn-hover: var(--accent-hover);
 
+  /* SIGNAL — amber. Reserved for what's *yours*: ratings, live data, and the
+     single primary action on a view. Terracotta stays the brand/link accent;
+     amber is the thing the eye is meant to land on. */
+  --signal:       #C77D18;   /* text/icon on cream — darkened from #E8A13C for AA */
+  --signal-hover: #A8660C;
+  --signal-soft:  #F7E6C4;
+  --signal-line:  #E0B871;
+  --signal-btn:       #B4700E; /* amber button fill, white text clears AA on cream */
+  --signal-btn-hover: #9A5F09;
+  --on-signal:        #FFFFFF;
+
+  /* CODE / EDITOR surface (Monaco + code panels). Light: warm ink slab. */
+  --code-bg:    #1B1712;
+  --code-panel: #241F18;
+  --code-line:  #352E24;
+  --code-ink:   #EFE7D8;
+  --code-faint: #9A8F79;
+
   --pos:       #4F6F4A;
   --pos-soft:  #DCE5D5;
   --warn:      #B5832C;
@@ -47,10 +65,13 @@
   --agent-prog:  #4F6F4A;
   --agent-doubt: #4A6B7A;
 
-  /* TYPE */
-  --font-sans:  'Geist', ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --font-serif: 'Instrument Serif', ui-serif, Georgia, serif;
-  --font-mono:  'Geist Mono', ui-monospace, 'JetBrains Mono', Menlo, monospace;
+  /* TYPE — Space Grotesk carries display; Instrument Serif retired.
+     --font-serif is kept as an alias (repointed to the display face) so every
+     existing `.serif` / var(--font-serif) call site becomes modern for free. */
+  --font-sans:    'Geist', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-display: 'Space Grotesk', 'Geist', ui-sans-serif, system-ui, sans-serif;
+  --font-serif:   var(--font-display);
+  --font-mono:    'Geist Mono', ui-monospace, 'JetBrains Mono', Menlo, monospace;
 
   /* type scale */
   --t-xs:   11px; --t-xs-lh:   16px;
@@ -97,7 +118,7 @@
   --shadow-2: 0 1px 2px rgba(20,17,13,0.06), 0 4px 12px rgba(20,17,13,0.04), 0 0 0 1px var(--line-1);
   --shadow-3: 0 2px 4px rgba(20,17,13,0.06), 0 8px 24px rgba(20,17,13,0.08), 0 0 0 1px var(--line-1);
   --shadow-4: 0 4px 8px rgba(20,17,13,0.08), 0 16px 48px rgba(20,17,13,0.12), 0 0 0 1px var(--line-2);
-  --ring-focus: 0 0 0 2px var(--paper-0), 0 0 0 4px var(--accent);
+  --ring-focus: 0 0 0 2px var(--paper-0), 0 0 0 4px var(--signal);
 
   /* MOTION */
   --ease-out:    cubic-bezier(0.2, 0, 0, 1);
@@ -108,49 +129,65 @@
   --dur-slow:    280ms;
 }
 
-/* DARK THEME */
+/* DARK THEME — "instrument panel": deep ink-blue ground, warm ivory type.
+   The modern half of the mix. (Light theme stays warm cream.) */
 :root[data-theme="dark"] {
-  --paper-0: #14110D;
-  --paper-1: #1B1814;
-  --paper-2: #23201A;
-  --paper-3: #2D2922;
-  --line-1:  #2F2B23;
-  --line-2:  #3D382E;
-  --ink-0:   #F0EBE0;
-  --ink-1:   #D4CDBE;
-  --ink-2:   #A39B89;
-  --ink-3:   #75705F;
-  --ink-4:   #4F4A3F;
+  --paper-0: #0E1620;
+  --paper-1: #14202D;
+  --paper-2: #182838;
+  --paper-3: #1E2E3E;
+  --line-1:  #1C2C3C;
+  --line-2:  #24374A;
+  --ink-0:   #EDE7D8;
+  --ink-1:   #D3DAE2;
+  --ink-2:   #8CA0B3;
+  --ink-3:   #5B7085;
+  --ink-4:   #3A4A5C;
 
-  --accent:       #C66B45;
-  --accent-hover: #D67E5B;
-  --accent-soft:  #3A2418;
-  --accent-line:  #5A382A;
-  /* Darker than --accent so white button text clears WCAG AA (~4.6:1); hover
-     brightens back to the vibrant accent for a clear affordance lift. */
-  --accent-btn:       #B65A38;
-  --accent-btn-hover: #C66B45;
+  /* Terracotta warmed toward the ink-blue ground so links/brand stay legible. */
+  --accent:       #E08A5F;
+  --accent-hover: #EC9E77;
+  --accent-soft:  #2A1B14;
+  --accent-line:  #4A2E22;
+  /* Darker fill so white button text clears AA on the CTA; hover brightens. */
+  --accent-btn:       #C56A44;
+  --accent-btn-hover: #E08A5F;
 
-  --pos:       #8DA886;
-  --pos-soft:  #2A3326;
-  --warn:      #D4A347;
-  --warn-soft: #3B2F18;
-  --neg:       #D26B62;
-  --neg-soft:  #3A211F;
-  --info:      #7FA0B0;
-  --info-soft: #1F2A30;
+  /* SIGNAL — amber reads brilliantly on ink-blue; use full-strength here. */
+  --signal:       #E8A13C;
+  --signal-hover: #F2B252;
+  --signal-soft:  #2A2214;
+  --signal-line:  #4A3A1E;
+  --signal-btn:       #E8A13C;
+  --signal-btn-hover: #F2B252;
+  --on-signal:        #201607;
 
-  --agent-curr:  #9986C9;
-  --agent-quiz:  #C66B45;
-  --agent-prog:  #8DA886;
-  --agent-doubt: #7FA0B0;
+  --code-bg:    #0B1219;
+  --code-panel: #101B26;
+  --code-line:  #1E2E3E;
+  --code-ink:   #EDE7D8;
+  --code-faint: #5B7085;
+
+  --pos:       #7FB79A;
+  --pos-soft:  #16271F;
+  --warn:      #E0B457;
+  --warn-soft: #2B2413;
+  --neg:       #E07C72;
+  --neg-soft:  #2C1A18;
+  --info:      #6FB0C4;
+  --info-soft: #14252C;
+
+  --agent-curr:  #9E8FD6;
+  --agent-quiz:  #E8A13C;
+  --agent-prog:  #7FB79A;
+  --agent-doubt: #5FD0C4;
 
   --shadow-0: 0 0 0 1px var(--line-1);
-  --shadow-1: 0 1px 2px rgba(0,0,0,0.3), 0 0 0 1px var(--line-1);
-  --shadow-2: 0 1px 2px rgba(0,0,0,0.4), 0 4px 12px rgba(0,0,0,0.3), 0 0 0 1px var(--line-1);
-  --shadow-3: 0 2px 4px rgba(0,0,0,0.4), 0 8px 24px rgba(0,0,0,0.4), 0 0 0 1px var(--line-1);
-  --shadow-4: 0 4px 8px rgba(0,0,0,0.5), 0 16px 48px rgba(0,0,0,0.5), 0 0 0 1px var(--line-2);
-  --ring-focus: 0 0 0 2px var(--paper-0), 0 0 0 4px var(--accent);
+  --shadow-1: 0 1px 2px rgba(0,0,0,0.4), 0 0 0 1px var(--line-1);
+  --shadow-2: 0 1px 2px rgba(0,0,0,0.5), 0 4px 12px rgba(0,0,0,0.4), 0 0 0 1px var(--line-1);
+  --shadow-3: 0 2px 4px rgba(0,0,0,0.5), 0 8px 24px rgba(0,0,0,0.5), 0 0 0 1px var(--line-1);
+  --shadow-4: 0 4px 8px rgba(0,0,0,0.6), 0 16px 48px rgba(0,0,0,0.6), 0 0 0 1px var(--line-2);
+  --ring-focus: 0 0 0 2px var(--paper-0), 0 0 0 4px var(--signal);
 }
 
 /* DENSITY */
@@ -207,16 +244,40 @@ input, textarea { font: inherit; color: inherit; }
 .t-3xl  { font-size: var(--t-3xl);  line-height: var(--t-3xl-lh); letter-spacing: var(--tracking-tight); }
 .t-4xl  { font-size: var(--t-4xl);  line-height: var(--t-4xl-lh); letter-spacing: var(--tracking-tight); }
 .t-5xl  { font-size: var(--t-5xl);  line-height: var(--t-5xl-lh); letter-spacing: var(--tracking-tight); }
-.serif  { font-family: var(--font-serif); letter-spacing: -0.01em; }
+/* .serif is retained as the historical display hook — now Space Grotesk.
+   .display is the preferred name going forward; both resolve to the same face. */
+.serif,
+.display { font-family: var(--font-display); letter-spacing: -0.02em; font-weight: 500; }
 .mono   { font-family: var(--font-mono); }
 .italic { font-style: italic; }
 .caps   { text-transform: uppercase; letter-spacing: var(--tracking-caps); font-size: 11px; font-weight: 500; color: var(--ink-2); }
+
+/* Mono section marker — "// like this". Structural device carried in from the
+   landing; encodes "this is a labelled channel", not decoration. */
+.eyebrow {
+  font-family: var(--font-mono); font-size: 11px; font-weight: 500;
+  letter-spacing: 0.06em; color: var(--ink-3);
+}
+/* Agent duty-code chip. */
+.callsign {
+  display: inline-flex; align-items: center;
+  font-family: var(--font-mono); font-size: 10px; font-weight: 500;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  padding: 2px 7px; border-radius: var(--r-1);
+  border: 1px solid var(--line-2); color: var(--ink-2);
+}
+/* Tabular figures — ratings, counts, timers stay column-aligned. */
+.tnum { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum' 1; }
+/* Instrument-readout stat: a big display number under a mono label. */
+.readout-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); }
+.readout-value { font-family: var(--font-display); font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--ink-0); line-height: 1; }
 
 .fg-0 { color: var(--ink-0); }
 .fg-1 { color: var(--ink-1); }
 .fg-2 { color: var(--ink-2); }
 .fg-3 { color: var(--ink-3); }
 .fg-accent { color: var(--accent); }
+.fg-signal { color: var(--signal); }
 
 .bg-0 { background: var(--paper-0); }
 .bg-1 { background: var(--paper-1); }

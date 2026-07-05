@@ -70,8 +70,8 @@ function ScoreRing({ score, outOf = 10 }: { score: number; outOf?: number }) {
         />
       </svg>
       <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-        <span className="serif" style={{ fontSize: 26, fontWeight: 400, lineHeight: 1 }}>{score.toFixed(1)}</span>
-        <span className="t-xs fg-3">/ {outOf}</span>
+        <span className="display tnum" style={{ fontSize: 28, fontWeight: 600, lineHeight: 1 }}>{score.toFixed(1)}</span>
+        <span className="t-xs fg-3 mono">/ {outOf}</span>
       </div>
     </div>
   )
@@ -190,14 +190,14 @@ function CodeEnvironment({ planId, moduleId, interviewId, language, value, onCha
         border: '1px solid var(--line-1)',
         borderRadius: 10,
         overflow: 'hidden',
-        background: '#1e1e1e',
+        background: 'var(--code-bg)',
       }}>
         {/* Editor toolbar */}
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: '8px 14px',
-          background: '#2d2d2d',
-          borderBottom: '1px solid #3a3a3a',
+          background: 'var(--code-panel)',
+          borderBottom: '1px solid var(--code-line)',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <select
@@ -206,7 +206,7 @@ function CodeEnvironment({ planId, moduleId, interviewId, language, value, onCha
               aria-label="Language"
               style={{
                 fontSize: 11, fontFamily: 'var(--font-mono)', letterSpacing: '0.04em',
-                background: '#1e1e1e', color: '#ddd', border: '1px solid #3a3a3a',
+                background: 'var(--code-bg)', color: 'var(--code-ink)', border: '1px solid var(--code-line)',
                 borderRadius: 4, padding: '2px 6px', cursor: 'pointer',
               }}
             >
@@ -219,8 +219,8 @@ function CodeEnvironment({ planId, moduleId, interviewId, language, value, onCha
             style={{
               display: 'flex', alignItems: 'center', gap: 6,
               padding: '4px 12px', borderRadius: 'var(--r-2)',
-              background: running ? '#3a3a3a' : 'var(--pos)',
-              color: running ? '#888' : '#fff',
+              background: running ? 'var(--code-line)' : 'var(--pos)',
+              color: running ? 'var(--code-faint)' : '#fff',
               fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
               cursor: running ? 'default' : 'pointer',
               border: 'none',
@@ -235,8 +235,8 @@ function CodeEnvironment({ planId, moduleId, interviewId, language, value, onCha
         </div>
 
         <Suspense fallback={
-          <div style={{ height: 220, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#1e1e1e' }}>
-            <span style={{ color: '#888', fontSize: 13 }}>Loading editor…</span>
+          <div style={{ height: 220, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--code-bg)' }}>
+            <span style={{ color: 'var(--code-faint)', fontSize: 13 }}>Loading editor…</span>
           </div>
         }>
           <MonacoEditor
@@ -571,7 +571,7 @@ export default function ModuleInterviewPage() {
               <Icon name="sparkle" size={24} style={{ color: 'var(--accent)' }} />
             </div>
           </div>
-          <h2 className="serif" style={{ fontSize: 22, fontWeight: 400, marginBottom: 8 }}>Computing your score</h2>
+          <h2 className="display" style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-0.03em', marginBottom: 8 }}>Computing your score</h2>
           <p className="t-sm fg-2" style={{ marginBottom: 24 }}>AI is cross-checking all answers against module knowledge…</p>
           <div style={{ display: 'inline-flex', justifyContent: 'flex-start', textAlign: 'left' }}>
             <AgentTimeline steps={scoringSteps} />
@@ -586,7 +586,7 @@ export default function ModuleInterviewPage() {
       <div style={{ height: '100%', overflowY: 'auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '32px 16px' }}>
         <div style={{ ...S.card, ...S.fadeIn, maxWidth: 560 }}>
           <div style={{ textAlign: 'center', marginBottom: 24 }}>
-            <h2 className="serif" style={{ fontSize: 26, fontWeight: 400, marginBottom: 16 }}>Interview Complete</h2>
+            <h2 className="display" style={{ fontSize: 28, fontWeight: 600, letterSpacing: '-0.03em', marginBottom: 16 }}>Interview complete</h2>
             <ScoreRing score={finalResult.final_score} />
             <div style={{ margin: '14px 0 0' }}>
               <Badge tone={finalResult.passed ? 'pos' : 'neg'} size="sm">
@@ -676,7 +676,7 @@ export default function ModuleInterviewPage() {
                 <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'var(--ink-0)', color: 'var(--paper-0)', display: 'grid', placeItems: 'center', margin: '0 auto 16px' }}>
                   <Icon name="mic" size={22} />
                 </div>
-                <h2 className="serif" style={{ fontSize: 22, fontWeight: 400, marginBottom: 6 }}>Ready to be assessed?</h2>
+                <h2 className="display" style={{ fontSize: 24, fontWeight: 600, letterSpacing: '-0.03em', marginBottom: 6 }}>Ready to be assessed?</h2>
                 <p className="t-sm fg-2">{interview?.questions.length} questions on <strong>{currentModule?.title}</strong></p>
                 <p className="t-xs fg-3" style={{ marginTop: 4 }}>Pass threshold: 6 / 10 per question average</p>
               </div>

@@ -120,9 +120,10 @@ export function Sidebar() {
               color: 'var(--paper-0)',
               display: 'grid',
               placeItems: 'center',
-              fontFamily: 'var(--font-serif)',
-              fontSize: 14,
-              fontStyle: 'italic',
+              fontFamily: 'var(--font-display)',
+              fontSize: 13,
+              fontWeight: 700,
+              letterSpacing: '-0.04em',
               flexShrink: 0,
             }}
           >
@@ -245,7 +246,7 @@ export function Sidebar() {
                           top: 4,
                           bottom: 4,
                           width: 2,
-                          background: 'var(--accent)',
+                          background: 'var(--signal)',
                           borderRadius: 2,
                         }}
                       />

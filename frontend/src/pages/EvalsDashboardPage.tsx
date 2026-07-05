@@ -37,8 +37,8 @@ function timeAgo(iso: string): string {
 function StatCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
   return (
     <Card padding="md" style={{ flex: 1, minWidth: 150 }}>
-      <div className="caps fg-3" style={{ marginBottom: 6 }}>{label}</div>
-      <div className="serif" style={{ fontSize: 30, fontWeight: 400, color: color ?? 'var(--ink-0)', lineHeight: 1 }}>{value}</div>
+      <div className="readout-label" style={{ marginBottom: 8 }}>{label}</div>
+      <div className="readout-value tnum" style={{ fontSize: 30, color: color ?? 'var(--ink-0)' }}>{value}</div>
       {sub && <div className="t-xs fg-3" style={{ marginTop: 4 }}>{sub}</div>}
     </Card>
   )
@@ -82,8 +82,8 @@ export default function EvalsDashboardPage() {
     <div style={{ padding: '24px 28px', maxWidth: 1240, margin: '0 auto' }}>
       <div style={{ marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 8 }}>
         <div>
-          <div className="caps fg-3">Superuser</div>
-          <h1 className="serif" style={{ fontSize: 36, fontWeight: 400, margin: 0, letterSpacing: '-0.02em' }}>Agent Evals</h1>
+          <div className="eyebrow">Superuser</div>
+          <h1 className="display" style={{ fontSize: 38, fontWeight: 600, margin: 0, letterSpacing: '-0.03em' }}>Agent Evals</h1>
           <p className="t-md fg-2" style={{ marginTop: 6 }}>Live DeepEval quality scores — faithfulness, correctness, accuracy & multi-turn consistency — sampled from real requests.</p>
         </div>
         <span className="t-xs fg-3" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>

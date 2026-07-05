@@ -100,8 +100,8 @@ export default function CoursePlannerPage() {
   return (
     <div style={{ padding: '24px 28px', maxWidth: 1240, margin: '0 auto' }}>
       <div style={{ marginBottom: 20 }}>
-        <div className="caps fg-3">Learning Path Builder</div>
-        <h1 className="serif" style={{ fontSize: 36, fontWeight: 400, margin: 0, letterSpacing: '-0.02em' }}>Course Planner</h1>
+        <div className="eyebrow">Learning Path Builder</div>
+        <h1 className="display" style={{ fontSize: 38, fontWeight: 600, margin: 0, letterSpacing: '-0.03em' }}>Course Planner</h1>
         <p className="t-md fg-2" style={{ marginTop: 6 }}>Describe what you want to master — the agent searches, structures, and builds a complete roadmap.</p>
       </div>
 
@@ -118,7 +118,7 @@ export default function CoursePlannerPage() {
             inputSize="lg"
             style={{ flex: 1 }}
           />
-          <Button variant="primary" icon="sparkle" onClick={handlePlan} loading={isPlanning}>Build Plan</Button>
+          <Button variant="signal" icon="sparkle" onClick={handlePlan} loading={isPlanning}>Build Plan</Button>
         </div>
 
         {/* Suggestion chips */}

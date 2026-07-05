@@ -79,12 +79,12 @@ export default function JobTrackerPage() {
     <div style={{ padding: '24px 28px', maxWidth: 1400, margin: '0 auto' }}>
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 20, gap: 12, flexWrap: 'wrap' }}>
         <div>
-          <div className="caps fg-3">Career Tools</div>
-          <h1 className="serif" style={{ fontSize: 36, fontWeight: 400, margin: 0, letterSpacing: '-0.02em' }}>Job Tracker</h1>
+          <div className="eyebrow">Career Tools</div>
+          <h1 className="display" style={{ fontSize: 38, fontWeight: 600, margin: 0, letterSpacing: '-0.03em' }}>Job Tracker</h1>
           <p className="t-md fg-2" style={{ marginTop: 6 }}>Track applications and see how ready you are for each role — paste a job and the agent maps it to your skills.</p>
         </div>
         {!adding && (
-          <Button variant="primary" icon="plus" onClick={() => setAdding(true)}>Add a job</Button>
+          <Button variant="signal" icon="plus" onClick={() => setAdding(true)}>Add a job</Button>
         )}
       </div>
 
@@ -97,7 +97,7 @@ export default function JobTrackerPage() {
           <Icon name="course" size={26} style={{ color: 'var(--ink-3)', marginBottom: 8 }} />
           <div className="t-lg fg-1" style={{ marginBottom: 4 }}>No applications yet</div>
           <div className="t-sm fg-3" style={{ marginBottom: 14 }}>Paste a job description to see your readiness and skill gaps.</div>
-          <Button variant="primary" icon="plus" onClick={() => setAdding(true)}>Add your first job</Button>
+          <Button variant="signal" icon="plus" onClick={() => setAdding(true)}>Add your first job</Button>
         </Card>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: `repeat(${STAGES.length}, minmax(0, 1fr))`, gap: 12, alignItems: 'start' }}>
@@ -266,7 +266,7 @@ function AddJobPanel({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
       />
 
       <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-        <Button variant="primary" icon="sparkle" onClick={analyze} loading={analyzing} disabled={analyzing}>Analyze fit</Button>
+        <Button variant="signal" icon="sparkle" onClick={analyze} loading={analyzing} disabled={analyzing}>Analyze fit</Button>
         {analysis && <Button variant="outline" icon="check" onClick={save} loading={saving}>Save to board</Button>}
       </div>
 
