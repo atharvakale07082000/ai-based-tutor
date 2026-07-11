@@ -41,3 +41,53 @@ quiz:
   # correct_index must be in [0, 3]
   valid_correct_index_range: [0, 3]
   min_question_length: 10
+
+# Topic moderation for generation entry points (course goal, quiz topic, curriculum goal).
+# Atelier is an educational platform for professional/technical skills, so off-domain,
+# explicit, or vague "topics" must be rejected before any generation runs. Terms are matched
+# on WORD BOUNDARIES (so "assignment" is never flagged for "ass", etc.).
+topic:
+  min_length: 3
+  # Every word being vague ⇒ reject (e.g. "stuff", "random things"); a real skill token spares it.
+  vague_terms:
+    - stuff
+    - things
+    - thing
+    - whatever
+    - random
+    - anything
+    - something
+    - idk
+    - dunno
+    - test
+    - testing
+    - asdf
+    - qwerty
+    - none
+    - na
+  # Explicit / off-domain content an educational-jobs platform should never build a course for.
+  blocked_terms:
+    - porn
+    - pornography
+    - sex
+    - nude
+    - nudes
+    - nudity
+    - xxx
+    - nsfw
+    - erotica
+    - erotic
+    - fetish
+    - escort
+    - hentai
+    - onlyfans
+    - cocaine
+    - heroin
+    - meth
+    - methamphetamine
+    - "how to make a bomb"
+    - bomb making
+    - explosives
+    - suicide
+    - "self harm"
+    - "self-harm"

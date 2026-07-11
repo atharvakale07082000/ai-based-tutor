@@ -145,6 +145,7 @@ interface CodeEnvProps {
 // Monaco highlighting id; `id` is what we send to the run-code API.
 const CODE_LANGUAGES: { id: string; label: string; monaco: string }[] = [
   { id: 'python', label: 'Python', monaco: 'python' },
+  { id: 'sql', label: 'SQL', monaco: 'sql' },
   { id: 'javascript', label: 'JavaScript', monaco: 'javascript' },
   { id: 'typescript', label: 'TypeScript', monaco: 'typescript' },
   { id: 'java', label: 'Java', monaco: 'java' },
@@ -161,11 +162,16 @@ const CODE_LANGUAGES: { id: string; label: string; monaco: string }[] = [
 ]
 const monacoLang = (id: string) => CODE_LANGUAGES.find((l) => l.id === id)?.monaco ?? (id === 'python3' ? 'python' : id)
 
+// Query languages the code runner can't execute (no Piston runtime). The learner
+// writes them in a normal editor and the AI interviewer evaluates the answer.
+const QUERY_LANGS = new Set(['sql'])
+
 function CodeEnvironment({ planId, moduleId, interviewId, language, value, onChange }: CodeEnvProps) {
   const [output, setOutput] = useState<{ stdout: string; stderr: string; exit_code: number } | null>(null)
   const [running, setRunning] = useState(false)
   // Question suggests a language, but the learner can switch.
   const [selectedLang, setSelectedLang] = useState(language === 'python3' ? 'python' : language)
+  const isRunnable = !QUERY_LANGS.has(selectedLang)
 
   const handleRun = async () => {
     if (!value.trim()) return
@@ -213,25 +219,32 @@ function CodeEnvironment({ planId, moduleId, interviewId, language, value, onCha
               {CODE_LANGUAGES.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
             </select>
           </div>
-          <button
-            onClick={handleRun}
-            disabled={running || !value.trim()}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              padding: '4px 12px', borderRadius: 'var(--r-2)',
-              background: running ? 'var(--code-line)' : 'var(--pos)',
-              color: running ? 'var(--code-faint)' : '#fff',
-              fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
-              cursor: running ? 'default' : 'pointer',
-              border: 'none',
-              transition: 'background 0.15s ease',
-            }}
-          >
-            {running
-              ? <><Icon name="refresh" size={11} style={{ animation: 'spin 1s linear infinite' }} /> Running…</>
-              : <><Icon name="play" size={11} /> Run Code</>
-            }
-          </button>
+          {isRunnable ? (
+            <button
+              onClick={handleRun}
+              disabled={running || !value.trim()}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '4px 12px', borderRadius: 'var(--r-2)',
+                background: running ? 'var(--code-line)' : 'var(--pos)',
+                color: running ? 'var(--code-faint)' : '#fff',
+                fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
+                cursor: running ? 'default' : 'pointer',
+                border: 'none',
+                transition: 'background 0.15s ease',
+              }}
+            >
+              {running
+                ? <><Icon name="refresh" size={11} style={{ animation: 'spin 1s linear infinite' }} /> Running…</>
+                : <><Icon name="play" size={11} /> Run Code</>
+              }
+            </button>
+          ) : (
+            // Query languages (e.g. SQL) can't be executed — the AI interviewer grades the answer.
+            <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--code-faint)', fontFamily: 'var(--font-mono)' }}>
+              <Icon name="sparkle" size={11} style={{ color: 'var(--code-faint)' }} /> AI-evaluated
+            </span>
+          )}
         </div>
 
         <Suspense fallback={
@@ -260,6 +273,14 @@ function CodeEnvironment({ planId, moduleId, interviewId, language, value, onCha
           />
         </Suspense>
       </div>
+
+      {/* Query-language hint (no compiler) */}
+      {!isRunnable && (
+        <div className="t-xs fg-3" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 2px' }}>
+          <Icon name="info" size={12} style={{ color: 'var(--ink-3)' }} />
+          Write your query here — the AI interviewer reads and grades it when you submit. There's nothing to run.
+        </div>
+      )}
 
       {/* Output panel */}
       {output && (

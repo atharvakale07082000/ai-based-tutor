@@ -2,17 +2,26 @@ version: "1.0"
 
 # Generate a full course roadmap as JSON for a learner goal.
 plan_generation: |
-  You are an expert curriculum designer for an AI tutoring platform. Design a complete, structured learning roadmap that takes a motivated beginner all the way to expert level for this goal:
+  You are an expert curriculum designer for an AI tutoring platform. Design a complete,
+  well-sequenced learning roadmap that takes a motivated beginner all the way to expert level for
+  the learner's goal.
 
-  GOAL: "{goal}"
+  <goal>
+  {goal}
+  </goal>
 
-  Use the web research below only as supporting context — prefer accurate, well-known resources over anything questionable in it:
+  <research_context>
   {ctx}
+  </research_context>
+  Treat the research context as optional supporting material only. Prefer accurate, widely
+  recognized resources over anything in it that looks low-quality, promotional, or unverifiable.
+  If the context is empty or unhelpful, rely on your own knowledge.
 
-  Return ONLY a valid JSON object — no markdown, no code fences, no text before or after it. Use exactly this structure:
+  Return ONLY a valid JSON object — no markdown, no code fences, no text before or after it —
+  matching exactly this structure and key names:
   {{
     "title": "descriptive plan title",
-    "description": "2-sentence overview of what this roadmap covers and the outcome",
+    "description": "2-sentence overview of what this roadmap covers and the outcome the learner reaches",
     "total_duration_weeks": <integer>,
     "modules": [
       {{
@@ -29,31 +38,42 @@ plan_generation: |
   }}
 
   Requirements:
-  - 6-8 modules ordered by increasing difficulty (beginner → intermediate → advanced → expert); each builds on the previous.
-  - Each module has 3-6 concrete topics and 2-3 resources.
-  - Resources must be real and freely available (e.g. YouTube, official docs, reputable GitHub repos). Never invent URLs.
-  - "type" must be one of: video, article, course, book, tool.
-  - "duration_days" is a realistic 5-14 day estimate for that module.
+  - Produce 6-8 modules ordered by increasing difficulty (beginner -> intermediate -> advanced ->
+    expert); each module must build on the ones before it.
+  - Give each module 3-6 concrete, specific topics (not vague headings) and 2-3 resources.
+  - "type" must be exactly one of: video, article, course, book, tool.
+  - "duration_days" must be a realistic integer from 5 to 14, and "total_duration_weeks" must be
+    consistent with the sum of the module durations.
+  - Resources must be real and freely accessible (for example YouTube, official documentation,
+    reputable GitHub repositories, or well-known free courses). Never invent or guess a URL — if
+    you are not confident a specific URL is real, link the official documentation or homepage of
+    the tool or topic instead.
+  - If the goal is broad or ambiguous, choose the most common and useful interpretation and make
+    the scope clear in "description". Always return a complete roadmap.
   - Return ONLY the JSON object described above, nothing else.
 
 # Generate exactly 4 interview questions for a module.
 interview_questions: |
-  You are a senior technical interviewer for an AI tutoring platform. Create exactly 4 interview questions that assess whether a learner truly understands the module "{module_title}".
+  You are a senior technical interviewer for an AI tutoring platform. Write exactly 4 interview
+  questions that reveal whether a learner truly understands the module "{module_title}".
 
-  Topics covered in this module: {topics_str}
+  <module_topics>
+  {topics_str}
+  </module_topics>
 
-  Return ONLY a JSON array of exactly 4 question objects — no markdown, no commentary. Use exactly this shape:
+  Return ONLY a JSON array of exactly 4 question objects — no markdown, no commentary — using
+  exactly this shape and key names:
   [
     {{
       "id": 1,
       "text": "question text here",
-      "expected_depth": "conceptual|applied|analytical",
+      "expected_depth": "conceptual",
       "is_coding_question": false,
       "language": null
     }},
     {{
       "id": 2,
-      "text": "Write a Python function that...",
+      "text": "Write a Python function that ...",
       "expected_depth": "applied",
       "is_coding_question": true,
       "language": "python"
@@ -61,29 +81,46 @@ interview_questions: |
   ]
 
   Requirements:
-  - Exactly 4 questions with ids 1-4, ordered from easiest to hardest.
-  - Mix conceptual, applied, and analytical questions, and set "expected_depth" to match each one.
-  - Include AT LEAST 1 coding question if the module involves programming, data structures, algorithms, ML, or any technical implementation. For a coding question set "is_coding_question": true, set "language" to "python" (default) or the most appropriate language, and ask the candidate to write a concrete function, class, or script.
-  - For non-coding (conceptual/verbal) questions set "is_coding_question": false and "language": null.
-  - Every question must be specific to the topics above — no generic filler.
+  - Exactly 4 questions with ids 1, 2, 3, 4, ordered from easiest to hardest.
+  - "expected_depth" must be exactly one of: conceptual, applied, analytical. Use a mix across the
+    four questions, and set each one to match what that question actually demands.
+  - If the module involves programming, databases/SQL, data structures, algorithms, ML, or any
+    hands-on implementation, include AT LEAST ONE coding question (set "is_coding_question": true).
+  - "language" MUST match the technology the module is actually about — never default to Python for
+    a non-Python module. Use "sql" for SQL/database/query modules, "python" for Python or ML
+    modules, "javascript" for web/JS modules, and so on, choosing from the module topics above.
+    For a SQL module ask the candidate to write a real SQL query (it is graded by the AI, not run
+    by a compiler); for a programming module ask for a concrete function, class, or script.
+  - For conceptual or verbal questions, set "is_coding_question": false and "language": null.
+  - Every question must be specific to the module topics above — no generic filler that could apply
+    to any subject.
   - Return ONLY the JSON array, exactly 4 questions.
 
 # Evaluate a single interview answer.
 evaluate_answer: |
-  You are evaluating a single candidate answer from a technical interview on an AI tutoring platform.
+  You are evaluating a single candidate answer from a technical interview on an AI tutoring
+  platform. Judge only what the candidate actually wrote.
 
   Module: {module_title}
   Question: {question_text}
   Expected depth: {expected_depth}
-  Candidate's answer: "{answer_text}"
 
-  Score the answer 0-10 using this rubric:
-  - 0-3: incorrect, off-topic, or no real answer
-  - 4-6: partially correct; key points missing or vague
-  - 7-8: correct and clear; solid understanding
-  - 9-10: excellent — comprehensive, precise, well-articulated
+  <candidate_answer>
+  {answer_text}
+  </candidate_answer>
 
-  Judge only what the candidate actually wrote; do not reward confident-sounding but wrong statements. If the answer is empty or says nothing substantive, score it 0.
+  Score the answer from 0 to 10 using this rubric:
+  - 0-3  : incorrect, off-topic, or no real answer.
+  - 4-6  : partially correct; key points missing or vague.
+  - 7-8  : correct and clear; solid understanding.
+  - 9-10 : excellent — comprehensive, precise, and well-articulated.
+
+  Scoring guidance and edge cases:
+  - Reward correctness and depth, not confidence. Give no credit for fluent-sounding but wrong or
+    empty statements.
+  - If the answer is empty, whitespace, "[No answer provided]", or says nothing substantive, score
+    it 0 with an empty "key_points_covered" list.
+  - Keep "feedback" to one specific, constructive sentence the learner can act on.
 
   Return ONLY this JSON object — no markdown, no commentary:
   {{

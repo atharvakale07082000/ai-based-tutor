@@ -81,8 +81,12 @@ class Settings(BaseSettings):
     # User activity logging — middleware records every request to MongoDB
     ACTIVITY_LOGGING_ENABLED: bool = True
 
-    # CORS — comma-separated list or JSON array
+    # CORS — comma-separated list or JSON array (explicit prod origins)
     CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
+    # Any localhost/127.0.0.1 port is allowed in dev, so the frontend still works
+    # when Vite falls back to another port (e.g. 5174 when 5173 is taken) — without
+    # this, those origins are blocked by CORS and login/API calls silently fail.
+    CORS_ORIGIN_REGEX: str = r"https?://(localhost|127\.0\.0\.1)(:\d+)?"
 
     @property
     def cors_origins(self) -> list[str]:
@@ -90,6 +94,18 @@ class Settings(BaseSettings):
         if v.startswith("["):
             return json.loads(v)
         return [o.strip() for o in v.split(",") if o.strip()]
+
+    @property
+    def cors_origins_ws(self) -> list[str]:
+        """Allowed origins for the Socket.IO server. python-socketio can't take a
+        regex, so enumerate the common localhost dev ports (Vite fallbacks) next to
+        the explicit origins — the WS mirror of CORS_ORIGIN_REGEX."""
+        dev = [
+            f"http://{host}:{port}"
+            for host in ("localhost", "127.0.0.1")
+            for port in (3000, 5173, 5174, 5175, 5176, 5177)
+        ]
+        return list(dict.fromkeys([*self.cors_origins, *dev]))
 
     # Email (password reset, notifications)
     SMTP_HOST: str = "smtp.gmail.com"

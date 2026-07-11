@@ -116,7 +116,10 @@ async def generate_quiz_questions(
                         response_format={"type": "json_object"},
                         pin_nvidia_model=settings.NVIDIA_MODEL,
                     ),
-                    timeout=40.0,
+                    # Generous ceiling — the instruct provider can be slow under load; better to
+                    # wait than to abandon the question and shrink the quiz. Still bounded so a
+                    # genuinely hung connection can't block the request forever.
+                    timeout=90.0,
                 )
                 record_auth_success(model_cfg["provider"])
                 text = result.choices[0].message.content or ""

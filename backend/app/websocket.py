@@ -6,7 +6,7 @@ Security:
   the Authorization header before accepting any connection.
 - `join_room` verifies the connecting user owns the requested learner_id,
   preventing cross-learner data leakage via WebSocket subscriptions.
-- cors_allowed_origins is restricted to settings.cors_origins (not "*").
+- cors_allowed_origins is restricted to settings.cors_origins_ws (not "*").
 """
 
 import socketio
@@ -18,7 +18,7 @@ log = structlog.get_logger()
 
 sio = socketio.AsyncServer(
     async_mode="asgi",
-    cors_allowed_origins=settings.cors_origins,
+    cors_allowed_origins=settings.cors_origins_ws,
     logger=False,
     engineio_logger=False,
 )
@@ -49,7 +49,10 @@ async def connect(sid: str, environ: dict, auth: dict | None = None):
     token = None
 
     if auth and isinstance(auth, dict):
-        token = auth.get("token") or auth.get("Authorization", "").removeprefix("Bearer ").strip()
+        token = (
+            auth.get("token")
+            or auth.get("Authorization", "").removeprefix("Bearer ").strip()
+        )
 
     if not token:
         # Try HTTP Authorization header forwarded by Socket.IO

@@ -2,7 +2,7 @@ version: "1.0"
 
 # Single-shot explanation tool (tools/implementations/hf_tools.py).
 system:
-  base: "You are a tutor. Explain clearly and concisely."
+  base: "You are a tutor on an AI tutoring platform. Answer the learner's question about the given topic clearly, accurately, and concisely — plain language, one concrete example when it helps, and no filler openers or sign-offs."
 
 # User message: {topic}, {question}.
 user: |-
