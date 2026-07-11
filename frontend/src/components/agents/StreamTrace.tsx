@@ -1,6 +1,41 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ToolCallCard } from '@/components/agents/ToolCallCard'
 import { getAgentDisplayName } from '@/lib/agentNames'
+
+/**
+ * Reveals the agent's reasoning with a typewriter effect so it reads as live
+ * thinking. The backend sends each step's thought as one event (the ReAct step
+ * must be parsed whole), so we animate the reveal client-side; finished steps
+ * render instantly.
+ */
+function ThoughtText({ text, animate }: { text: string; animate: boolean }) {
+  const [count, setCount] = useState(animate ? 0 : text.length)
+  useEffect(() => {
+    if (!animate) {
+      setCount(text.length)
+      return
+    }
+    setCount(0)
+    const id = setInterval(() => {
+      setCount((c) => {
+        if (c >= text.length) {
+          clearInterval(id)
+          return c
+        }
+        return Math.min(text.length, c + 3)
+      })
+    }, 16)
+    return () => clearInterval(id)
+  }, [text, animate])
+
+  const done = count >= text.length
+  return (
+    <span className="t-xs" style={{ color: 'var(--ink-3)', fontStyle: 'italic', lineHeight: 1.5, display: 'block' }}>
+      {text.slice(0, count)}
+      {animate && !done && <span className="caret-blink" style={{ fontStyle: 'normal' }}>▌</span>}
+    </span>
+  )
+}
 
 export interface AgentStep {
   step: number
@@ -108,9 +143,9 @@ export function StreamTrace({ routing, steps, streaming }: StreamTraceProps) {
           {/* Step cards */}
           {isExpanded && (
             <div style={{ padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {steps.map((step) => (
+              {steps.map((step, idx) => (
                 <div key={step.step}>
-                  {/* Thought bubble */}
+                  {/* Thought bubble — typewriter reveal while this is the live step */}
                   {step.thought && (
                     <div
                       style={{
@@ -121,18 +156,14 @@ export function StreamTrace({ routing, steps, streaming }: StreamTraceProps) {
                         border: '1px solid var(--line-1)',
                       }}
                     >
-                      <span className="t-xs" style={{ color: 'var(--ink-3)', fontStyle: 'italic', lineHeight: 1.5, display: 'block' }}>
-                        {step.thought}
-                      </span>
+                      <ThoughtText text={step.thought} animate={streaming && idx === steps.length - 1} />
                     </div>
                   )}
 
-                  {/* Tool call card */}
+                  {/* Tool call card — name + timing only, no args/results */}
                   {step.toolCall && (
                     <ToolCallCard
                       name={step.toolCall.name}
-                      args={step.toolCall.args}
-                      result={step.toolResult?.result}
                       latency_ms={step.toolResult?.latency_ms}
                       isLoading={!step.toolResult}
                     />

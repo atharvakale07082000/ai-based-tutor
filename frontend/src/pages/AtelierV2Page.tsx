@@ -3,30 +3,29 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { chatAPI } from '@/lib/api'
 import { useLearnerStore } from '@/stores/learnerStore'
+import {
+  useChatStore,
+  type ChatMessage as V2Message,
+  type ChatAction as ActionCard,
+} from '@/stores/chatStore'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Icon } from '@/components/ui/Icon'
 import { Avatar } from '@/components/ui/Avatar'
 import { MarkdownMessage } from '@/components/ui/MarkdownMessage'
-import { StreamTrace, type AgentStep } from '@/components/agents/StreamTrace'
+import { StreamTrace } from '@/components/agents/StreamTrace'
 import { AgentTimeline } from '@/components/ui/AgentTimeline'
-import type { TimelineStep } from '@/hooks/useAgentTimeline'
 import { useSpeechInput } from '@/hooks/useSpeechInput'
 
-interface ActionCard {
-  kind: string
-  payload: Record<string, unknown>
-}
-
-interface V2Message {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-  streaming?: boolean
-  routing?: { agent: string; reason: string }
-  steps: AgentStep[]
-  timeline: TimelineStep[]
-  actions: ActionCard[]
+function relativeTime(ts: number): string {
+  const diff = Date.now() - ts
+  const min = Math.floor(diff / 60000)
+  if (min < 1) return 'just now'
+  if (min < 60) return `${min}m ago`
+  const hr = Math.floor(min / 60)
+  if (hr < 24) return `${hr}h ago`
+  const day = Math.floor(hr / 24)
+  return day === 1 ? 'yesterday' : `${day}d ago`
 }
 
 function ActionCardView({ action, onNavigate }: { action: ActionCard; onNavigate: (url: string) => void }) {
@@ -96,8 +95,15 @@ export default function AtelierV2Page() {
   const [messages, setMessages] = useState<V2Message[]>([])
   const [input, setInput] = useState(prefill)
   const [streaming, setStreaming] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const dirtyRef = useRef(false)
+  const initRef = useRef(false)
+
+  // Chat history (client-side, persisted). See stores/chatStore.
+  const threads = useChatStore((s) => s.threads)
+  const activeId = useChatStore((s) => s.activeId)
 
   const { isListening, isSupported: isSpeechSupported, toggle: toggleVoice } = useSpeechInput({
     onInterim: (text) => setInput(text),
@@ -108,15 +114,75 @@ export default function AtelierV2Page() {
     if (prefill) inputRef.current?.focus()
   }, []) // intentionally only on mount
 
+  // On mount: load the last active chat, or start a fresh one.
+  useEffect(() => {
+    if (initRef.current) return
+    initRef.current = true
+    const st = useChatStore.getState()
+    const existing = st.activeId ? st.threads.find((t) => t.id === st.activeId) : null
+    if (existing) {
+      setMessages(existing.messages)
+    } else if (st.threads.length > 0) {
+      st.setActive(st.threads[0].id)
+      setMessages(st.threads[0].messages)
+    } else {
+      st.newThread()
+    }
+  }, [])
+
+  // Persist the active chat once an exchange finishes (never mid-stream).
+  useEffect(() => {
+    if (streaming || !dirtyRef.current || messages.length === 0) return
+    useChatStore.getState().saveActive(messages, 'done')
+    dirtyRef.current = false
+  }, [messages, streaming])
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  const startNewChat = () => {
+    setHistoryOpen(false)
+    if (streaming || messages.length === 0) return // already on a fresh chat (or busy)
+    useChatStore.getState().newThread()
+    setMessages([])
+  }
+
+  const selectThread = (id: string) => {
+    setHistoryOpen(false)
+    if (streaming || id === activeId) return
+    const st = useChatStore.getState()
+    const t = st.threads.find((thread) => thread.id === id)
+    if (!t) return
+    st.setActive(id)
+    dirtyRef.current = false
+    setMessages(t.messages)
+  }
+
+  const removeThread = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (streaming && id === activeId) return // don't delete a chat that's mid-answer
+    const before = useChatStore.getState()
+    const wasActive = before.activeId === id
+    before.deleteThread(id)
+    if (!wasActive) return
+    const st = useChatStore.getState()
+    const next = st.activeId ? st.threads.find((t) => t.id === st.activeId) : null
+    if (next) {
+      setMessages(next.messages)
+    } else {
+      st.newThread()
+      setMessages([])
+    }
+    dirtyRef.current = false
+  }
 
   const sendMessage = useCallback(async () => {
     const text = input.trim()
     if (!text || streaming) return
     if (text.length > 2000) { toast.error("Let's keep it under 2,000 characters — try breaking it into a shorter question."); return }
     setInput('')
+    dirtyRef.current = true // this exchange should be persisted to history when it finishes
 
     const userMsg: V2Message = { id: crypto.randomUUID(), role: 'user', content: text, steps: [], timeline: [], actions: [] }
     setMessages((m) => [...m, userMsg])
@@ -235,6 +301,84 @@ export default function AtelierV2Page() {
 
   return (
     <div className="grid h-full grid-cols-1 overflow-hidden lg:grid-cols-[220px_1fr]">
+      {/* Chat history drawer (burger menu) */}
+      {historyOpen && (
+        <>
+          <div
+            onClick={() => setHistoryOpen(false)}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(20,17,13,0.35)', zIndex: 60 }}
+          />
+          <aside
+            className="fade-in"
+            style={{
+              position: 'fixed', top: 0, left: 0, bottom: 0, width: 300, maxWidth: '85vw',
+              background: 'var(--paper-0)', borderRight: '1px solid var(--line-1)',
+              boxShadow: 'var(--shadow-4)', zIndex: 61, display: 'flex', flexDirection: 'column',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 16px', borderBottom: '1px solid var(--line-1)' }}>
+              <Icon name="chat" size={14} style={{ color: 'var(--accent)' }} />
+              <span className="t-md fg-0" style={{ fontWeight: 600, flex: 1 }}>Chats</span>
+              <button onClick={() => setHistoryOpen(false)} aria-label="Close" style={{ display: 'inline-flex', padding: 4, cursor: 'pointer', background: 'transparent', border: 0 }}>
+                <Icon name="x" size={14} style={{ color: 'var(--ink-2)' }} />
+              </button>
+            </div>
+            <div style={{ padding: 10 }}>
+              <Button size="sm" variant="outline" icon="plus" onClick={startNewChat} style={{ width: '100%' }}>
+                New chat
+              </Button>
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '0 8px 12px' }}>
+              {threads.length === 0 && (
+                <div className="t-xs fg-3" style={{ padding: 12, textAlign: 'center' }}>No chats yet.</div>
+              )}
+              {threads.map((t) => {
+                const isActive = t.id === activeId
+                const isRunning = streaming && isActive
+                return (
+                  <button
+                    key={t.id}
+                    onClick={() => selectThread(t.id)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left',
+                      padding: '9px 10px', marginBottom: 2, borderRadius: 'var(--r-2)', cursor: 'pointer',
+                      background: isActive ? 'var(--paper-2)' : 'transparent',
+                      border: isActive ? '1px solid var(--line-1)' : '1px solid transparent',
+                    }}
+                    onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = 'var(--paper-1)' }}
+                    onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = 'transparent' }}
+                  >
+                    <span
+                      className={isRunning ? 'pulse-dot' : ''}
+                      style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, background: isRunning ? 'var(--accent)' : 'var(--pos)' }}
+                    />
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span className="t-sm fg-0" style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: isActive ? 500 : 400 }}>
+                        {t.title}
+                      </span>
+                      <span className="t-xs fg-3" style={{ display: 'block' }}>
+                        {isRunning ? 'running…' : relativeTime(t.updatedAt)}
+                      </span>
+                    </span>
+                    <span
+                      role="button"
+                      aria-label="Delete chat"
+                      title="Delete"
+                      onClick={(e) => removeThread(t.id, e)}
+                      style={{ display: 'inline-flex', padding: 4, borderRadius: 4, flexShrink: 0, opacity: 0.6 }}
+                      onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
+                      onMouseLeave={(e) => (e.currentTarget.style.opacity = '0.6')}
+                    >
+                      <Icon name="trash" size={12} style={{ color: 'var(--ink-3)' }} />
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </aside>
+        </>
+      )}
+
       {/* Left rail */}
       <div className="hidden lg:block" style={{ borderRight: '1px solid var(--line-1)', background: 'var(--paper-1)', overflow: 'auto', padding: 14 }}>
         <div className="eyebrow" style={{ marginBottom: 8 }}>// try asking</div>
@@ -277,13 +421,25 @@ export default function AtelierV2Page() {
       <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {/* Header */}
         <div style={{ padding: '12px 24px', borderBottom: '1px solid var(--line-1)', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button
+            onClick={() => setHistoryOpen(true)}
+            aria-label="Chat history"
+            title="Chat history"
+            style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              width: 30, height: 30, borderRadius: 'var(--r-2)',
+              background: 'transparent', border: '1px solid var(--line-1)', cursor: 'pointer',
+            }}
+          >
+            <Icon name="menu" size={15} style={{ color: 'var(--ink-1)' }} />
+          </button>
           <Icon name="sparkle" size={14} style={{ color: 'var(--accent)' }} />
           <span className="t-md fg-0" style={{ fontWeight: 500 }}>AI Atelier</span>
           <Badge tone="warn" size="xs">Beta</Badge>
           <Badge tone="pos" size="xs" dot>tool traces on</Badge>
           <span style={{ flex: 1 }} />
-          <Button size="sm" variant="ghost" icon="plus" onClick={() => setMessages([])}>
-            New thread
+          <Button size="sm" variant="ghost" icon="plus" onClick={startNewChat}>
+            New chat
           </Button>
         </div>
 
