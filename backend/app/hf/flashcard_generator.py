@@ -40,7 +40,7 @@ async def generate_flashcards(topic: str, count: int = 10) -> list[dict]:
             model=model_cfg["model_id"],
             messages=[{"role": "user", "content": prompt}],
             max_tokens=TOKEN_BUDGETS["flashcard"],
-            temperature=0.6,
+            temperature=0.4,
         )
         text = result.choices[0].message.content.strip()
         match = re.search(r"\[.*\]", text, re.DOTALL)

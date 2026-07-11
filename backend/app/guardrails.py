@@ -93,6 +93,60 @@ def check_input(text: str, *, context: str = "") -> GuardrailResult:
     return GuardrailResult(passed=True, sanitized=stripped)
 
 
+# ── Topic moderation (generation entry points) ────────────────────────────────
+
+# Human-facing messages for a rejected topic, keyed by GuardrailResult.reason.
+TOPIC_REJECT_MESSAGES = {
+    "topic_empty": "Please enter a learning goal.",
+    "topic_too_short": "That's too short — name a specific skill, tool, or role you want to learn.",
+    "topic_not_a_subject": "That doesn't look like a learning topic — try naming a skill, tool, or role.",
+    "vague_topic": "That's a bit too vague — try something specific like “SQL for data analysts” or “React fundamentals”.",
+    "blocked_topic": "Atelier builds courses for professional and technical skills, so we can't create one for that topic.",
+}
+
+
+def topic_reject_message(reason: str) -> str:
+    """Friendly message for a failed check_topic(), safe for API responses."""
+    return TOPIC_REJECT_MESSAGES.get(
+        reason,
+        "Atelier builds courses for professional and technical skills — try naming a specific one.",
+    )
+
+
+def check_topic(topic: str) -> GuardrailResult:
+    """
+    Gate a topic/goal before any content generation (course, quiz, curriculum).
+
+    Rejects empty, too-short, purely-vague, and explicit/off-domain topics so this
+    educational-jobs platform never generates a course for something it shouldn't.
+    Blocked terms match on word boundaries to avoid false positives ("assignment").
+    """
+    cfg = _config().get("topic", {})
+
+    if not topic or not topic.strip():
+        return GuardrailResult(passed=False, reason="topic_empty")
+
+    t = topic.strip()
+    if len(t) < cfg.get("min_length", 3):
+        return GuardrailResult(passed=False, reason="topic_too_short")
+
+    low = t.lower()
+    if not re.search(r"[a-z]", low):  # numbers/symbols only — not a subject
+        return GuardrailResult(passed=False, reason="topic_not_a_subject")
+
+    words = set(re.findall(r"[a-z]+", low))
+    vague = {v.lower() for v in cfg.get("vague_terms", [])}
+    if words and words <= vague:  # every word is a filler token
+        return GuardrailResult(passed=False, reason="vague_topic")
+
+    for term in cfg.get("blocked_terms", []):
+        if re.search(rf"\b{re.escape(term.lower())}\b", low):
+            log.warning("guardrail_blocked_topic", term=term)
+            return GuardrailResult(passed=False, reason="blocked_topic")
+
+    return GuardrailResult(passed=True, sanitized=t)
+
+
 # ── Output guardrails ─────────────────────────────────────────────────────────
 
 

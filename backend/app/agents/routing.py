@@ -118,7 +118,7 @@ async def llm_route(query: str) -> tuple[str, str]:
                 max_tokens=TOKEN_BUDGETS["routing"],
                 temperature=0.0,
             ),
-            timeout=5.0,
+            timeout=30.0,
         )
         record_auth_success(provider)
         # Guard against None content (NVIDIA reasoning models can leave it empty).

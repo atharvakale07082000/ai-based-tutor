@@ -20,6 +20,7 @@ from app.agents.course_planner import (
 )
 from app.agents.steps import sse_step_stream
 from app.auth.jwt import get_current_user_id
+from app.guardrails import check_topic, topic_reject_message
 
 _SSE_HEADERS = {"X-Accel-Buffering": "no", "Cache-Control": "no-cache"}
 
@@ -51,10 +52,21 @@ class RunCodeRequest(BaseModel):
 
 @router.post("/plan")
 @limiter.limit("3/hour")
-async def plan_course(request: Request, body: PlanRequest, user_id: str = Depends(get_current_user_id)):
+async def plan_course(
+    request: Request, body: PlanRequest, user_id: str = Depends(get_current_user_id)
+):
     """Generate an AI course plan from a learning goal and persist it."""
     if not body.goal.strip():
         raise HTTPException(400, "Goal cannot be empty")
+    guard = check_topic(body.goal)
+    if not guard.passed:
+        log.info(
+            "course_plan_rejected",
+            user_id=user_id,
+            reason=guard.reason,
+            goal=body.goal[:80],
+        )
+        raise HTTPException(400, topic_reject_message(guard.reason))
     log.info("course_plan_generate", user_id=user_id, goal=body.goal[:80])
     try:
         plan = await create_course_plan(body.goal.strip(), user_id)
@@ -65,7 +77,9 @@ async def plan_course(request: Request, body: PlanRequest, user_id: str = Depend
 
 @router.post("/plan/stream")
 @limiter.limit("3/hour")
-async def plan_course_stream(request: Request, body: PlanRequest, user_id: str = Depends(get_current_user_id)):
+async def plan_course_stream(
+    request: Request, body: PlanRequest, user_id: str = Depends(get_current_user_id)
+):
     """Generate a course plan while streaming a live step timeline as SSE.
 
     Emits `step` events (research → design → finalize), then a `plan_created`
@@ -73,6 +87,15 @@ async def plan_course_stream(request: Request, body: PlanRequest, user_id: str =
     """
     if not body.goal.strip():
         raise HTTPException(400, "Goal cannot be empty")
+    guard = check_topic(body.goal)
+    if not guard.passed:
+        log.info(
+            "course_plan_stream_rejected",
+            user_id=user_id,
+            reason=guard.reason,
+            goal=body.goal[:80],
+        )
+        raise HTTPException(400, topic_reject_message(guard.reason))
     goal = body.goal.strip()
     log.info("course_plan_stream", user_id=user_id, goal=goal[:80])
 
@@ -97,8 +120,9 @@ async def plan_course_stream(request: Request, body: PlanRequest, user_id: str =
             # Online eval sampling: does the generated plan correctly address the learner's goal?
             from app.evals.deepeval_metrics import maybe_eval_single_turn
 
-            summary = f"{plan['title']}: {plan.get('description', '')}\nModules: " + ", ".join(
-                m.get("title", "") for m in plan["modules"]
+            summary = (
+                f"{plan['title']}: {plan.get('description', '')}\nModules: "
+                + ", ".join(m.get("title", "") for m in plan["modules"])
             )
             maybe_eval_single_turn("course_planner", goal, summary, learner_id=user_id)
 
@@ -106,7 +130,9 @@ async def plan_course_stream(request: Request, body: PlanRequest, user_id: str =
             yield f"data: {json.dumps(ev)}\n\n"
         yield "data: [DONE]\n\n"
 
-    return StreamingResponse(event_stream(), media_type="text/event-stream", headers=_SSE_HEADERS)
+    return StreamingResponse(
+        event_stream(), media_type="text/event-stream", headers=_SSE_HEADERS
+    )
 
 
 @router.get("/")
@@ -165,7 +191,9 @@ async def submit_answer(
     if not interview or interview["user_id"] != user_id:
         raise HTTPException(404, "Interview not found")
     try:
-        evaluation = await evaluate_answer(interview_id, body.question_id, body.answer_text)
+        evaluation = await evaluate_answer(
+            interview_id, body.question_id, body.answer_text
+        )
         return evaluation
     except Exception as e:
         raise HTTPException(500, f"Evaluation failed: {e}")
@@ -235,11 +263,17 @@ async def finish_interview_stream(
         """Drive complete_interview with a live emitter and frame events as SSE."""
 
         async def run(emit):
-            result = await complete_interview(interview_id, plan_id, module_id, emit=emit)
-            await emit({"type": "action", "kind": "interview_scored", "payload": result})
+            result = await complete_interview(
+                interview_id, plan_id, module_id, emit=emit
+            )
+            await emit(
+                {"type": "action", "kind": "interview_scored", "payload": result}
+            )
 
         async for ev in sse_step_stream(run):
             yield f"data: {json.dumps(ev)}\n\n"
         yield "data: [DONE]\n\n"
 
-    return StreamingResponse(event_stream(), media_type="text/event-stream", headers=_SSE_HEADERS)
+    return StreamingResponse(
+        event_stream(), media_type="text/event-stream", headers=_SSE_HEADERS
+    )

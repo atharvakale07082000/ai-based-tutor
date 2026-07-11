@@ -13,6 +13,7 @@ from slowapi.util import get_remote_address
 from app.agents.progress_agent import calculate_elo_update
 from app.agents.steps import StepTimeline, sse_step_stream
 from app.auth.jwt import get_current_user_id
+from app.guardrails import check_topic, topic_reject_message
 from app.db.mongo import col_learners, col_progress, col_quizzes
 from app.schemas.quiz import (
     EloUpdate,
@@ -51,6 +52,10 @@ async def generate_quiz(
     from app.agents.workflow import run_workflow
 
     learner = await _get_learner_or_404(user_id)
+    guard = check_topic(body.topic)
+    if not guard.passed:
+        log.info("quiz_topic_rejected", reason=guard.reason, topic=body.topic[:80])
+        raise HTTPException(400, topic_reject_message(guard.reason))
     log.info("quiz_generate_start", topic=body.topic, learner_id=learner["id"])
 
     elo = (learner.get("topic_proficiency_map") or {}).get(body.topic, 500.0)
@@ -99,6 +104,10 @@ async def generate_flashcards(
     """
     from app.hf.flashcard_generator import generate_flashcards as _gen
 
+    guard = check_topic(topic)
+    if not guard.passed:
+        log.info("flashcards_topic_rejected", reason=guard.reason, topic=topic[:80])
+        raise HTTPException(400, topic_reject_message(guard.reason))
     log.info("flashcards_generate", topic=topic, count=count)
     cards = await _gen(topic, count)
     return {"topic": topic, "cards": cards, "count": len(cards)}

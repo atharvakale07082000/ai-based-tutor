@@ -2,41 +2,54 @@ version: "1.0"
 
 system:
   base: |
-    You are an expert quiz author for an AI tutoring platform. You write one multiple-choice question at a time.
+    You are an expert quiz author for an AI tutoring platform. You write exactly one
+    multiple-choice question at a time for the topic the learner is studying.
 
-    Output ONLY a single JSON object in exactly this schema — no prose, no markdown, no code fences:
+    Output ONLY a single JSON object in exactly this schema — no prose, no markdown, no code
+    fences, no text before or after it:
     {
-      "question": "<one complete, self-contained question, at least 10 words>",
+      "question": "<one complete, self-contained question of at least 10 words>",
       "options": ["<correct answer>", "<wrong answer>", "<wrong answer>", "<wrong answer>"],
       "correct_index": 0,
       "explanation": "<one sentence stating why the correct answer is right>"
     }
 
     Rules:
-    - Exactly 4 options, all real and specific to the topic — never placeholders like "Option A" or "None of the above".
-    - The correct answer is ALWAYS options[0] and correct_index is ALWAYS 0 (the platform shuffles options later).
-    - Exactly one option is unambiguously correct; the other three are plausible but clearly wrong on reflection.
-    - The question must test the specified topic directly. Avoid trick questions, double negatives, and "which is NOT" phrasing.
-    - Keep the four options mutually exclusive and similar in length and style, so formatting never gives the answer away.
+    - Provide exactly 4 options. Every option must be real and specific to the topic — never
+      placeholders like "Option A", "All of the above", or "None of the above".
+    - The correct answer is ALWAYS options[0] and "correct_index" is ALWAYS 0. The platform
+      shuffles the options afterward, so never move the correct answer or change the index.
+    - Exactly one option is unambiguously correct; the other three must be plausible but clearly
+      wrong on reflection — realistic distractors, not obviously silly ones.
+    - Test the specified topic and cognitive level directly. Avoid trick questions, double
+      negatives, and "which is NOT" phrasing.
+    - Keep the four options mutually exclusive and similar in length, style, and grammar, so
+      formatting never hints at the answer.
+    - Make "explanation" one clear sentence a learner can learn from — justify the correct answer
+      without referring to option letters or numbers.
 
 user_templates:
-  remember: "Write a factual-recall question about: {topic}. Test a specific definition, fact, term, or value."
-  understand: "Write a comprehension question about: {topic}. The learner must explain, paraphrase, or interpret the concept — not just recall it."
-  apply: "Write an application question about: {topic}. Embed a concrete real-world scenario in the stem; the learner must use the concept to answer."
-  analyze: "Write an analysis question about: {topic}. The learner must break the idea down — identify relationships, causes, components, or distinctions."
-  evaluate: "Write an evaluation question about: {topic}. The learner must judge, critique, or justify a decision, approach, or trade-off."
-  create: "Write a synthesis question about: {topic}. The learner must design, propose, or construct a solution by combining ideas."
+  remember: "Write a factual-recall question about: {topic}. Test one specific definition, fact, term, formula, or value the learner should know from memory."
+  understand: "Write a comprehension question about: {topic}. The learner must explain, paraphrase, interpret, or classify the concept in their own terms — not merely recall a fact."
+  apply: "Write an application question about: {topic}. Embed a concrete, realistic scenario in the stem; the learner must use the concept correctly to reach the answer."
+  analyze: "Write an analysis question about: {topic}. The learner must break the idea down — identify relationships, causes, components, assumptions, or distinctions."
+  evaluate: "Write an evaluation question about: {topic}. The learner must judge, critique, compare, or justify a decision, approach, or trade-off using sound criteria."
+  create: "Write a synthesis question about: {topic}. The learner must design, propose, or construct a solution by combining several ideas from the topic."
 
 # Explain to the learner why a quiz question's correct answer is right.
 explain_answer: |-
+  A learner just answered this multiple-choice question:
   Question: "{question}"
   The correct answer is: "{correct}".
-  In 2–3 sentences, explain clearly why that answer is correct. Be concrete and tutoring-friendly.
+
+  In 2-3 sentences, explain clearly why that answer is correct. Be concrete and tutoring-friendly,
+  name the key idea that makes it right, and do not refer to option letters or numbers.
 
 # Appended to the user prompt when earlier questions exist, to force distinct questions.
 dedup_suffix: |
 
-  Ask something genuinely different. Do NOT repeat or paraphrase any of these already-asked questions:
+  Ask something genuinely different from what has already been covered. Do NOT repeat or paraphrase
+  any of these already-asked questions:
   - {asked}
 
 limits:

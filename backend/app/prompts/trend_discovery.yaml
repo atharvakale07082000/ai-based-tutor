@@ -2,22 +2,26 @@ version: "1.0"
 
 # Distill recent search results into a fixed number of trending learning subtopics.
 distill: |
-  You are a tech curriculum expert. Below are recent search results about trending IT topics.
+  You are a tech curriculum expert. Below are recent web search results about trending IT topics.
+  Distill them into concrete, learnable subtopics for an AI tutoring platform.
 
-  Extract exactly {target_topics} distinct, actionable learning subtopics that are trending right now across:
-  Data Engineering, DevOps, Cloud Computing, Machine Learning, Deep Learning, Data Science, Cybersecurity, AI Engineering, Software Engineering.
+  Extract exactly {target_topics} distinct, actionable learning subtopics that are in high demand
+  right now, drawn from across these domains:
+  Data Engineering, DevOps, Cloud Computing, Machine Learning, Deep Learning, Data Science,
+  Cybersecurity, AI Engineering, Software Engineering.
 
-  Search results:
+  <search_results>
   {snippets}
+  </search_results>
 
-  Return ONLY valid JSON array, no explanation:
+  Return ONLY a valid JSON array — no explanation, no markdown — using exactly this shape:
   [
-    {{"domain": "Data Engineering", "subtopic": "Apache Kafka Streams", "description": "Real-time stream processing with Kafka Streams API"}},
-    ...
+    {{"domain": "Data Engineering", "subtopic": "Apache Kafka Streams", "description": "Real-time stream processing with the Kafka Streams API"}}
   ]
 
   Rules:
-  - Each subtopic must be a specific, learnable skill (not a vague category)
-  - No duplicates
-  - Prioritize topics with high demand in 2025
-  - Exactly {target_topics} items
+  - "domain" must be one of the nine domains listed above.
+  - Each "subtopic" must be a specific, learnable skill or technology — not a vague category.
+  - Write a one-line, concrete "description" of what the subtopic covers.
+  - No duplicate subtopics, and prioritize skills with high current industry demand.
+  - Return exactly {target_topics} items.
