@@ -433,20 +433,27 @@ export default function LandingPage() {
 
 const BP_STYLES = `
 .bp-root {
-  /* Mapped to the app's theme tokens so the landing matches what you see after
-     login — warm cream in light mode, ink-blue instrument in dark mode. */
-  --bp-ground:var(--paper-0); --bp-panel:var(--paper-1); --bp-panel-2:var(--paper-2);
-  --bp-line:var(--line-2); --bp-line-soft:var(--line-1);
-  --bp-ivory:var(--ink-0); --bp-muted:var(--ink-2); --bp-faint:var(--ink-3);
-  --bp-amber:var(--signal); --bp-amber-dim:var(--signal-hover); --bp-teal:var(--info);
+  /* The landing owns a fixed identity: a warm-white canvas that matches the
+     post-login app, with the ink-blue "instrument" carried through as its
+     signature (the readout, the call-sign chips, the closing band). Held to
+     literal hexes rather than theme tokens so the white+blue blend reads the
+     same whatever the app's light/dark toggle is set to. */
+  --bp-ground:#FAF8F2; --bp-panel:#F4F1E8; --bp-panel-2:#ECE7DA;
+  --bp-line:#CFC4A6; --bp-line-soft:#E2DBC8;
+  --bp-ivory:#15120D; --bp-muted:#6B6452; --bp-faint:#8A8067;
+  --bp-amber:#C77D18; --bp-amber-dim:#A8660C; --bp-teal:#4A6B7A;
+  /* The signature blue, used by the instrument zones below. */
+  --bp-blue:#0E1620; --bp-blue-2:#152230; --bp-blue-line:#26394C;
+  /* Pin the amber button to the cream-safe fill regardless of app theme. */
+  --signal:#C77D18; --signal-btn:#B4700E; --signal-btn-hover:#9A5F09; --on-signal:#FFFFFF;
   --bp-sans:'Geist',system-ui,sans-serif;
   --bp-display:'Space Grotesk','Geist',sans-serif;
   --bp-mono:'Geist Mono',ui-monospace,monospace;
   min-height:100%; background:var(--bp-ground); color:var(--bp-ivory);
   font-family:var(--bp-sans); overflow-x:hidden;
   background-image:
-    radial-gradient(1100px 520px at 78% -8%, color-mix(in srgb, var(--signal) 9%, transparent), transparent 60%),
-    radial-gradient(900px 500px at 8% 8%, color-mix(in srgb, var(--info) 7%, transparent), transparent 55%);
+    radial-gradient(1120px 540px at 84% -8%, rgba(20,34,48,0.10), transparent 62%),
+    radial-gradient(880px 460px at 4% 2%, rgba(199,125,24,0.055), transparent 55%);
 }
 .bp-root ::selection { background:color-mix(in srgb, var(--signal) 26%, transparent); color:var(--bp-ivory); }
 .bp-root a { cursor:pointer; }
@@ -476,7 +483,7 @@ const BP_STYLES = `
 /* Nav */
 .bp-nav {
   position:sticky; top:0; z-index:20;
-  background:color-mix(in srgb, var(--paper-0) 85%, transparent); backdrop-filter:blur(10px);
+  background:color-mix(in srgb, var(--bp-ground) 84%, transparent); backdrop-filter:blur(10px);
   border-bottom:1px solid var(--bp-line-soft);
 }
 .bp-nav-inner {
@@ -519,11 +526,17 @@ const BP_STYLES = `
 .bp-hero-facts b { color:var(--bp-ivory); font-weight:500; }
 .bp-dot { color:var(--bp-line); }
 
-/* Readout (signature) */
+/* Readout (signature) — the one ink-blue instrument on the white page.
+   Re-scopes the whole bp palette to blue so every descendant renders dark
+   without touching a single child rule. */
 .bp-readout {
-  background:linear-gradient(180deg, var(--bp-panel), var(--bp-panel-2));
+  --bp-ground:var(--bp-blue); --bp-panel:var(--bp-blue-2); --bp-panel-2:#1B2B3B;
+  --bp-line:var(--bp-blue-line); --bp-line-soft:#1E2E3E;
+  --bp-ivory:#EDE7D8; --bp-muted:#93A6B8; --bp-faint:#5E7488;
+  --bp-amber:#E8A13C; --bp-amber-dim:#F2B252; --bp-teal:#5FD0C4;
+  background:linear-gradient(180deg, var(--bp-panel), var(--bp-ground));
   border:1px solid var(--bp-line); border-radius:16px; overflow:hidden;
-  box-shadow:var(--shadow-3);
+  box-shadow:0 30px 72px -30px rgba(14,22,32,0.55);
 }
 .bp-readout-head {
   display:flex; align-items:center; justify-content:space-between;
@@ -558,7 +571,7 @@ const BP_STYLES = `
 }
 .bp-select:hover { border-color:var(--bp-faint); }
 .bp-select:focus-visible { outline:none; border-color:var(--bp-amber); box-shadow:0 0 0 3px color-mix(in srgb, var(--signal) 20%, transparent); }
-.bp-select option { background:var(--paper-0); color:var(--bp-ivory); }
+.bp-select option { background:var(--bp-panel-2); color:var(--bp-ivory); }
 .bp-select-caret { position:absolute; right:13px; top:50%; transform:translateY(-50%); color:var(--bp-muted); pointer-events:none; font-size:11px; }
 .bp-readout-foot { margin:12px 0 0; font-size:12px; color:var(--bp-muted); line-height:1.5; }
 .bp-readout-foot b { color:var(--bp-ivory); font-weight:500; }
@@ -574,7 +587,7 @@ const BP_STYLES = `
 .bp-rack { display:grid; grid-template-columns:repeat(3,1fr); gap:1px; background:var(--bp-line-soft); border:1px solid var(--bp-line-soft); border-radius:14px; overflow:hidden; }
 .bp-agent { background:var(--bp-ground); padding:24px 22px; transition:background .18s ease; }
 .bp-agent:hover { background:var(--bp-panel); }
-.bp-agent-sign { font-family:var(--bp-mono); font-size:11px; letter-spacing:0.12em; color:var(--bp-teal); padding:3px 8px; border:1px solid var(--bp-line); border-radius:5px; display:inline-block; }
+.bp-agent-sign { font-family:var(--bp-mono); font-size:11px; letter-spacing:0.12em; color:#7FD9CE; background:var(--bp-blue-2); padding:4px 9px; border-radius:5px; display:inline-block; }
 .bp-agent-name { font-family:var(--bp-display); font-weight:500; font-size:18px; margin-top:16px; letter-spacing:-0.01em; }
 .bp-agent-duty { margin:8px 0 0; color:var(--bp-muted); font-size:13.5px; line-height:1.58; }
 
@@ -589,9 +602,18 @@ const BP_STYLES = `
 .bp-loop-return { grid-column:1 / -1; border-top:1px solid var(--bp-line-soft); padding:14px 20px; font-family:var(--bp-mono); font-size:12px; color:var(--bp-faint); display:flex; align-items:center; gap:10px; }
 .bp-loop-return span { color:var(--bp-amber); font-size:16px; }
 
-/* Close */
-.bp-close { max-width:1180px; margin:0 auto; padding:88px 32px 96px; text-align:center; border-top:1px solid var(--bp-line-soft); }
-.bp-close-title { font-family:var(--bp-display); font-weight:600; font-size:clamp(34px,4.5vw,56px); letter-spacing:-0.03em; margin:0; }
+/* Close — ink-blue signature band, floated on the white canvas so it echoes the
+   readout and hands you off to the (dark, on this band) call-to-action. */
+.bp-close {
+  --bp-ivory:#F1ECDE; --bp-muted:#9DB0C2;
+  max-width:1120px; margin:32px auto 80px; padding:80px 40px 84px;
+  text-align:center; color:var(--bp-ivory); border-radius:20px;
+  background:
+    radial-gradient(720px 320px at 50% -24%, rgba(232,161,60,0.11), transparent 60%),
+    linear-gradient(180deg, var(--bp-blue-2), var(--bp-blue));
+  box-shadow:0 34px 84px -34px rgba(14,22,32,0.5);
+}
+.bp-close-title { font-family:var(--bp-display); font-weight:600; font-size:clamp(34px,4.5vw,56px); letter-spacing:-0.03em; margin:0; color:var(--bp-ivory); }
 .bp-close-sub { color:var(--bp-muted); font-size:16px; margin:16px 0 30px; }
 
 /* Footer */
