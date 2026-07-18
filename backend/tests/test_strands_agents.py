@@ -21,7 +21,8 @@ from app.agents.stream_adapter import (
 # ── stream_adapter ────────────────────────────────────────────────────────────
 
 
-def test_adapter_maps_full_sequence():
+def test_adapter_hides_tool_workflow_and_streams_answer():
+    """Tool workflow (names/args/results/latencies) is never surfaced — only the answer."""
     st = TraceState()
     out = []
     out += translate_event(
@@ -51,16 +52,65 @@ def test_adapter_maps_full_sequence():
     out += finish_events(st)
 
     kinds = [e["type"] for e in out]
-    assert kinds == ["tool_call", "tool_result", "token", "token", "done"]
-    assert out[0]["name"] == "get_proficiency"
-    assert out[0]["args"] == {"learner_id": "L1"}
+    assert kinds == ["token", "token", "done"]  # no tool_call/tool_result chips
+    assert "".join(e["content"] for e in out if e["type"] == "token") == "Hello world"
     assert out[-1]["type"] == "done" and out[-1]["steps"] >= 1
 
 
-def test_adapter_forward_tokens_false_suppresses_tokens():
+def test_adapter_splits_reasoning_from_answer():
+    """<reasoning>…</reasoning> is streamed as reasoning; the rest is the answer."""
     st = TraceState()
-    out = translate_event({"data": "hidden"}, st, forward_tokens=False)
-    assert out == []
+    out = []
+    out += translate_event({"data": "<reasoning>Let me start "}, st)
+    out += translate_event(
+        {"data": "with the basics.</reasoning>The answer is 42."}, st
+    )
+    out += finish_events(st)
+    reasoning = "".join(e["content"] for e in out if e["type"] == "reasoning")
+    answer = "".join(e["content"] for e in out if e["type"] == "token")
+    assert reasoning == "Let me start with the basics."
+    assert answer == "The answer is 42."
+
+
+def test_adapter_side_effect_tool_still_emits_action():
+    """save_quiz/save_progress surface an outcome `action` card, but no workflow chip."""
+    st = TraceState()
+    registered = translate_event(
+        {
+            "type": "tool_use_stream",
+            "current_tool_use": {
+                "toolUseId": "q1",
+                "name": "save_quiz",
+                "input": '{"topic": "SQL"}',
+            },
+        },
+        st,
+    )
+    assert registered == []  # registering the tool surfaces nothing
+    out = translate_event(
+        {
+            "type": "tool_result",
+            "tool_result": {
+                "toolUseId": "q1",
+                "status": "success",
+                "content": [{"json": {"quiz_id": "q1", "topic": "SQL"}}],
+            },
+        },
+        st,
+    )
+    assert [e["type"] for e in out] == ["action"]
+    assert out[0]["kind"] == "quiz_generated"
+
+
+def test_adapter_forward_tokens_false_suppresses_answer_not_reasoning():
+    st = TraceState()
+    out = translate_event(
+        {"data": "<reasoning>thinking</reasoning>hidden answer"},
+        st,
+        forward_tokens=False,
+    )
+    assert not any(e["type"] == "token" for e in out)  # answer suppressed
+    assert any(e["type"] == "reasoning" and e["content"] == "thinking" for e in out)
 
 
 def test_action_for_tool_maps_side_effects():

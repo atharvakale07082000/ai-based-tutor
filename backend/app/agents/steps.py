@@ -40,31 +40,33 @@ class Step:
 
 # Ordered, human-facing step plans per flow. A flow may also emit ad-hoc steps not
 # listed here (e.g. one timeline entry per tool the chat agent calls).
+# Labels are written as first-person reasoning narration — the flow is shown to the
+# learner as "how I'm thinking through this", not as a mechanical workflow checklist.
 STEP_PLANS: dict[str, list[Step]] = {
     "course_plan": [
-        Step("research", "Researching the topic"),
-        Step("design", "Designing your curriculum"),
-        Step("finalize", "Saving your plan"),
+        Step("research", "Looking into what this goal really takes to reach"),
+        Step("design", "Mapping a path from the basics up to mastery"),
+        Step("finalize", "Putting your plan together"),
     ],
     "quiz_review": [
-        Step("analyze", "Analyzing your answers"),
-        Step("score", "Scoring & updating mastery"),
-        Step("feedback", "Preparing your feedback"),
+        Step("analyze", "Reading through how you answered"),
+        Step("score", "Working out your new mastery level"),
+        Step("feedback", "Pulling together your feedback"),
     ],
     "interview_review": [
-        Step("evaluate", "Evaluating your responses"),
-        Step("score", "Scoring across the rubric"),
-        Step("feedback", "Writing your feedback"),
+        Step("evaluate", "Going through each of your answers"),
+        Step("score", "Weighing them against what a strong answer covers"),
+        Step("feedback", "Writing up your feedback"),
     ],
     "chat": [
-        Step("route", "Understanding your question"),
-        Step("work", "Working through it"),
-        Step("answer", "Composing the answer"),
+        Step("route", "Working out what you're really asking"),
+        Step("work", "Thinking it through"),
+        Step("answer", "Putting the answer together"),
     ],
     "jd_analyze": [
-        Step("parse", "Reading the job description"),
-        Step("match", "Matching against your skills"),
-        Step("recommend", "Finding ways to close the gaps"),
+        Step("parse", "Reading through the role"),
+        Step("match", "Comparing it against your skills"),
+        Step("recommend", "Finding the fastest ways to close the gaps"),
     ],
 }
 

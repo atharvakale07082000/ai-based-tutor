@@ -5,7 +5,7 @@ import { quizAPI, hfAPI, streamSSE } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Icon } from '@/components/ui/Icon'
-import { AgentTimeline } from '@/components/ui/AgentTimeline'
+import { ReasoningStream } from '@/components/agents/ReasoningStream'
 import { useAgentTimeline } from '@/hooks/useAgentTimeline'
 import { useLearnerStore } from '@/stores/learnerStore'
 import { useAgentStore } from '@/stores/agentStore'
@@ -190,7 +190,7 @@ export default function QuizPage() {
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, background: 'var(--paper-0)' }}>
         <div className="fade-in" style={{ background: 'var(--paper-1)', border: '1px solid var(--line-1)', borderRadius: 'var(--r-3)', padding: 32, maxWidth: 420, width: '100%' }}>
           <h2 className="display" style={{ fontSize: 24, fontWeight: 600, letterSpacing: '-0.03em', textAlign: 'center', marginBottom: 20 }}>Reviewing your quiz</h2>
-          <AgentTimeline steps={reviewSteps} />
+          <ReasoningStream segments={reviewSteps.map((s) => ({ id: s.id, text: s.label, status: s.status }))} />
         </div>
       </div>
     )

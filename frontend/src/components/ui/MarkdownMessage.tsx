@@ -1,4 +1,5 @@
 import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 
@@ -39,6 +40,7 @@ export function MarkdownMessage({ content, streaming, className }: MarkdownMessa
         </span>
       ) : (
         <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
           components={{
             /* Strip the default <pre> wrapper so SyntaxHighlighter owns its own container */
             pre({ children }) {

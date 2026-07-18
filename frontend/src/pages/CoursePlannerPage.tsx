@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Input } from '@/components/ui/Input'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { AgentTimeline } from '@/components/ui/AgentTimeline'
+import { ReasoningStream } from '@/components/agents/ReasoningStream'
 import { useAgentTimeline } from '@/hooks/useAgentTimeline'
 import { coursesAPI, streamSSE, type CoursePlan } from '@/lib/api'
 
@@ -139,10 +139,13 @@ export default function CoursePlannerPage() {
           ))}
         </div>
 
-        {/* Live planning progress (streamed from the agent) */}
+        {/* Live planning reasoning (streamed from the agent) */}
         {isPlanning && steps.length > 0 && (
-          <div style={{ marginTop: 16, padding: 14, background: 'var(--paper-2)', borderRadius: 'var(--r-2)' }}>
-            <AgentTimeline steps={steps} className="fade-in" />
+          <div style={{ marginTop: 16 }}>
+            <ReasoningStream
+              segments={steps.map((s) => ({ id: s.id, text: s.label, status: s.status }))}
+              className="fade-in"
+            />
           </div>
         )}
       </Card>

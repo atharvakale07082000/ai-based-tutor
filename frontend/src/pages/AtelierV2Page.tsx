@@ -13,8 +13,7 @@ import { Button } from '@/components/ui/Button'
 import { Icon } from '@/components/ui/Icon'
 import { Avatar } from '@/components/ui/Avatar'
 import { MarkdownMessage } from '@/components/ui/MarkdownMessage'
-import { StreamTrace } from '@/components/agents/StreamTrace'
-import { AgentTimeline } from '@/components/ui/AgentTimeline'
+import { ReasoningStream } from '@/components/agents/ReasoningStream'
 import { useSpeechInput } from '@/hooks/useSpeechInput'
 
 function relativeTime(ts: number): string {
@@ -184,14 +183,14 @@ export default function AtelierV2Page() {
     setInput('')
     dirtyRef.current = true // this exchange should be persisted to history when it finishes
 
-    const userMsg: V2Message = { id: crypto.randomUUID(), role: 'user', content: text, steps: [], timeline: [], actions: [] }
+    const userMsg: V2Message = { id: crypto.randomUUID(), role: 'user', content: text, reasoning: '', actions: [] }
     setMessages((m) => [...m, userMsg])
     setStreaming(true)
 
     const assistantId = crypto.randomUUID()
     setMessages((m) => [
       ...m,
-      { id: assistantId, role: 'assistant', content: '', streaming: true, steps: [], timeline: [], actions: [] },
+      { id: assistantId, role: 'assistant', content: '', streaming: true, reasoning: '', actions: [] },
     ])
 
     // Build history from last 6 completed messages (full content — the backend has no length cap).
@@ -209,54 +208,8 @@ export default function AtelierV2Page() {
               if (msg.id !== assistantId) return msg
 
               switch (event.type) {
-                case 'routing':
-                  return { ...msg, routing: { agent: event.agent, reason: event.reason } }
-
-                case 'thought': {
-                  const steps = [...msg.steps]
-                  const idx = steps.findIndex((s) => s.step === event.step)
-                  if (idx >= 0) {
-                    steps[idx] = { ...steps[idx], thought: event.content }
-                  } else {
-                    steps.push({ step: event.step, thought: event.content })
-                  }
-                  return { ...msg, steps }
-                }
-
-                case 'tool_call': {
-                  const steps = [...msg.steps]
-                  const idx = steps.findIndex((s) => s.step === event.step)
-                  const toolCall = { name: event.name, args: event.args }
-                  if (idx >= 0) {
-                    steps[idx] = { ...steps[idx], toolCall }
-                  } else {
-                    steps.push({ step: event.step, toolCall })
-                  }
-                  return { ...msg, steps }
-                }
-
-                case 'tool_result': {
-                  const steps = [...msg.steps]
-                  const idx = steps.findIndex((s) => s.step === event.step)
-                  const toolResult = { result: event.result, latency_ms: event.latency_ms }
-                  if (idx >= 0) {
-                    steps[idx] = { ...steps[idx], toolResult }
-                  } else {
-                    steps.push({ step: event.step, toolResult })
-                  }
-                  return { ...msg, steps }
-                }
-
-                case 'step': {
-                  const timeline = [...msg.timeline]
-                  const idx = timeline.findIndex((s) => s.id === event.id)
-                  if (idx >= 0) {
-                    timeline[idx] = { ...timeline[idx], label: event.label || timeline[idx].label, status: event.status }
-                  } else {
-                    timeline.push({ id: event.id, label: event.label, status: event.status })
-                  }
-                  return { ...msg, timeline }
-                }
+                case 'reasoning':
+                  return { ...msg, reasoning: msg.reasoning + event.content }
 
                 case 'token':
                   return { ...msg, content: msg.content + event.content }
@@ -279,6 +232,9 @@ export default function AtelierV2Page() {
           }
         },
         history,
+        undefined,
+        // Stable thread id → server-side persistent memory for this chat.
+        useChatStore.getState().activeId ?? undefined,
       )
       // Ensure streaming is marked false even if 'done' event was missed
       setMessages((m) =>
@@ -413,7 +369,7 @@ export default function AtelierV2Page() {
 
         <div className="eyebrow" style={{ margin: '20px 0 8px' }}>// about atelier</div>
         <div className="t-xs fg-3" style={{ lineHeight: 1.6, padding: '0 4px' }}>
-          Atelier exposes full reasoning traces — routing decisions, tool calls, and latencies — as your answer streams in.
+          Atelier shows its reasoning — how it's thinking through your question — as the answer streams in.
         </div>
       </div>
 
@@ -436,7 +392,7 @@ export default function AtelierV2Page() {
           <Icon name="sparkle" size={14} style={{ color: 'var(--accent)' }} />
           <span className="t-md fg-0" style={{ fontWeight: 500 }}>AI Atelier</span>
           <Badge tone="warn" size="xs">Beta</Badge>
-          <Badge tone="pos" size="xs" dot>tool traces on</Badge>
+          <Badge tone="pos" size="xs" dot>shows its reasoning</Badge>
           <span style={{ flex: 1 }} />
           <Button size="sm" variant="ghost" icon="plus" onClick={startNewChat}>
             New chat
@@ -518,19 +474,11 @@ export default function AtelierV2Page() {
                   </div>
                 ) : (
                   <>
-                    {/* Agent trace */}
-                    {(msg.routing || msg.steps.length > 0) && (
-                      <StreamTrace
-                        routing={msg.routing}
-                        steps={msg.steps}
-                        streaming={!!msg.streaming}
-                      />
-                    )}
-
-                    {/* Live step timeline */}
-                    {msg.timeline.length > 0 && (
-                      <AgentTimeline steps={msg.timeline} className="fade-in" style={{ margin: '8px 0 12px' }} />
-                    )}
+                    {/* Live reasoning — how the agent is thinking through it */}
+                    <ReasoningStream
+                      segments={msg.reasoning ? [{ text: msg.reasoning }] : []}
+                      active={!!msg.streaming && !msg.content}
+                    />
 
                     {/* Answer content */}
                     <MarkdownMessage content={msg.content} streaming={msg.streaming} />

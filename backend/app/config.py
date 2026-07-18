@@ -45,6 +45,12 @@ class Settings(BaseSettings):
     # swap via env without code changes if delegation quality disappoints.
     NIM_ORCHESTRATOR_MODEL: str = "qwen/qwen3-next-80b-a3b-instruct"
     NIM_SPECIALIST_MODEL: str = "qwen/qwen3-next-80b-a3b-instruct"
+
+    # Ask Atelier chat memory — Strands session persistence, keyed per chat thread.
+    # AGENT_SESSIONS_DIR empty → OS temp dir (fine for local/single instance; point at a
+    # durable/shared volume, or swap to S3SessionManager, for multi-instance production).
+    AGENT_SESSIONS_DIR: str = ""
+    CHAT_MEMORY_WINDOW: int = 40  # messages kept in context per thread (SlidingWindow)
     NIM_RPM_LIMIT: int = (
         40  # NVIDIA free-tier requests/minute; token-bucket in agents.model
     )

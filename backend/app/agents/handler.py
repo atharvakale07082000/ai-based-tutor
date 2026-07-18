@@ -27,14 +27,23 @@ from app.agents.stream_adapter import TraceState, finish_events, translate_event
 log = structlog.get_logger()
 
 
-def _build_prompt(query: str, context: dict) -> str:
-    """Compose the learner-context blob + recent history + query into one prompt."""
-    ctx = {k: v for k, v in context.items() if k != "history"}
+_INTERNAL_CTX_KEYS = {"history", "thread_id"}
+
+
+def _build_prompt(query: str, context: dict, *, include_history: bool = True) -> str:
+    """Compose the learner-context blob + recent history + query into one prompt.
+
+    When the thread has persistent memory (a Strands session), ``include_history`` is
+    False — the session already carries prior turns, so re-injecting them here would
+    duplicate context.
+    """
+    ctx = {k: v for k, v in context.items() if k not in _INTERNAL_CTX_KEYS}
     parts = [f"Learner context: {json.dumps(ctx, default=str)}"]
-    turns = history_messages(context.get("history"))
-    if turns:
-        convo = "\n".join(f"{t['role']}: {t['content']}" for t in turns)
-        parts.append(f"Recent conversation:\n{convo}")
+    if include_history:
+        turns = history_messages(context.get("history"))
+        if turns:
+            convo = "\n".join(f"{t['role']}: {t['content']}" for t in turns)
+            parts.append(f"Recent conversation:\n{convo}")
     parts.append(f"Current message: {query}")
     return "\n\n".join(parts)
 
@@ -60,12 +69,13 @@ class AgentHandler:
         }
 
         state = TraceState()
-        prompt = _build_prompt(query, context)
+        thread_id = (context.get("thread_id") or "").strip() or None
+        prompt = _build_prompt(query, context, include_history=not thread_id)
         transcript = ""
 
         try:
             for idx, key in enumerate(agents):
-                specialist = build_specialist(key)
+                specialist = build_specialist(key, session_id=thread_id)
                 step_prompt = prompt
                 if transcript:
                     step_prompt = (

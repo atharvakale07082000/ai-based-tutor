@@ -688,24 +688,20 @@ export const activityAPI = {
 
 // ─── Assistant V2 ─────────────────────────────────────────────────────────────
 
-export type V2EventType = 'routing' | 'thought' | 'tool_call' | 'tool_result' | 'token' | 'action' | 'done' | 'error'
+export type V2EventType = 'routing' | 'reasoning' | 'token' | 'action' | 'done' | 'error'
 
-export interface V2RoutingEvent    { type: 'routing';     agent: string; reason: string }
-export interface V2ThoughtEvent    { type: 'thought';     step: number;  content: string }
-export interface V2ToolCallEvent   { type: 'tool_call';   step: number;  name: string; args: Record<string, unknown> }
-export interface V2ToolResultEvent { type: 'tool_result'; step: number;  name: string; result: unknown; latency_ms: number }
-export interface V2TokenEvent      { type: 'token';       content: string }
-export interface V2ActionEvent     { type: 'action';      kind: string; payload: Record<string, unknown> }
-export interface V2DoneEvent       { type: 'done';        steps: number; total_ms: number }
-export interface V2ErrorEvent      { type: 'error';       message: string }
+export interface V2RoutingEvent   { type: 'routing';   agent: string; reason: string }
+export interface V2ReasoningEvent { type: 'reasoning'; content: string }
+export interface V2TokenEvent     { type: 'token';     content: string }
+export interface V2ActionEvent    { type: 'action';    kind: string; payload: Record<string, unknown> }
+export interface V2DoneEvent      { type: 'done';      steps: number; total_ms: number }
+export interface V2ErrorEvent     { type: 'error';     message: string }
 
 export interface StepEvent { type: 'step'; id: string; label: string; status: 'active' | 'done' | 'error' }
 
 export type V2Event =
   | V2RoutingEvent
-  | V2ThoughtEvent
-  | V2ToolCallEvent
-  | V2ToolResultEvent
+  | V2ReasoningEvent
   | V2TokenEvent
   | V2ActionEvent
   | V2DoneEvent
@@ -719,12 +715,15 @@ export const chatAPI = {
     onEvent: (event: V2Event) => void,
     history?: Array<{ role: string; content: string }>,
     context?: Record<string, unknown>,
+    /** Stable chat-thread id → enables persistent per-thread memory server-side. */
+    sessionId?: string,
   ): Promise<void> => {
     const response = await fetch(`${BASE_URL}/chat`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: accessToken ? `Bearer ${accessToken}` : '',
+        ...(sessionId ? { 'X-Session-Id': sessionId } : {}),
       },
       body: JSON.stringify({ message, history: history ?? [], context: context ?? {} }),
     })

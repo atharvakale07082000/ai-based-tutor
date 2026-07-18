@@ -21,6 +21,7 @@ from app.agents import tools
 from app.agents.hooks import GuardrailHook
 from app.agents.model import get_nim_model
 from app.agents.skills import load_skill, skills_prompt_block
+from app.config import settings
 from app.prompts.loader import get_section
 
 
@@ -94,11 +95,45 @@ def _system_prompt(spec: SpecialistSpec) -> str:
     roles = get_section("react_agent", "roles")
     role_text = roles.get(spec.role_name, "You are a helpful AI tutor.")
     skills_block = skills_prompt_block(list(spec.skills))
-    return f"{role_text}\n\n{skills_block}".strip()
+    reasoning_block = get_section("react_agent", "reasoning_protocol")
+    return f"{role_text}\n\n{skills_block}\n\n{reasoning_block}".strip()
 
 
-def build_specialist(key: str) -> Agent:
-    """Construct (uncached) the specialist Agent for a routing key."""
+def _session_kwargs(session_id: str) -> dict:
+    """Strands session + conversation managers giving a chat thread durable memory.
+
+    All specialists in a thread share one ``agent_id`` ("chat") within the thread's
+    session, so memory carries ACROSS specialists (e.g. "quiz me on that" after a
+    doubt turn). A SlidingWindow bounds how much history stays in the model context.
+    """
+    import os
+    import tempfile
+
+    from strands.agent.conversation_manager import SlidingWindowConversationManager
+    from strands.session.file_session_manager import FileSessionManager
+
+    storage_dir = settings.AGENT_SESSIONS_DIR or os.path.join(
+        tempfile.gettempdir(), "atelier_agent_sessions"
+    )
+    return {
+        "agent_id": "chat",
+        "session_manager": FileSessionManager(
+            session_id=f"chat-{session_id}", storage_dir=storage_dir
+        ),
+        "conversation_manager": SlidingWindowConversationManager(
+            window_size=settings.CHAT_MEMORY_WINDOW
+        ),
+    }
+
+
+def build_specialist(key: str, session_id: str | None = None) -> Agent:
+    """Construct (uncached) the specialist Agent for a routing key.
+
+    When ``session_id`` (a chat thread id) is given, the agent is wired to that
+    thread's persisted conversation (Strands ``FileSessionManager``) so Ask Atelier
+    remembers earlier turns across the whole thread. Without it the agent is stateless
+    (the generation pipelines that reuse this builder stay memoryless).
+    """
     spec = SPECIALISTS[key]
     return Agent(
         name=spec.role_name,
@@ -107,4 +142,5 @@ def build_specialist(key: str) -> Agent:
         tools=[load_skill, *spec.domain_tools],
         hooks=[GuardrailHook()],
         callback_handler=None,  # we drive streaming via stream_async ourselves
+        **(_session_kwargs(session_id) if session_id else {}),
     )

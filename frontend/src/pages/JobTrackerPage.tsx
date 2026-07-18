@@ -5,7 +5,7 @@ import toast from 'react-hot-toast'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Icon } from '@/components/ui/Icon'
-import { AgentTimeline } from '@/components/ui/AgentTimeline'
+import { ReasoningStream } from '@/components/agents/ReasoningStream'
 import { useAgentTimeline } from '@/hooks/useAgentTimeline'
 import {
   jobsAPI, quizAPI, streamSSE,
@@ -271,8 +271,11 @@ function AddJobPanel({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
       </div>
 
       {analyzing && steps.length > 0 && (
-        <div style={{ marginTop: 14, padding: 14, background: 'var(--paper-2)', borderRadius: 'var(--r-2)' }}>
-          <AgentTimeline steps={steps} className="fade-in" />
+        <div style={{ marginTop: 14 }}>
+          <ReasoningStream
+            segments={steps.map((s) => ({ id: s.id, text: s.label, status: s.status }))}
+            className="fade-in"
+          />
         </div>
       )}
 

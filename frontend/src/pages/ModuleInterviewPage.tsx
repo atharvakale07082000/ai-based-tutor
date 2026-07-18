@@ -5,7 +5,7 @@ import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Icon } from '@/components/ui/Icon'
-import { AgentTimeline } from '@/components/ui/AgentTimeline'
+import { ReasoningStream } from '@/components/agents/ReasoningStream'
 import { useAgentTimeline } from '@/hooks/useAgentTimeline'
 import { coursesAPI, streamSSE, type Interview } from '@/lib/api'
 
@@ -594,8 +594,11 @@ export default function ModuleInterviewPage() {
           </div>
           <h2 className="display" style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-0.03em', marginBottom: 8 }}>Computing your score</h2>
           <p className="t-sm fg-2" style={{ marginBottom: 24 }}>AI is cross-checking all answers against module knowledge…</p>
-          <div style={{ display: 'inline-flex', justifyContent: 'flex-start', textAlign: 'left' }}>
-            <AgentTimeline steps={scoringSteps} />
+          <div style={{ display: 'inline-flex', justifyContent: 'flex-start', textAlign: 'left', width: '100%' }}>
+            <ReasoningStream
+              segments={scoringSteps.map((s) => ({ id: s.id, text: s.label, status: s.status }))}
+              style={{ width: '100%' }}
+            />
           </div>
         </div>
       </div>

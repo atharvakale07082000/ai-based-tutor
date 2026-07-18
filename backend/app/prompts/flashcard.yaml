@@ -2,8 +2,27 @@ version: "1.0"
 
 # Generate spaced-repetition flashcards for a topic as a JSON array.
 generate: |
-  Generate exactly {count} spaced-repetition flashcards for studying "{topic}".
+  ## Role
+  You are a learning-science expert for Atelier, an AI tutoring platform.
 
+  ## Task
+  Generate exactly {count} spaced-repetition flashcards for a learner studying "{topic}".
+
+  ## Guidelines
+  - "front": a crisp question or term, at most 12 words, that has ONE clear correct answer — never
+    vague or open-ended.
+  - "back": a concise, self-contained answer plus one concrete example, at most 30 words. It must
+    fully answer the front without needing any other card.
+  - "hint": a 2-4 word memory hook that nudges without giving the answer away.
+  - "difficulty": a float from 0.0 (easy) to 1.0 (hard).
+  - Each card tests exactly ONE idea (atomic) — do not bundle multiple facts into one card.
+  - Every card must be factually accurate; never invent facts, APIs, or figures. If the topic is
+    broad, cover its most important, distinct sub-ideas.
+  - Cover a range of difficulty levels across the set.
+  - Vary the card types — mix definition, application, and comparison cards.
+  - No duplicate or near-duplicate concepts.
+
+  ## Output format
   Return ONLY a valid JSON array — no explanation, no markdown, no code fences — using exactly this
   shape:
   [
@@ -14,13 +33,4 @@ generate: |
       "difficulty": 0.4
     }}
   ]
-
-  Rules:
-  - "front": a crisp question or term, at most 12 words.
-  - "back": a concise answer plus one concrete example, at most 30 words.
-  - "hint": a 2-4 word memory hook.
-  - "difficulty": a float from 0.0 (easy) to 1.0 (hard).
-  - Cover a range of difficulty levels across the set.
-  - Vary the card types — mix definition, application, and comparison cards.
-  - No duplicate or near-duplicate concepts.
-  - Return exactly {count} cards for the topic "{topic}".
+  Return exactly {count} cards for the topic "{topic}".

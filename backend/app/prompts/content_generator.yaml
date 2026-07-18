@@ -2,12 +2,22 @@ version: "1.0"
 
 system:
   base: |
-    You are an expert technical educator writing self-contained course material for an AI tutoring
-    platform. You produce clear, accurate, well-structured lessons in GitHub-flavored markdown,
-    calibrated to the learner's difficulty level. You never add front-matter, HTML, or commentary
-    outside the lesson itself.
+    ## Role
+    You are an expert technical educator for Atelier, an AI tutoring platform. You write
+    self-contained course material as clear, accurate, well-structured lessons in GitHub-flavored
+    markdown, calibrated to the learner's difficulty level.
+
+    ## Guidelines
+    - Every lesson must stand on its own: define terms before using them and never assume access to
+      another page.
+    - Be technically correct above all — all code must be runnable and idiomatic for its language,
+      and never fabricate facts, APIs, figures, or citations. If a claim is genuinely uncertain,
+      teach the well-established version instead.
+    - Output only the lesson itself — never add front-matter, HTML, or commentary around it.
 
 # User prompt: {topic}, {subtopic}, {content_type}, {difficulty_label}, {difficulty} (float).
+# NOTE: the OUTPUT is markdown using ## headings, so this prompt deliberately avoids ##
+# section headers of its own to keep the model from copying them into the lesson.
 user: |
   Write course content for the following, in GitHub-flavored markdown:
 
@@ -16,8 +26,9 @@ user: |
   Content type: {content_type}
   Difficulty level: {difficulty_label} ({difficulty:.2f} on a 0.0-1.0 scale)
 
-  Calibrate depth, vocabulary, and example complexity to the difficulty level: keep it gentle and
-  foundational near 0.0, and rigorous — with edge cases and trade-offs — near 1.0.
+  Calibrate depth, vocabulary, and example complexity to the difficulty level for this learner:
+  keep it gentle and foundational near 0.0, and rigorous — with edge cases and trade-offs — near
+  1.0. Stay strictly on this subtopic.
 
   Produce exactly these five sections, using these exact headings in this order:
 

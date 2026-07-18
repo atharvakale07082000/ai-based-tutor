@@ -1,7 +1,5 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { AgentStep } from '@/components/agents/StreamTrace'
-import type { TimelineStep } from '@/hooks/useAgentTimeline'
 
 /**
  * Client-side history for the Ask Atelier chat. There is no server-side thread
@@ -20,9 +18,8 @@ export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
   streaming?: boolean
-  routing?: { agent: string; reason: string }
-  steps: AgentStep[]
-  timeline: TimelineStep[]
+  /** The agent's live reasoning ("how I'm thinking through this"), streamed in. */
+  reasoning: string
   actions: ChatAction[]
 }
 
@@ -46,19 +43,10 @@ function deriveTitle(messages: ChatMessage[]): string {
   return t.length > 48 ? t.slice(0, 48) + '…' : t
 }
 
-// Persist only what the history UI needs — drop tool args/results (which carry
-// internal ids) and the transient streaming flag before writing to disk.
+// Persist only what the history UI needs — keep the reasoning narrative and answer,
+// drop the transient streaming flag before writing to disk.
 function slim(messages: ChatMessage[]): ChatMessage[] {
-  return messages.map((m) => ({
-    ...m,
-    streaming: false,
-    steps: m.steps.map((s: AgentStep) => ({
-      step: s.step,
-      thought: s.thought,
-      toolCall: s.toolCall ? { name: s.toolCall.name, args: {} } : undefined,
-      toolResult: s.toolResult ? { result: null, latency_ms: s.toolResult.latency_ms } : undefined,
-    })),
-  }))
+  return messages.map((m) => ({ ...m, streaming: false }))
 }
 
 interface ChatState {

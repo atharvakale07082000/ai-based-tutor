@@ -89,6 +89,9 @@ async def v2_chat(
                 "proficiency": learner.get("topic_proficiency_map") or {},
                 "history": [m.model_dump() for m in body.history[-6:]],
                 **body.context,
+                # Stable chat-thread id (client sends its thread id as X-Session-Id) enables
+                # persistent per-thread memory; absent → stateless turn. Header wins over body.
+                "thread_id": request.headers.get("X-Session-Id", ""),
             }
 
             # Live step timeline: routing done → working (+ one step per tool call) → composing answer.
