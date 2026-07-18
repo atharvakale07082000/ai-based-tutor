@@ -33,7 +33,10 @@ def _make_question(bloom_level: str = "apply", topic: str = "Python") -> dict:
 
 async def _mock_tool(name: str, **kwargs) -> dict:
     if name == "classify_topic":
-        return {"labels": ["Python Programming", "Machine Learning"], "scores": [0.92, 0.08]}
+        return {
+            "labels": ["Python Programming", "Machine Learning"],
+            "scores": [0.92, 0.08],
+        }
     if name == "analyze_sentiment":
         return {"label": "POSITIVE", "score": 0.91}
     if name == "score_difficulty":
@@ -55,24 +58,29 @@ async def _mock_stream(*args, **kwargs):
     return _gen()
 
 
-async def _mock_get_or_generate(topic: str, bloom_level: str = "apply", count: int = 5) -> list:
+async def _mock_get_or_generate(
+    topic: str, bloom_level: str = "apply", count: int = 5
+) -> list:
     return [_make_question(bloom_level, topic) for _ in range(count)]
 
 
 @contextmanager
 def mock_all_agents():
-    """Patch call_tool in every agent module + HF streaming responses."""
+    """Patch the session engine's tool boundary + HF streaming responses.
+
+    The study-session flow (start/advance, curriculum build, quiz gen) now runs
+    through ``app.agents.session`` which delegates to the tool registry via the
+    module-level ``_tool`` helper — patch there. Quiz generation for /quiz/generate
+    runs in the quiz_gen pipeline which imports get_or_generate_quiz_questions
+    lazily from its source module — patch there. Doubts stream via stream_doubt_response.
+    """
     with (
-        patch("app.agents.curriculum_agent.call_tool", side_effect=_mock_tool),
-        patch("app.agents.quiz_agent.call_tool", side_effect=_mock_tool),
-        patch("app.agents.progress_agent.call_tool", side_effect=_mock_tool),
-        patch("app.agents.doubt_agent.call_tool", side_effect=_mock_tool),
-        patch("app.agents.planner_agent.call_tool", side_effect=_mock_tool),
-        patch("app.agents.doubt_agent.stream_doubt_response", side_effect=_mock_stream),
+        patch("app.agents.session._tool", side_effect=_mock_tool),
         patch("app.routers.doubts.stream_doubt_response", side_effect=_mock_stream),
-        # Quiz generation now runs inside the quiz_gen workflow, which imports
-        # get_or_generate_quiz_questions lazily from its source module — patch there.
-        patch("app.hf.quiz_questions.get_or_generate_quiz_questions", side_effect=_mock_get_or_generate),
+        patch(
+            "app.hf.quiz_questions.get_or_generate_quiz_questions",
+            side_effect=_mock_get_or_generate,
+        ),
     ):
         yield
 
@@ -90,7 +98,9 @@ async def client():
     """Fresh ASGI client (MongoDB-backed app, no table creation needed)."""
     from app.main import app
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as c:
         yield c
 
 
@@ -115,7 +125,9 @@ async def superuser_authed(authed):
     """Authed client promoted to the superuser role — required by the gated /evals/* endpoints."""
     from app.db.mongo import col_users
 
-    await col_users().update_one({"id": _STATE["user_id"]}, {"$set": {"role": "superuser"}})
+    await col_users().update_one(
+        {"id": _STATE["user_id"]}, {"$set": {"role": "superuser"}}
+    )
     return authed
 
 
@@ -312,7 +324,10 @@ class TestE2E_Session:
         with mock_all_agents():
             resp = await authed.post(
                 "/api/v1/session/advance",
-                json={"quiz_id": "00000000-0000-0000-0000-000000000000", "answers": [0]},
+                json={
+                    "quiz_id": "00000000-0000-0000-0000-000000000000",
+                    "answers": [0],
+                },
             )
         assert resp.status_code == 404
 
@@ -373,13 +388,17 @@ class TestE2E_Quiz:
     async def test_E2E_Q03_submit_wrong_answers(self, authed):
         """All-wrong answers → score 0.0 → Elo decreases."""
         with mock_all_agents():
-            gen_resp = await authed.post("/api/v1/quiz/generate", json={"topic": "Statistics"})
+            gen_resp = await authed.post(
+                "/api/v1/quiz/generate", json={"topic": "Statistics"}
+            )
         quiz_id = gen_resp.json()["quiz_id"]
         questions = gen_resp.json()["questions"]
         wrong = [(q.get("correct_index", 0) + 1) % 4 for q in questions]
 
         with mock_all_agents():
-            resp = await authed.post(f"/api/v1/quiz/{quiz_id}/submit", json={"answers": wrong})
+            resp = await authed.post(
+                f"/api/v1/quiz/{quiz_id}/submit", json={"answers": wrong}
+            )
         assert resp.status_code == 200
         data = resp.json()
         assert data["score"] == 0.0
@@ -403,7 +422,9 @@ class TestE2E_Quiz:
     async def test_E2E_Q06_get_quiz_session(self, authed):
         """GET /quiz/{id} — fetch quiz details."""
         with mock_all_agents():
-            gen_resp = await authed.post("/api/v1/quiz/generate", json={"topic": "ML Basics"})
+            gen_resp = await authed.post(
+                "/api/v1/quiz/generate", json={"topic": "ML Basics"}
+            )
         quiz_id = gen_resp.json()["quiz_id"]
 
         resp = await authed.get(f"/api/v1/quiz/{quiz_id}")
@@ -496,7 +517,9 @@ class TestE2E_Evals:
         assert data["passed"] is True
 
     @pytest.mark.asyncio
-    async def test_E2E_EV02_run_planner_decision_eval_default_quiz(self, superuser_authed):
+    async def test_E2E_EV02_run_planner_decision_eval_default_quiz(
+        self, superuser_authed
+    ):
         """Planner chose 'quiz' with unmastered curriculum → passes."""
         with patch("app.evals.mongo.insert_eval", new_callable=AsyncMock) as mock_ins:
             mock_ins.return_value = "507f1f77bcf86cd799439012"
@@ -527,7 +550,9 @@ class TestE2E_Evals:
                 params={"eval_type": "doubt_relevance", "agent": "doubt_agent"},
                 json={
                     "input": {"context": "Python programming basics"},
-                    "output": {"doubt_response": "Python programming uses loops and functions."},
+                    "output": {
+                        "doubt_response": "Python programming uses loops and functions."
+                    },
                 },
             )
         assert resp.status_code == 200
@@ -546,7 +571,10 @@ class TestE2E_Evals:
             mock_ins.return_value = "507f1f77bcf86cd799439014"
             resp = await superuser_authed.post(
                 "/api/v1/evals/run",
-                params={"eval_type": "curriculum_ordering", "agent": "curriculum_agent"},
+                params={
+                    "eval_type": "curriculum_ordering",
+                    "agent": "curriculum_agent",
+                },
                 json={
                     "input": {},
                     "output": {"curriculum_path": path},
@@ -578,10 +606,22 @@ class TestE2E_Evals:
         # Patch at the router module level (not mongo module) to bypass import binding
         with patch("app.routers.evals.query_evals", new_callable=AsyncMock) as mock_q:
             mock_q.return_value = [
-                {"eval_type": "quiz_format", "agent": "quiz_agent", "score": 1.0, "passed": True},
-                {"eval_type": "planner_decision", "agent": "planner_agent", "score": 1.0, "passed": True},
+                {
+                    "eval_type": "quiz_format",
+                    "agent": "quiz_agent",
+                    "score": 1.0,
+                    "passed": True,
+                },
+                {
+                    "eval_type": "planner_decision",
+                    "agent": "planner_agent",
+                    "score": 1.0,
+                    "passed": True,
+                },
             ]
-            resp = await superuser_authed.get("/api/v1/evals/results", params={"limit": 10})
+            resp = await superuser_authed.get(
+                "/api/v1/evals/results", params={"limit": 10}
+            )
         assert resp.status_code == 200
         data = resp.json()
         assert "results" in data
@@ -591,7 +631,9 @@ class TestE2E_Evals:
     @pytest.mark.asyncio
     async def test_E2E_EV07_summary_endpoint(self, superuser_authed):
         """GET /evals/summary — aggregated pass rates."""
-        with patch("app.routers.evals.aggregate_summary", new_callable=AsyncMock) as mock_s:
+        with patch(
+            "app.routers.evals.aggregate_summary", new_callable=AsyncMock
+        ) as mock_s:
             mock_s.return_value = [
                 {
                     "eval_type": "quiz_format",
@@ -626,7 +668,9 @@ class TestE2E_Evals:
         ]
         with patch("app.evals.mongo.insert_eval", new_callable=AsyncMock) as mock_ins:
             mock_ins.return_value = "507f1f77bcf86cd799439016"
-            resp = await superuser_authed.post("/api/v1/evals/batch/quiz", json=sessions)
+            resp = await superuser_authed.post(
+                "/api/v1/evals/batch/quiz", json=sessions
+            )
         assert resp.status_code == 200
         results = resp.json()["results"]
         assert len(results) == 2
@@ -663,7 +707,9 @@ class TestE2E_Progress:
     async def test_E2E_PR03_progress_populated_after_quiz(self, authed):
         """After submitting a quiz, progress records grow."""
         with mock_all_agents():
-            gen = await authed.post("/api/v1/quiz/generate", json={"topic": "Graph Theory"})
+            gen = await authed.post(
+                "/api/v1/quiz/generate", json={"topic": "Graph Theory"}
+            )
         quiz_id = gen.json()["quiz_id"]
         questions = gen.json()["questions"]
 

@@ -1,101 +1,182 @@
 """
-Agent Tool Registry.
+Strands ``@tool`` adapters over the master tool registry (``app/tools``).
 
-Each entry is an async callable that a LangGraph agent node can invoke to delegate
-specialized work to another agent.  Agents are purposefully thin wrappers — they
-call a specific HF capability, add tracing, and return a typed dict so callers
-can use the result without knowing which model/provider was used.
-
-Usage inside an agent node:
-    from app.agents.tools import call_tool
-    result = await call_tool("classify_topic", text="learn python")
-    domain = result["labels"][0]
+The registry keeps ownership of execution (timeouts, latency capture, structured
+logging); these adapters only expose each tool to the Strands agent loop with an
+LLM-facing docstring. Errors come back as ``{"error": ...}`` payloads so the
+model can read the observation and adjust, exactly like the old ReAct loop.
 """
 
 from __future__ import annotations
 
-from typing import Any
+from strands import tool
 
-import structlog
-
-from app.tracing import get_tracer
-
-log = structlog.get_logger()
+from app.tools import tool_registry
 
 
-# ── Individual tool implementations ──────────────────────────────────────────
+async def _call(name: str, args: dict) -> dict:
+    result = await tool_registry.call(name, args)
+    if result.result is not None:
+        return result.result
+    return {"error": result.error}
 
 
-async def _tool_classify_topic(text: str, labels: list[str] | None = None) -> dict:
-    """Delegate to topic-classifier HF agent."""
-    from app.hf.topic_classifier import classify_topic
+@tool
+async def classify_topic(text: str, labels: list[str] | None = None) -> dict:
+    """Classify free text into learning-domain labels (zero-shot).
 
-    return await classify_topic(text, labels)
-
-
-async def _tool_analyze_sentiment(text: str) -> dict:
-    """Delegate to sentiment-analysis HF agent."""
-    from app.hf.sentiment import analyze_sentiment
-
-    return await analyze_sentiment(text)
-
-
-async def _tool_score_difficulty(text: str) -> dict:
-    """Delegate to difficulty-scorer HF agent. Returns {'score': float}."""
-    from app.hf.difficulty_scorer import score_difficulty
-
-    score = await score_difficulty(text)
-    return {"score": score}
-
-
-async def _tool_generate_quiz(topic: str, bloom_level: str, count: int = 5) -> dict:
-    """Delegate to quiz-generator HF agent."""
-    from app.hf.quiz_generator import generate_quiz_questions
-
-    questions = await generate_quiz_questions(topic, bloom_level, count)
-    return {"questions": questions}
-
-
-async def _tool_get_embeddings(text: str) -> dict:
-    """Delegate to embedding HF agent for semantic similarity tasks."""
-    from app.hf.embeddings import get_embeddings
-
-    vector = await get_embeddings(text)
-    return {"embedding": vector}
-
-
-# ── Registry ──────────────────────────────────────────────────────────────────
-
-_REGISTRY: dict[str, Any] = {
-    "classify_topic": _tool_classify_topic,
-    "analyze_sentiment": _tool_analyze_sentiment,
-    "score_difficulty": _tool_score_difficulty,
-    "generate_quiz": _tool_generate_quiz,
-    "get_embeddings": _tool_get_embeddings,
-}
-
-
-async def call_tool(name: str, **kwargs) -> dict:
+    Args:
+        text: The text to classify (e.g. a learning goal or question).
+        labels: Optional candidate labels; sensible defaults are used when omitted.
     """
-    Call a registered agent tool by name with keyword arguments.
-    Automatically traces the call via Langfuse.
-    Raises ValueError for unknown tools; propagates tool errors.
+    return await _call("classify_topic", {"text": text, "labels": labels})
+
+
+@tool
+async def analyze_sentiment(text: str) -> dict:
+    """Analyze the sentiment/mood of learner text (POSITIVE/NEGATIVE + score)."""
+    return await _call("analyze_sentiment", {"text": text})
+
+
+@tool
+async def score_difficulty(text: str) -> dict:
+    """Score how difficult a topic or question is, from 0.0 (easy) to 1.0 (hard)."""
+    return await _call("score_difficulty", {"text": text})
+
+
+@tool
+async def generate_quiz(topic: str, bloom_level: str, count: int = 5) -> dict:
+    """Generate Bloom-calibrated multiple-choice quiz questions for a topic.
+
+    Args:
+        topic: The subject to quiz on.
+        bloom_level: Bloom taxonomy level (remember/understand/apply/analyze/evaluate/create).
+        count: Number of questions (default 5).
     """
-    if name not in _REGISTRY:
-        raise ValueError(f"Unknown tool: {name!r}. Available: {list(_REGISTRY)}")
-
-    tracer = get_tracer()
-    with tracer.trace(f"tool:{name}", input={"tool": name, **kwargs}) as span:
-        log.info("agent_tool_call", tool=name, kwargs=list(kwargs))
-        try:
-            result = await _REGISTRY[name](**kwargs)
-            span.update(output=result)
-            log.info("agent_tool_done", tool=name)
-            return result
-        except Exception as exc:
-            log.error("agent_tool_error", tool=name, error=str(exc))
-            raise
+    return await _call(
+        "generate_quiz", {"topic": topic, "bloom_level": bloom_level, "count": count}
+    )
 
 
-def available_tools() -> list[str]:
-    return list(_REGISTRY.keys())
+@tool
+async def get_embeddings(text: str) -> dict:
+    """Get a sentence-embedding vector for text (semantic similarity)."""
+    return await _call("get_embeddings", {"text": text})
+
+
+@tool
+async def generate_explanation(
+    topic: str, question: str, bloom_level: str = "understand"
+) -> dict:
+    """Generate a clear, learner-friendly explanation for a question on a topic."""
+    return await _call(
+        "generate_explanation",
+        {"topic": topic, "question": question, "bloom_level": bloom_level},
+    )
+
+
+@tool
+async def get_proficiency(learner_id: str) -> dict:
+    """Fetch the learner's proficiency map (per-topic Elo), XP, and streak."""
+    return await _call("get_proficiency", {"learner_id": learner_id})
+
+
+@tool
+async def get_topic_graph() -> dict:
+    """Fetch the topic dependency graph and available learning domains."""
+    return await _call("get_topic_graph", {})
+
+
+@tool
+async def save_quiz(
+    learner_id: str, topic: str, bloom_level: str, questions: list
+) -> dict:
+    """Persist a generated quiz for the learner; returns quiz_id and URL."""
+    return await _call(
+        "save_quiz",
+        {
+            "learner_id": learner_id,
+            "topic": topic,
+            "bloom_level": bloom_level,
+            "questions": questions,
+        },
+    )
+
+
+@tool
+async def save_progress(
+    learner_id: str,
+    topic: str,
+    old_elo: float,
+    new_elo: float,
+    score: float,
+    mood: str = "NEUTRAL",
+) -> dict:
+    """Persist a progress update (Elo change + mood) for a topic; returns XP delta."""
+    return await _call(
+        "save_progress",
+        {
+            "learner_id": learner_id,
+            "topic": topic,
+            "old_elo": old_elo,
+            "new_elo": new_elo,
+            "score": score,
+            "mood": mood,
+        },
+    )
+
+
+@tool
+async def get_due_topics(learner_id: str) -> dict:
+    """List topics due for spaced-repetition review for the learner."""
+    return await _call("get_due_topics", {"learner_id": learner_id})
+
+
+@tool
+async def calculate_elo(
+    current_elo: float, score: float, expected_score: float = 0.5
+) -> dict:
+    """Compute an updated Elo proficiency from a quiz score (K=32, clamped 0-1000)."""
+    return await _call(
+        "calculate_elo",
+        {
+            "current_elo": current_elo,
+            "score": score,
+            "expected_score": expected_score,
+        },
+    )
+
+
+@tool
+async def check_guardrail(text: str) -> dict:
+    """Run the safety guardrail over text; returns passed/reason/sanitized."""
+    return await _call("check_guardrail", {"text": text})
+
+
+@tool
+async def web_search(query: str, max_results: int = 6) -> dict:
+    """Search the web; returns result titles, snippets, and URLs."""
+    return await _call("web_search", {"query": query, "max_results": max_results})
+
+
+# Grouped for the specialist builders (mirrors the old per-agent tool_names lists).
+DOUBT_TOOLS = [check_guardrail, get_proficiency, generate_explanation, web_search]
+QUIZ_TOOLS = [get_proficiency, score_difficulty, generate_quiz, save_quiz]
+CURRICULUM_TOOLS = [classify_topic, get_topic_graph, get_proficiency, web_search]
+PROGRESS_TOOLS = [get_proficiency, calculate_elo, analyze_sentiment, save_progress]
+ASSISTANT_TOOLS = [
+    classify_topic,
+    analyze_sentiment,
+    score_difficulty,
+    generate_quiz,
+    get_embeddings,
+    generate_explanation,
+    get_proficiency,
+    get_topic_graph,
+    save_quiz,
+    save_progress,
+    get_due_topics,
+    calculate_elo,
+    check_guardrail,
+    web_search,
+]

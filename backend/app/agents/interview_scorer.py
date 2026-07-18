@@ -1,8 +1,9 @@
 """
-Interview Scoring Agent — LangGraph workflow that cross-checks all Q&A pairs
-against module knowledge and produces a comprehensive scoring matrix + final score/10.
+Interview Scoring Agent — a fixed 3-step pipeline that cross-checks all Q&A pairs
+against module knowledge and produces a scoring matrix + final score/10.
 
-Graph: analyze_answers → build_scoring_matrix → compute_final_score → END
+Pipeline: analyze_answers → build_scoring_matrix → compute_final_score.
+(Plain sequential functions — no graph engine; each step is a single LLM call.)
 """
 
 from __future__ import annotations
@@ -12,7 +13,6 @@ import re
 from typing import TypedDict
 
 import structlog
-from langgraph.graph import END, StateGraph
 
 from app.hf.client import get_hf_client
 from app.hf.models import HF_MODELS
@@ -186,22 +186,7 @@ def _node_compute_final_score(state: ScoringState) -> dict:
     return {"final_score": final_score, "summary": summary, "passed": passed}
 
 
-# ─── Graph assembly ───────────────────────────────────────────────────────────
-
-
-def _build_graph():
-    g = StateGraph(ScoringState)
-    g.add_node("analyze_answers", _node_analyze_answers)
-    g.add_node("build_scoring_matrix", _node_build_scoring_matrix)
-    g.add_node("compute_final_score", _node_compute_final_score)
-    g.set_entry_point("analyze_answers")
-    g.add_edge("analyze_answers", "build_scoring_matrix")
-    g.add_edge("build_scoring_matrix", "compute_final_score")
-    g.add_edge("compute_final_score", END)
-    return g.compile()
-
-
-_graph = _build_graph()
+# ─── Pipeline assembly ────────────────────────────────────────────────────────
 
 
 _SCORING_TIMEOUT_S = 120  # hard cap so a hanging LLM call never blocks forever
@@ -213,7 +198,10 @@ def run_scoring_agent(
     questions: list[dict],
     transcriptions: list[dict],
 ) -> dict:
-    """Synchronous entry point — call via asyncio.to_thread in async contexts."""
+    """Synchronous entry point — call via asyncio.to_thread in async contexts.
+
+    Runs analyze → matrix → final score in sequence, threading a plain state dict.
+    """
     import signal
     import threading
 
@@ -233,27 +221,29 @@ def run_scoring_agent(
         signal.signal(signal.SIGALRM, _timeout_handler)
         signal.alarm(_SCORING_TIMEOUT_S)
 
+    state: ScoringState = {
+        "module_title": module_title,
+        "module_topics": module_topics,
+        "questions": questions,
+        "transcriptions": transcriptions,
+        "analyses": [],
+        "scoring_matrix": [],
+        "final_score": 0.0,
+        "summary": "",
+        "passed": False,
+    }
+
     try:
-        result = _graph.invoke(
-            {
-                "module_title": module_title,
-                "module_topics": module_topics,
-                "questions": questions,
-                "transcriptions": transcriptions,
-                "analyses": [],
-                "scoring_matrix": [],
-                "final_score": 0.0,
-                "summary": "",
-                "passed": False,
-            }
-        )
+        state.update(_node_analyze_answers(state))
+        state.update(_node_build_scoring_matrix(state))
+        state.update(_node_compute_final_score(state))
     finally:
         if use_alarm:
             signal.alarm(0)  # cancel any pending alarm
 
     return {
-        "scoring_matrix": result["scoring_matrix"],
-        "final_score": result["final_score"],
-        "summary": result["summary"],
-        "passed": result["passed"],
+        "scoring_matrix": state["scoring_matrix"],
+        "final_score": state["final_score"],
+        "summary": state["summary"],
+        "passed": state["passed"],
     }

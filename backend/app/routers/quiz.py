@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from app.agents.progress_agent import calculate_elo_update
+from app.agents.progress import calculate_elo_update
 from app.agents.steps import StepTimeline, sse_step_stream
 from app.auth.jwt import get_current_user_id
 from app.guardrails import check_topic, topic_reject_message
@@ -48,8 +48,8 @@ async def generate_quiz(
     body: QuizGenerateRequest,
     user_id: str = Depends(get_current_user_id),
 ):
-    """Generate or retrieve a cached quiz via the ``quiz_gen`` workflow (resolve → generate → persist)."""
-    from app.agents.workflow import run_workflow
+    """Generate or retrieve a cached quiz via the ``quiz_gen`` pipeline (resolve → generate → persist)."""
+    from app.agents.pipelines import run_quiz_gen
 
     learner = await _get_learner_or_404(user_id)
     guard = check_topic(body.topic)
@@ -59,16 +59,14 @@ async def generate_quiz(
     log.info("quiz_generate_start", topic=body.topic, learner_id=learner["id"])
 
     elo = (learner.get("topic_proficiency_map") or {}).get(body.topic, 500.0)
-    ctx = await run_workflow(
-        "quiz_gen",
+    persisted = await run_quiz_gen(
         {
             "topic": body.topic,
             "bloom_level": body.bloom_level,
             "elo": elo,
             "learner_id": learner["id"],
-        },
+        }
     )
-    persisted = ctx.result("persist")
 
     # Online eval sampling: do the generated questions correctly test the requested topic?
     from app.evals.deepeval_metrics import maybe_eval_single_turn

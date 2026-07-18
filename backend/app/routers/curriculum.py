@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 import structlog
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
-from app.agents.orchestrator import orchestrator
+from app.agents.session import build_curriculum
 from app.auth.jwt import get_current_user_id
 from app.db.mongo import col_curricula, col_learners
 
@@ -42,26 +42,10 @@ async def _do_generate_curriculum(user_id: str, learner: dict) -> None:
     learner_id = learner["id"]
     log.info("curriculum_generate_start_bg", learner_id=learner_id)
     try:
-        state = {
-            "learner_id": learner_id,
-            "task_type": "curriculum",
-            "messages": [],
-            "learner_profile": {
-                "goal_vector": learner.get("goal_vector") or [],
-                "learning_style": learner.get("learning_style", "visual"),
-            },
-            "topic_proficiency": learner.get("topic_proficiency_map") or {},
-            "current_topic": "",
-            "quiz_questions": [],
-            "curriculum_path": [],
-            "doubt_response": "",
-            "progress_delta": {},
-            "bloom_level": "",
-            "error": None,
-        }
-
-        result = await orchestrator.ainvoke(state)
-        curriculum_path = result.get("curriculum_path", [])
+        curriculum_path = await build_curriculum(
+            learner.get("goal_vector") or [],
+            learner.get("topic_proficiency_map") or {},
+        )
 
         await col_curricula().update_many(
             {"learner_id": learner_id, "is_active": True},
@@ -81,9 +65,18 @@ async def _do_generate_curriculum(user_id: str, learner: dict) -> None:
         )
         await col_learners().update_one(
             {"user_id": user_id},
-            {"$set": {"curriculum_version": new_version, "updated_at": datetime.now(timezone.utc).isoformat()}},
+            {
+                "$set": {
+                    "curriculum_version": new_version,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }
+            },
         )
-        log.info("curriculum_generated_bg", learner_id=learner_id, topics=len(curriculum_path))
+        log.info(
+            "curriculum_generated_bg",
+            learner_id=learner_id,
+            topics=len(curriculum_path),
+        )
     except Exception as exc:
         log.error("curriculum_generate_failed", learner_id=learner_id, error=str(exc))
 
@@ -136,6 +129,10 @@ async def get_curriculum_graph(user_id: str = Depends(get_current_user_id)):
         for st in subtopics
     ]
 
-    edges = [{"from": prereq, "to": topic} for topic, prereqs in prerequisites.items() for prereq in prereqs]
+    edges = [
+        {"from": prereq, "to": topic}
+        for topic, prereqs in prerequisites.items()
+        for prereq in prereqs
+    ]
 
     return {"nodes": nodes, "edges": edges}

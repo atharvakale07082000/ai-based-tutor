@@ -1,0 +1,110 @@
+"""
+Specialist agent builders.
+
+Each specialist is a Strands ``Agent`` composed of:
+- a role system-prompt (from ``prompts/react_agent.yaml`` ``roles:``) plus its
+  skills catalog block (progressive disclosure via ``load_skill``),
+- the ``load_skill`` tool + its domain tools,
+- the shared NIM specialist model and the GuardrailHook.
+
+Specialists are invoked by the orchestrator (agents-as-tools). Construction is
+cached in ``handler.py`` — nothing here builds an Agent at import time.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from strands import Agent
+
+from app.agents import tools
+from app.agents.hooks import GuardrailHook
+from app.agents.model import get_nim_model
+from app.agents.skills import load_skill, skills_prompt_block
+from app.prompts.loader import get_section
+
+
+@dataclass(frozen=True)
+class SpecialistSpec:
+    key: str  # routing key (doubt/quiz/curriculum/progress/assistant)
+    role_name: str  # key in react_agent.yaml roles:
+    tool_desc: str  # description the orchestrator sees for this agent-as-tool
+    skills: tuple[str, ...]
+    domain_tools: tuple
+
+
+SPECIALISTS: dict[str, SpecialistSpec] = {
+    "doubt": SpecialistSpec(
+        key="doubt",
+        role_name="DoubtAgent",
+        tool_desc=(
+            "Answer a learner's conceptual question or doubt with a clear, "
+            "Bloom-appropriate explanation. Use for 'what is', 'why', 'how does', "
+            "'explain', 'I'm confused about' style questions."
+        ),
+        skills=("explanation", "web-research"),
+        domain_tools=tuple(tools.DOUBT_TOOLS),
+    ),
+    "quiz": SpecialistSpec(
+        key="quiz",
+        role_name="QuizAgent",
+        tool_desc=(
+            "Create an adaptive, Bloom-calibrated quiz on a topic and save it. "
+            "Use when the learner wants to be quizzed, tested, or assessed."
+        ),
+        skills=("quiz-authoring",),
+        domain_tools=tuple(tools.QUIZ_TOOLS),
+    ),
+    "curriculum": SpecialistSpec(
+        key="curriculum",
+        role_name="CurriculumAgent",
+        tool_desc=(
+            "Design a personalized, ordered learning path from the learner's goal "
+            "and proficiency gaps. Use for 'learn X', 'roadmap', 'study plan', "
+            "'where do I start'."
+        ),
+        skills=("curriculum-design", "web-research"),
+        domain_tools=tuple(tools.CURRICULUM_TOOLS),
+    ),
+    "progress": SpecialistSpec(
+        key="progress",
+        role_name="ProgressAgent",
+        tool_desc=(
+            "Update the learner's proficiency (Elo) after a quiz and capture mood, "
+            "or report how they're doing. Use for 'my progress', 'update my score', "
+            "'how am I doing'."
+        ),
+        skills=("progress-tracking",),
+        domain_tools=tuple(tools.PROGRESS_TOOLS),
+    ),
+    "assistant": SpecialistSpec(
+        key="assistant",
+        role_name="AssistantAgent",
+        tool_desc=(
+            "General-purpose tutor for anything that doesn't fit a more specific "
+            "specialist. Handles open-ended help by combining available tools."
+        ),
+        skills=("explanation", "web-research"),
+        domain_tools=tuple(tools.ASSISTANT_TOOLS),
+    ),
+}
+
+
+def _system_prompt(spec: SpecialistSpec) -> str:
+    roles = get_section("react_agent", "roles")
+    role_text = roles.get(spec.role_name, "You are a helpful AI tutor.")
+    skills_block = skills_prompt_block(list(spec.skills))
+    return f"{role_text}\n\n{skills_block}".strip()
+
+
+def build_specialist(key: str) -> Agent:
+    """Construct (uncached) the specialist Agent for a routing key."""
+    spec = SPECIALISTS[key]
+    return Agent(
+        name=spec.role_name,
+        model=get_nim_model("specialist"),
+        system_prompt=_system_prompt(spec),
+        tools=[load_skill, *spec.domain_tools],
+        hooks=[GuardrailHook()],
+        callback_handler=None,  # we drive streaming via stream_async ourselves
+    )

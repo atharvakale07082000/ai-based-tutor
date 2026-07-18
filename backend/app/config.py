@@ -39,6 +39,16 @@ class Settings(BaseSettings):
     NVIDIA_MODEL: str = "qwen/qwen3-next-80b-a3b-instruct"
     NVIDIA_FALLBACK_MODEL: str = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
 
+    # ── Strands agents (NVIDIA NIM via OpenAI-compatible endpoint) ───────────
+    # The orchestrator routes/delegates; specialists run the per-domain agent loops.
+    # Both default to the proven NVIDIA_MODEL id (Qwen3 supports native tool-calling);
+    # swap via env without code changes if delegation quality disappoints.
+    NIM_ORCHESTRATOR_MODEL: str = "qwen/qwen3-next-80b-a3b-instruct"
+    NIM_SPECIALIST_MODEL: str = "qwen/qwen3-next-80b-a3b-instruct"
+    NIM_RPM_LIMIT: int = (
+        40  # NVIDIA free-tier requests/minute; token-bucket in agents.model
+    )
+
     # ── Quality evals (DeepEval) ─────────────────────────────────────────────
     # The DeepEval judge wraps the NVIDIA NIM client (OpenAI-compatible) — no new creds.
     EVAL_JUDGE_MODEL: str = "qwen/qwen3-next-80b-a3b-instruct"

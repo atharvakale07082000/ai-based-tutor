@@ -18,13 +18,18 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import AsyncIterator, Awaitable, Callable
+from typing import AsyncIterator, Awaitable, Callable, Optional
 
 import structlog
 
 log = structlog.get_logger()
 
 StepStatus = str  # "active" | "done" | "error"
+
+# Optional step-emit callback a pipeline forwards its timeline events to. It receives
+# a step/event dict and pushes it onto the SSE queue (see ``sse_step_stream``).
+# ``None`` = run headless with no live timeline.
+StepEmit = Optional[Callable[[dict], Awaitable[None]]]
 
 
 @dataclass(frozen=True)
@@ -131,7 +136,12 @@ async def sse_step_stream(
             await run(emit)
         except Exception as e:  # noqa: BLE001 — convert any failure to a safe event
             log.error("sse_step_stream_error", error=str(e)[:300])
-            await queue.put({"type": "error", "message": "Something went wrong on my end — please try again."})
+            await queue.put(
+                {
+                    "type": "error",
+                    "message": "Something went wrong on my end — please try again.",
+                }
+            )
         finally:
             await queue.put(None)  # sentinel: worker finished
 

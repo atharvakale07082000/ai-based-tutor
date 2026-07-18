@@ -13,29 +13,14 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from structlog.contextvars import bind_contextvars
 
-from app.agents.routing import AGENT_DISPLAY_NAMES
+from app.agents.handler import handler
 from app.agents.steps import StepTimeline
-from app.agents_v2.assistant_agent import AssistantAgent
-from app.agents_v2.curriculum_agent import CurriculumAgent
-from app.agents_v2.doubt_agent import DoubtAgent
-from app.agents_v2.progress_agent import ProgressAgent
-from app.agents_v2.quiz_agent import QuizAgent
-from app.agents_v2.router import AgentRouter
 from app.auth.jwt import get_current_user_id
 from app.db.mongo import col_learners
 from app.guardrails import check_input
 
 router = APIRouter()
 log = structlog.get_logger()
-
-_agent_router = AgentRouter()
-_AGENTS: dict[str, object] = {
-    "curriculum": CurriculumAgent(),
-    "quiz": QuizAgent(),
-    "progress": ProgressAgent(),
-    "doubt": DoubtAgent(),
-    "assistant": AssistantAgent(),
-}
 
 
 class HistoryMessage(BaseModel):
@@ -61,7 +46,8 @@ async def v2_chat(
     Agentic SSE endpoint.
 
     1. Loads learner context from MongoDB.
-    2. Routes the query via AgentRouter (keyword-first, LLM fallback).
+    2. Hands off to the Strands agent handler, which LLM-routes the query to one
+       or more specialists (agents-as-orchestrator) and streams their trace.
     3. Streams structured agent events as Server-Sent Events.
 
     Error events sent to the client use generic messages; full details
@@ -105,26 +91,31 @@ async def v2_chat(
                 **body.context,
             }
 
-            agent_name, reason = await _agent_router.route(stripped, context)
-            display_name = AGENT_DISPLAY_NAMES.get(agent_name, "AI Tutor")
-            log.info(
-                "v2_chat_routed", agent=agent_name, reason=reason, session_id=session_id
-            )
-            yield f"data: {json.dumps({'type': 'routing', 'agent': agent_name, 'display_name': display_name, 'reason': reason})}\n\n"
-
             # Live step timeline: routing done → working (+ one step per tool call) → composing answer.
             tl = StepTimeline("chat")
-            yield f"data: {json.dumps(tl.done('route'))}\n\n"
-            yield f"data: {json.dumps(tl.start('work'))}\n\n"
             answered = False
             answer_text = ""  # accumulated for online eval sampling
             tool_grounding: list[
                 str
             ] = []  # tool results = the retrieval context for faithfulness
 
-            agent = _AGENTS.get(agent_name, _AGENTS["assistant"])
-            async for event in agent.run(stripped, context):
+            # The handler performs the always-on LLM routing decision itself and
+            # emits it as the first `routing` event; we frame the StepTimeline around
+            # the events it yields (routing → thought/tool_call/tool_result/token → done).
+            async for event in handler.run_chat(stripped, context):
                 etype = event.get("type")
+                if etype == "routing":
+                    agent_name = event.get("agent", "assistant")
+                    log.info(
+                        "chat_routed",
+                        agent=agent_name,
+                        reason=event.get("reason"),
+                        session_id=session_id,
+                    )
+                    yield f"data: {json.dumps(event)}\n\n"
+                    yield f"data: {json.dumps(tl.done('route'))}\n\n"
+                    yield f"data: {json.dumps(tl.start('work'))}\n\n"
+                    continue
                 if etype == "tool_call":
                     sid = f"tool:{event.get('name', 'tool')}"
                     label = f"Looking up {str(event.get('name', 'information')).replace('_', ' ')}"
