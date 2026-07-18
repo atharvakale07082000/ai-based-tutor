@@ -1,6 +1,6 @@
-"""Resilient generation client for the Qwen2.5-7B-Instruct chat agents
-(doubt solver, quiz generator, supervisor, course planner, interview scorer,
-content generator, agents_v2).
+"""Resilient generation client for the Qwen2.5-7B-Instruct generation paths
+(doubt solver, quiz generator, course planner, interview scorer,
+content generator).
 
 Primary: NVIDIA NIM (OpenAI-compatible), rotating between two NVIDIA models
 so a single bad/rate-limited model doesn't take down the primary path.

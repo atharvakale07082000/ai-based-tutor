@@ -191,19 +191,16 @@ async def _pregenerate_quizzes_for_plan(plan: dict) -> None:
 
 
 async def create_course_plan(goal: str, user_id: str, emit: StepEmit = None) -> dict:
-    """Build and persist a course plan via the ``course_gen`` workflow.
+    """Build and persist a course plan via the ``course_gen`` pipeline.
 
-    Thin entry point: the research → design → persist steps now live as sequential tasks in the
-    plan-then-execute framework (app.agents.workflow). If ``emit`` is given, the workflow streams
-    live timeline steps identical to before. Returns the saved plan.
+    Thin entry point: research → design → finalize run as a plain sequential
+    pipeline (``app.agents.pipelines.course_gen``). If ``emit`` is given, it
+    streams live timeline steps identical to before. Returns the saved plan.
     """
-    from app.agents.workflow import run_workflow
+    from app.agents.pipelines import run_course_gen
 
     log.info("course_planner_start", goal=goal, user_id=user_id)
-    ctx = await run_workflow(
-        "course_gen", {"goal": goal, "user_id": user_id}, emit=emit
-    )
-    return ctx.result("finalize")
+    return await run_course_gen(goal, user_id, emit=emit)
 
 
 # ─── Interview ────────────────────────────────────────────────────────────────
@@ -320,19 +317,15 @@ async def evaluate_answer(
 async def complete_interview(
     interview_id: str, plan_id: str, module_id: str, emit: StepEmit = None
 ) -> dict:
-    """Score an interview via the ``interview_review`` workflow (evaluate → score → feedback).
+    """Score an interview via the ``interview_review`` pipeline (evaluate → score → feedback).
 
-    Thin entry point: the steps now live as sequential tasks in app.agents.workflow. If ``emit`` is
-    given, the workflow streams live timeline steps identical to before. Returns the result payload.
+    Thin entry point: the steps run as a plain sequential pipeline
+    (``app.agents.pipelines.interview_review``). If ``emit`` is given, it streams
+    live timeline steps identical to before. Returns the result payload.
     """
-    from app.agents.workflow import run_workflow
+    from app.agents.pipelines import run_interview_review
 
-    ctx = await run_workflow(
-        "interview_review",
-        {"interview_id": interview_id, "plan_id": plan_id, "module_id": module_id},
-        emit=emit,
-    )
-    result = ctx.result("feedback")
+    result = await run_interview_review(interview_id, plan_id, module_id, emit=emit)
 
     log.info(
         "interview_complete",

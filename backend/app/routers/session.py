@@ -16,7 +16,7 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from app.agents.orchestrator import orchestrator
+from app.agents.session import run_session
 from app.auth.jwt import get_current_user_id
 from app.db.mongo import col_curricula, col_learners, col_progress, col_quizzes
 
@@ -105,7 +105,7 @@ async def start_session(user_id: str = Depends(get_current_user_id)):
     }
 
     log.info("session_start", learner_id=learner["id"])
-    final = await orchestrator.ainvoke(state)
+    final = await run_session(state)
 
     new_path = final.get("curriculum_path", existing_path)
     now = datetime.now(timezone.utc).isoformat()
@@ -127,7 +127,12 @@ async def start_session(user_id: str = Depends(get_current_user_id)):
         )
         await col_learners().update_one(
             {"user_id": user_id},
-            {"$set": {"curriculum_version": learner.get("curriculum_version", 1) + 1, "updated_at": now}},
+            {
+                "$set": {
+                    "curriculum_version": learner.get("curriculum_version", 1) + 1,
+                    "updated_at": now,
+                }
+            },
         )
 
     questions = final.get("quiz_questions", [])
@@ -151,7 +156,9 @@ async def start_session(user_id: str = Depends(get_current_user_id)):
         }
     )
 
-    log.info("session_start_done", session_id=session_id, topic=final.get("current_topic"))
+    log.info(
+        "session_start_done", session_id=session_id, topic=final.get("current_topic")
+    )
     return SessionStartResponse(
         session_id=session_id,
         curriculum_path=new_path,
@@ -179,7 +186,9 @@ async def advance_session(
     questions = quiz.get("questions") or []
     answers = body.answers or []
     correct_count = sum(
-        1 for i, q in enumerate(questions) if i < len(answers) and answers[i] == q.get("correct_index", 0)
+        1
+        for i, q in enumerate(questions)
+        if i < len(answers) and answers[i] == q.get("correct_index", 0)
     )
     score = correct_count / max(len(questions), 1)
 
@@ -199,8 +208,10 @@ async def advance_session(
         **_DEFAULT_STATE_EXTRAS,
     }
 
-    log.info("session_advance", learner_id=learner["id"], topic=quiz["topic"], score=score)
-    final = await orchestrator.ainvoke(state)
+    log.info(
+        "session_advance", learner_id=learner["id"], topic=quiz["topic"], score=score
+    )
+    final = await run_session(state)
 
     proficiency = final.get("topic_proficiency", {})
     delta = final.get("progress_delta", {})
@@ -251,7 +262,11 @@ async def advance_session(
             }
         )
 
-    log.info("session_advance_done", next_topic=final.get("current_topic"), complete=final.get("session_complete"))
+    log.info(
+        "session_advance_done",
+        next_topic=final.get("current_topic"),
+        complete=final.get("session_complete"),
+    )
     return SessionAdvanceResponse(
         topic_proficiency=proficiency,
         progress_delta=delta,

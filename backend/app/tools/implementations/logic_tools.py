@@ -21,7 +21,7 @@ async def _calculate_elo(
     score: float,
     expected_score: float = 0.5,
 ) -> dict:
-    from app.agents.progress_agent import calculate_elo_update
+    from app.agents.progress import calculate_elo_update
 
     new_elo = calculate_elo_update(current_elo, score, expected_score)
     log.info(

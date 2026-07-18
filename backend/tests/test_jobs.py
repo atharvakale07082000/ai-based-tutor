@@ -1,7 +1,7 @@
 """Tests for the Job Tracker skill-gap agent (pure logic) and analysis stream."""
 
 import pytest
-from app.agents.skill_gap_agent import _match_elo, analyze_gap
+from app.agents.skill_gap import _match_elo, analyze_gap
 
 
 def test_match_elo_bidirectional_and_best():
@@ -48,7 +48,9 @@ async def test_analysis_stream_emits_steps_then_action(monkeypatch):
     from app.routers.jobs import _analysis_stream
 
     # required_skills provided → no parse_jd / LLM call.
-    event_stream = _analysis_stream("", {"Python": 800.0}, required_skills=["Python", "Go"])
+    event_stream = _analysis_stream(
+        "", {"Python": 800.0}, required_skills=["Python", "Go"]
+    )
     frames = [frame async for frame in event_stream()]
 
     # SSE frames: several `data: {...}` lines then a [DONE].
