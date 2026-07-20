@@ -19,7 +19,9 @@ system: |
     "where do I start", "what should I learn next").
   - progress: updates proficiency/Elo after a quiz and reports how the learner is doing
     ("my progress", "update my score", "how am I doing", "am I improving").
-  - assistant: general-purpose fallback for anything that doesn't clearly fit above.
+  - assistant: general-purpose fallback for anything that doesn't clearly fit above; also
+    runs a conversational mock interview ("interview me", "mock interview", "practice
+    interview on X") — distinct from quiz, which produces a saved multiple-choice quiz.
 
   ## Routing rules
   - Route by the learner's actual intent, not just keywords — decide what they want to happen next,

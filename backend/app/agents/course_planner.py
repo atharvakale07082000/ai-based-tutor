@@ -16,7 +16,7 @@ from typing import Awaitable, Callable, Optional, TypedDict
 import structlog
 from ddgs import DDGS
 
-from app.db.mongo import col_course_plans, col_interviews
+from app.db.mongo import col_course_plans, col_interviews, col_learners
 from app.hf.client import get_hf_client
 from app.hf.models import HF_MODELS
 from app.prompts.loader import render_prompt
@@ -209,31 +209,17 @@ async def create_course_plan(goal: str, user_id: str, emit: StepEmit = None) -> 
 async def start_interview(
     plan_id: str, module_id: str, user_id: str, module_title: str, topics: list[str]
 ) -> dict:
-    log.info("interview_generating", module=module_title, topics=topics[:6])
-    topics_str = ", ".join(topics[:6])
-    prompt = render_prompt(
-        "course_planner",
-        "interview_questions",
-        module_title=module_title,
-        topics_str=topics_str,
-    )
+    """Create an empty interview the live agent will drive.
 
-    t0 = time.perf_counter()
-    text = await asyncio.to_thread(_chat, prompt, 800, 0.4)
-    text = text.strip()
-    match = re.search(r"\[[\s\S]*\]", text)
-    if match:
-        text = match.group(0)
-    questions = json.loads(text)
-    coding_qs = [q for q in questions if q.get("is_coding_question")]
-    log.info(
-        "interview_questions_generated",
-        module=module_title,
-        total=len(questions),
-        coding=len(coding_qs),
-        latency_ms=round((time.perf_counter() - t0) * 1000),
-        preview=[q["text"][:60] for q in questions],
-    )
+    Questions are no longer pre-generated — the interrupt-driven ``interview_agent``
+    asks them one at a time and appends each to ``questions`` as it goes (see
+    ``agents/interview_agent.py``). We snapshot the candidate's proficiency so the
+    agent can calibrate difficulty from the first question.
+    """
+    learner = await col_learners().find_one({"user_id": user_id}, PROJ)
+    full_prof = (learner or {}).get("topic_proficiency_map") or {}
+    # Prefer the module's own topics; fall back to the whole map if none overlap.
+    proficiency = {t: full_prof[t] for t in topics if t in full_prof} or full_prof
 
     interview = {
         "interview_id": str(uuid.uuid4()),
@@ -242,8 +228,12 @@ async def start_interview(
         "user_id": user_id,
         "module_title": module_title,
         "module_topics": topics,
-        "questions": questions,
+        "candidate_proficiency": proficiency,
+        "questions": [],  # appended by the agent, one per turn
         "answers": [],
+        "turn_count": 0,  # questions asked so far (drives the hard cap)
+        "current_interrupt_id": None,  # the paused ask_candidate interrupt awaiting an answer
+        "status": "in_progress",  # in_progress → awaiting_final → complete
         "final_score": None,
         "passed": None,
         "scoring_matrix": [],
@@ -253,7 +243,12 @@ async def start_interview(
     }
 
     await col_interviews().insert_one({**interview})
-    log.info("interview_started", interview_id=interview["interview_id"])
+    log.info(
+        "interview_started",
+        interview_id=interview["interview_id"],
+        module=module_title,
+        topics=topics[:6],
+    )
     return interview
 
 

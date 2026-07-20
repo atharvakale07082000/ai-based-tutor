@@ -12,12 +12,12 @@ from slowapi.util import get_remote_address
 from app.agents.course_planner import (
     complete_interview,
     create_course_plan,
-    evaluate_answer,
     get_interview,
     get_plan,
     list_plans,
     start_interview,
 )
+from app.agents.interview_agent import stream_answer, stream_start
 from app.agents.steps import sse_step_stream
 from app.auth.jwt import get_current_user_id
 from app.guardrails import check_topic, topic_reject_message
@@ -159,7 +159,11 @@ async def start_module_interview(
     module_id: str,
     user_id: str = Depends(get_current_user_id),
 ):
-    """Begin an AI interview for a specific course module."""
+    """Begin an adaptive AI interview: create it, then stream the agent's first question as SSE.
+
+    Emits `interview_started` (carrying interview_id), live `reasoning` while the agent thinks,
+    a `question` event, then `[DONE]`.
+    """
     plan = await get_plan(plan_id)
     if not plan or plan["user_id"] != user_id:
         raise HTTPException(404, "Plan not found")
@@ -175,7 +179,29 @@ async def start_module_interview(
         module_title=module["title"],
         topics=module["topics"],
     )
-    return interview
+
+    async def event_stream():
+        started = {
+            "type": "interview_started",
+            "interview_id": interview["interview_id"],
+            "module_title": module["title"],
+        }
+        yield f"data: {json.dumps(started)}\n\n"
+        try:
+            async for ev in stream_start(interview):
+                yield f"data: {json.dumps(ev)}\n\n"
+        except Exception as e:  # noqa: BLE001 - generic to client, detail in logs
+            log.error(
+                "interview_start_stream_error",
+                error=str(e)[:300],
+                interview_id=interview["interview_id"],
+            )
+            yield f"data: {json.dumps({'type': 'error', 'message': 'Could not start the interview.'})}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        event_stream(), media_type="text/event-stream", headers=_SSE_HEADERS
+    )
 
 
 @router.post("/{plan_id}/modules/{module_id}/interview/{interview_id}/answer")
@@ -186,17 +212,33 @@ async def submit_answer(
     body: AnswerRequest,
     user_id: str = Depends(get_current_user_id),
 ):
-    """Submit and AI-evaluate a single interview answer."""
+    """Score the submitted answer, then stream the agent's next question (or `finished`) as SSE.
+
+    Emits an `evaluation` event (the tuned per-answer score), live `reasoning`, then either a
+    `question` event or a `finished` event, then `[DONE]`.
+    """
     interview = await get_interview(interview_id)
     if not interview or interview["user_id"] != user_id:
         raise HTTPException(404, "Interview not found")
-    try:
-        evaluation = await evaluate_answer(
-            interview_id, body.question_id, body.answer_text
-        )
-        return evaluation
-    except Exception as e:
-        raise HTTPException(500, f"Evaluation failed: {e}")
+
+    async def event_stream():
+        try:
+            async for ev in stream_answer(
+                interview, body.question_id, body.answer_text
+            ):
+                yield f"data: {json.dumps(ev)}\n\n"
+        except Exception as e:  # noqa: BLE001 - generic to client, detail in logs
+            log.error(
+                "interview_answer_stream_error",
+                error=str(e)[:300],
+                interview_id=interview_id,
+            )
+            yield f"data: {json.dumps({'type': 'error', 'message': 'Could not process that answer.'})}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        event_stream(), media_type="text/event-stream", headers=_SSE_HEADERS
+    )
 
 
 @router.get("/run-code/languages")

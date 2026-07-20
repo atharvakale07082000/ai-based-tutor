@@ -525,17 +525,21 @@ export interface Interview {
   completed_at: string | null
 }
 
+// The live module interview is driven turn-by-turn over SSE (see ModuleInterviewPage +
+// backend agents/interview_agent.py). `start` and `answer` stream these typed events:
+export type InterviewStreamEvent =
+  | { type: 'interview_started'; interview_id: string; module_title: string }
+  | { type: 'reasoning'; content: string }
+  | { type: 'token'; content: string }
+  | { type: 'question'; id: number; text: string; is_coding_question: boolean; language: string | null; expected_depth: string }
+  | { type: 'evaluation'; question_id: number; score: number; feedback: string; key_points_covered: string[] }
+  | { type: 'finished' }
+  | { type: 'error'; message: string }
+
 export const coursesAPI = {
   create: (goal: string) => api.post<CoursePlan>('/courses/plan', { goal }),
   list: () => api.get<CoursePlan[]>('/courses/'),
   get: (planId: string) => api.get<CoursePlan>(`/courses/${planId}`),
-  startInterview: (planId: string, moduleId: string) =>
-    api.post<Interview>(`/courses/${planId}/modules/${moduleId}/interview/start`),
-  submitAnswer: (planId: string, moduleId: string, interviewId: string, questionId: number, answerText: string) =>
-    api.post<{ question_id: number; score: number; feedback: string; answer_text: string; key_points_covered: string[] }>(
-      `/courses/${planId}/modules/${moduleId}/interview/${interviewId}/answer`,
-      { question_id: questionId, answer_text: answerText },
-    ),
   completeInterview: (planId: string, moduleId: string, interviewId: string) =>
     api.post(`/courses/${planId}/modules/${moduleId}/interview/${interviewId}/complete`),
   runCode: (planId: string, moduleId: string, interviewId: string, code: string, language = 'python') =>

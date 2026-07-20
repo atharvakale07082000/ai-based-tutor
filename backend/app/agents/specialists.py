@@ -83,9 +83,10 @@ SPECIALISTS: dict[str, SpecialistSpec] = {
         role_name="AssistantAgent",
         tool_desc=(
             "General-purpose tutor for anything that doesn't fit a more specific "
-            "specialist. Handles open-ended help by combining available tools."
+            "specialist. Handles open-ended help by combining available tools, "
+            "and runs chat mock interviews via the interview-coaching skill."
         ),
-        skills=("explanation", "web-research"),
+        skills=("explanation", "web-research", "interview-coaching"),
         domain_tools=tuple(tools.ASSISTANT_TOOLS),
     ),
 }

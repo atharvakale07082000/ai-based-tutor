@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Icon } from '@/components/ui/Icon'
 import { ReasoningStream } from '@/components/agents/ReasoningStream'
 import { useAgentTimeline } from '@/hooks/useAgentTimeline'
-import { coursesAPI, streamSSE, type Interview } from '@/lib/api'
+import { coursesAPI, streamSSE, type InterviewQuestion } from '@/lib/api'
 
 // Lazy-load Monaco so it doesn't bloat the initial bundle
 const MonacoEditor = lazy(() => import('@monaco-editor/react'))
@@ -15,6 +15,21 @@ const MonacoEditor = lazy(() => import('@monaco-editor/react'))
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type Phase = 'loading' | 'intro' | 'question' | 'recording' | 'evaluating' | 'feedback' | 'scoring' | 'complete'
+
+// Soft cap mirrored from backend settings.INTERVIEW_MAX_QUESTIONS — the agent decides when to
+// stop, so this only drives the header progress bar (total is unknown until the agent concludes).
+const MAX_Q = 8
+
+// Map a `question` SSE frame (untyped Record) into a typed question.
+function toQuestion(e: Record<string, unknown>): InterviewQuestion {
+  return {
+    id: Number(e.id ?? 0),
+    text: String(e.text ?? ''),
+    is_coding_question: Boolean(e.is_coding_question),
+    language: (e.language as string | null) ?? null,
+    expected_depth: String(e.expected_depth ?? 'conceptual'),
+  }
+}
 
 interface AnswerResult {
   question_id: number
@@ -353,7 +368,9 @@ export default function ModuleInterviewPage() {
   const { planId, moduleId } = useParams<{ planId: string; moduleId: string }>()
   const navigate = useNavigate()
 
-  const [interview,          setInterview]          = useState<Interview | null>(null)
+  const [interviewId,        setInterviewId]        = useState<string | null>(null)
+  const [questions,          setQuestions]          = useState<InterviewQuestion[]>([])
+  const [finished,           setFinished]           = useState(false)
   const [phase,              setPhase]              = useState<Phase>('loading')
   const { steps: scoringSteps, applyStep: applyScoringStep, reset: resetScoring } = useAgentTimeline()
   const [currentQIdx,        setCurrentQIdx]        = useState(0)
@@ -380,17 +397,39 @@ export default function ModuleInterviewPage() {
   })
   const currentModule = plan?.modules.find((m) => m.id === moduleId)
 
-  // Start interview on mount
+  // Show the intro once the plan (module title/topics) has loaded. Questions are NOT fetched up
+  // front anymore — the interrupt-driven agent generates them one at a time once the user begins.
   useEffect(() => {
-    if (!planId || !moduleId) return
-    coursesAPI.startInterview(planId, moduleId)
-      .then((r) => { setInterview(r.data); setPhase('intro') })
-      .catch(() => { toast.error('Could not start interview'); navigate(`/courses/${planId}`) })
-  }, [planId, moduleId])
+    if (plan && phase === 'loading') setPhase('intro')
+  }, [plan, phase])
 
-  const currentQuestion = interview?.questions[currentQIdx]
+  const currentQuestion = questions[currentQIdx]
   const isCoding = !!currentQuestion?.is_coding_question
   const codingLang = currentQuestion?.language ?? 'python'
+
+  // Begin the interview: open the start SSE and stream the agent's first question.
+  const startInterviewStream = async () => {
+    if (!planId || !moduleId) return
+    setQuestions([]); setCurrentQIdx(0); setEvalHistory([]); setFinished(false); setCurrentEval(null)
+    setPhase('question')  // shows a "preparing question" state until the first question arrives
+    let gotQuestion = false
+    try {
+      await streamSSE(
+        `/courses/${planId}/modules/${moduleId}/interview/start`,
+        {},
+        (event) => {
+          if (event.type === 'interview_started') setInterviewId(String(event.interview_id))
+          else if (event.type === 'question') { gotQuestion = true; setQuestions([toQuestion(event)]); setCurrentQIdx(0) }
+          else if (event.type === 'finished') setFinished(true)
+          else if (event.type === 'error') toast.error(String(event.message ?? 'Could not start interview'))
+        },
+      )
+      if (!gotQuestion) throw new Error('no question')
+    } catch {
+      toast.error('Could not start interview')
+      setPhase('intro')
+    }
+  }
 
   // Typewriter for question text
   useEffect(() => {
@@ -491,19 +530,45 @@ export default function ModuleInterviewPage() {
   }
 
   const evaluateAnswer = async (answerText: string) => {
-    if (!interview || !currentQuestion) return
+    if (!interviewId || !currentQuestion) return
+    const qid = currentQuestion.id
+    const coding = isCoding
+    let gotEval = false
     try {
-      const { data } = await coursesAPI.submitAnswer(planId!, moduleId!, interview.interview_id, currentQuestion.id, answerText)
-      const result = data as AnswerResult
-      setCurrentEval(result)
-      setEvalHistory((prev) => [...prev, result])
-      setPhase('feedback')
-      if (!isCoding) {
-        const utt = new SpeechSynthesisUtterance(`Score: ${result.score} out of 10. ${result.feedback}`)
-        utt.rate = 0.92
-        window.speechSynthesis?.cancel()
-        window.speechSynthesis?.speak(utt)
-      }
+      // One turn: the answer is scored (evaluation event), then the agent resumes and streams the
+      // NEXT question (appended) or a `finished` event — all before the stream resolves at [DONE].
+      await streamSSE(
+        `/courses/${planId}/modules/${moduleId}/interview/${interviewId}/answer`,
+        { question_id: qid, answer_text: answerText },
+        (event) => {
+          if (event.type === 'evaluation') {
+            gotEval = true
+            const result: AnswerResult = {
+              question_id: Number(event.question_id ?? qid),
+              score: Number(event.score ?? 0),
+              feedback: String(event.feedback ?? ''),
+              answer_text: answerText,
+              key_points_covered: (event.key_points_covered as string[]) ?? [],
+            }
+            setCurrentEval(result)
+            setEvalHistory((prev) => [...prev, result])
+            setPhase('feedback')
+            if (!coding) {
+              const utt = new SpeechSynthesisUtterance(`Score: ${result.score} out of 10. ${result.feedback}`)
+              utt.rate = 0.92
+              window.speechSynthesis?.cancel()
+              window.speechSynthesis?.speak(utt)
+            }
+          } else if (event.type === 'question') {
+            setQuestions((prev) => [...prev, toQuestion(event)])
+          } else if (event.type === 'finished') {
+            setFinished(true)
+          } else if (event.type === 'error') {
+            toast.error(String(event.message ?? 'Evaluation failed'))
+          }
+        },
+      )
+      if (!gotEval) throw new Error('no evaluation')
     } catch {
       toast.error('Evaluation failed — try again')
       setPhase('question')
@@ -519,11 +584,14 @@ export default function ModuleInterviewPage() {
     setTimeout(() => evaluateAnswer(combined), 200)
   }
 
+  // The agent tells us when it's done (finished) or hands us a next question to advance to.
+  const isLastQuestion = finished || currentQIdx + 1 >= questions.length
+
   const handleNext = () => {
     window.speechSynthesis?.cancel()
     setCurrentEval(null)
     updateTranscript('')
-    if (currentQIdx < (interview?.questions.length ?? 0) - 1) {
+    if (!isLastQuestion) {
       setCurrentQIdx((i) => i + 1)
       setPhase('question')
     } else {
@@ -532,14 +600,14 @@ export default function ModuleInterviewPage() {
   }
 
   const handleComplete = async () => {
-    if (!interview) return
+    if (!interviewId) return
     setPhase('scoring')
     resetScoring()
     window.speechSynthesis?.cancel()
     let scored: FinalResult | null = null
     try {
       await streamSSE(
-        `/courses/${planId}/modules/${moduleId}/interview/${interview.interview_id}/complete/stream`,
+        `/courses/${planId}/modules/${moduleId}/interview/${interviewId}/complete/stream`,
         {},
         (event) => {
           if (event.type === 'step') {
@@ -568,9 +636,10 @@ export default function ModuleInterviewPage() {
     }
   }
 
-  const totalQ = interview?.questions.length ?? 1
+  // Total is unknown (the agent decides length), so drive the bar off answered count vs the cap.
   const headerProgress = phase === 'intro' ? 0
-    : ((currentQIdx + (phase === 'feedback' || phase === 'evaluating' ? 1 : 0)) / totalQ) * 100
+    : finished || phase === 'complete' ? 100
+    : Math.min((evalHistory.length / MAX_Q) * 100 + 8, 96)
 
   // ── Layouts ──────────────────────────────────────────────────────────────────
 
@@ -684,7 +753,7 @@ export default function ModuleInterviewPage() {
           </div>
 
           <span className="t-xs fg-3 mono" style={{ flexShrink: 0 }}>
-            {phase === 'intro' ? 'Intro' : `${currentQIdx + 1} / ${totalQ}`}
+            {phase === 'intro' ? 'Intro' : `Q${currentQIdx + 1}`}
           </span>
         </div>
       </div>
@@ -701,7 +770,7 @@ export default function ModuleInterviewPage() {
                   <Icon name="mic" size={22} />
                 </div>
                 <h2 className="display" style={{ fontSize: 24, fontWeight: 600, letterSpacing: '-0.03em', marginBottom: 6 }}>Ready to be assessed?</h2>
-                <p className="t-sm fg-2">{interview?.questions.length} questions on <strong>{currentModule?.title}</strong></p>
+                <p className="t-sm fg-2">An adaptive interview on <strong>{currentModule?.title}</strong></p>
                 <p className="t-xs fg-3" style={{ marginTop: 4 }}>Pass threshold: 6 / 10 per question average</p>
               </div>
 
@@ -709,23 +778,36 @@ export default function ModuleInterviewPage() {
                 {currentModule?.topics.map((t) => <Badge key={t} tone="outline" size="xs">{t}</Badge>)}
               </div>
 
-              {/* Question type preview */}
+              {/* How it works — the interviewer is a live agent that adapts to each answer */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 24 }}>
-                {interview?.questions.map((q, i) => (
-                  <div key={q.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 8, background: 'var(--paper-2)' }}>
-                    <span className="t-xs mono fg-3" style={{ minWidth: 18 }}>Q{i + 1}</span>
-                    {q.is_coding_question
-                      ? <Badge tone="warn" size="xs" icon="code">Coding · {q.language ?? 'python'}</Badge>
-                      : <Badge tone="outline" size="xs" icon="mic">Verbal</Badge>
-                    }
-                    <span className="t-xs fg-2" style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{q.text.slice(0, 60)}{q.text.length > 60 ? '…' : ''}</span>
+                {[
+                  { icon: 'sparkle', text: 'An AI interviewer asks one question at a time, adapting to your answers.' },
+                  { icon: 'mic', text: 'Answer by voice or by typing — coding questions open a live editor.' },
+                  { icon: 'check', text: `Up to ${MAX_Q} questions; each is scored, then you get a final assessment.` },
+                ].map((row) => (
+                  <div key={row.text} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 8, background: 'var(--paper-2)' }}>
+                    <Icon name={row.icon} size={15} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+                    <span className="t-xs fg-2" style={{ flex: 1, lineHeight: 1.5 }}>{row.text}</span>
                   </div>
                 ))}
               </div>
 
-              <Button variant="primary" full iconRight="arrow" onClick={() => setPhase('question')}>
+              <Button variant="primary" full iconRight="arrow" onClick={startInterviewStream}>
                 Start Interview
               </Button>
+            </div>
+          )}
+
+          {/* ── Preparing next question (agent thinking) ─────────────────── */}
+          {(phase === 'question' || phase === 'recording') && !currentQuestion && (
+            <div style={{ ...S.card, ...S.fadeIn, textAlign: 'center' }}>
+              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+                <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'var(--paper-2)', display: 'grid', placeItems: 'center' }}>
+                  <Icon name="sparkle" size={20} style={{ color: 'var(--accent)', animation: 'pulse-soft 1.2s ease-in-out infinite' }} />
+                </div>
+              </div>
+              <p className="t-md fg-0" style={{ marginBottom: 6, fontWeight: 500 }}>The interviewer is preparing your question…</p>
+              <p className="t-sm fg-3">Reading your profile and the module topics.</p>
             </div>
           )}
 
@@ -778,7 +860,7 @@ export default function ModuleInterviewPage() {
                   <CodeEnvironment
                     planId={planId!}
                     moduleId={moduleId!}
-                    interviewId={interview!.interview_id}
+                    interviewId={interviewId!}
                     language={codingLang}
                     value={codeValue}
                     onChange={setCodeValue}
@@ -908,7 +990,7 @@ export default function ModuleInterviewPage() {
               </div>
 
               <Button variant="primary" full iconRight="arrow" onClick={handleNext}>
-                {currentQIdx < (interview?.questions.length ?? 0) - 1 ? 'Next Question' : 'Submit for Final Scoring'}
+                {isLastQuestion ? 'Submit for Final Scoring' : 'Next Question'}
               </Button>
             </div>
           )}
@@ -917,9 +999,9 @@ export default function ModuleInterviewPage() {
       </div>
 
       {/* ── Footer: step dots ─────────────────────────────────────────────────── */}
-      {interview && !['intro', 'loading', 'scoring', 'complete'].includes(phase) && (
+      {interviewId && currentQuestion && !['intro', 'loading', 'scoring', 'complete'].includes(phase) && (
         <div style={{ flexShrink: 0, padding: '10px 18px', borderTop: '1px solid var(--line-1)', background: 'var(--paper-1)', display: 'flex', justifyContent: 'center' }}>
-          <StepDots total={totalQ} current={currentQIdx} evals={evalHistory} />
+          <StepDots total={Math.max(questions.length, currentQIdx + 1)} current={currentQIdx} evals={evalHistory} />
         </div>
       )}
     </div>

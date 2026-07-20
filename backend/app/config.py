@@ -55,6 +55,15 @@ class Settings(BaseSettings):
         40  # NVIDIA free-tier requests/minute; token-bucket in agents.model
     )
 
+    # Live module interview (interrupt-driven Strands agent, agents/interview_agent.py).
+    # The agent asks one question per turn and decides when it has enough signal; these bound it.
+    INTERVIEW_MAX_QUESTIONS: int = (
+        8  # hard cap — force-conclude after this many questions
+    )
+    INTERVIEW_MIN_QUESTIONS: int = (
+        4  # ask at least this many before the agent may conclude
+    )
+
     # ── Quality evals (DeepEval) ─────────────────────────────────────────────
     # The DeepEval judge wraps the NVIDIA NIM client (OpenAI-compatible) — no new creds.
     EVAL_JUDGE_MODEL: str = "qwen/qwen3-next-80b-a3b-instruct"
