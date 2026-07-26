@@ -12,15 +12,22 @@ Event shape (additive — clients that don't know ``step`` ignore it):
     {"type": "step", "id": "research", "label": "Researching the topic", "status": "done"}
 
 ``status`` ∈ {"active", "done", "error"}.
+
+``step_emitter`` wraps a pipeline body so upstream capacity waits (the NIM RPM
+bucket, see ``agents/model.py``) surface as one more step instead of a frozen
+timeline — the pipeline-side counterpart of what ``agents/handler.py`` does for chat.
 """
 
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import AsyncIterator, Awaitable, Callable, Optional
 
 import structlog
+
+from app.agents.model import throttle_notices
 
 log = structlog.get_logger()
 
@@ -103,6 +110,91 @@ class StepTimeline:
     def error(self, step_id: str, label: str | None = None) -> dict:
         """Mark a step failed."""
         return step_event(step_id, self._label(step_id, label), "error")
+
+
+# ── capacity waits ──────────────────────────────────────────────────────────────
+# Id of the ad-hoc step a capacity wait adds to the timeline. Distinct from every
+# plan's ids so it appends instead of overwriting the step that's mid-flight.
+THROTTLE_STEP_ID = "capacity"
+
+
+async def _drop_event(_ev: dict) -> None:
+    """Swallow an event — the headless (``emit is None``) emitter."""
+
+
+def _throttle_notice_event() -> dict:
+    """Build the ``step`` event announcing an upstream capacity wait.
+
+    The wording is imported from the chat path rather than restated, so the learner
+    hears one voice wherever the wait happens.
+
+    Status is ``done``, not ``active``, on purpose: nothing ever resolves this entry,
+    and the frontend reads *any* active step as "still thinking" (``ReasoningStream``
+    derives its live state from the segments), so an active notice would leave the
+    panel spinning after the run finished. ``error`` would be wrong too — waiting on
+    capacity is not a failure. ``done`` renders as an inert, already-settled line.
+    """
+    from app.agents.handler import THROTTLE_NOTICE  # local: steps is the lower layer
+
+    return step_event(THROTTLE_STEP_ID, THROTTLE_NOTICE, "done")
+
+
+@asynccontextmanager
+async def step_emitter(
+    emit: StepEmit,
+) -> AsyncIterator[Callable[[dict], Awaitable[None]]]:
+    """Wrap a pipeline body: yields a safe ``emit`` and narrates capacity waits.
+
+    Usage — one line per pipeline, replacing the hand-rolled ``_e`` closure::
+
+        async with step_emitter(emit) as _e:
+            await _e(tl.start("research"))
+            ...
+
+    The model layer announces an RPM wait through a *synchronous* callback while
+    ``emit`` is a coroutine, and the stall happens inside an ``await`` *between* step
+    transitions — there is no emit point to hang the notice on, and deferring it to
+    the next step boundary would only tell the learner once the wait was already over.
+    So the sink parks the wait on a queue and a relay task, running concurrently with
+    the pipeline body, emits it while the body is still blocked.
+
+    A headless run (``emit is None``) is a complete no-op: no subscription, no relay
+    task, and the yielded emitter drops events exactly like the closures it replaces.
+    Staying unsubscribed there is load-bearing — a pipeline called inside a chat turn
+    would otherwise shadow the handler's own subscription and swallow its notice.
+    """
+    if emit is None:
+        yield _drop_event
+        return
+
+    loop = asyncio.get_running_loop()
+    waits: asyncio.Queue[float] = asyncio.Queue()
+    notified = False
+
+    def _sink(wait_s: float) -> None:
+        nonlocal notified
+        if notified:
+            return  # one capacity note per run is enough
+        notified = True
+        # Sync, and reachable from an ``asyncio.to_thread`` worker (context vars
+        # propagate into those), so hop back onto the loop before touching the queue.
+        loop.call_soon_threadsafe(waits.put_nowait, wait_s)
+
+    async def _relay() -> None:
+        wait_s = await waits.get()
+        log.info("pipeline_throttle_notice", wait_s=round(wait_s, 1))
+        try:
+            await emit(_throttle_notice_event())
+        except Exception as e:  # noqa: BLE001 — a notice must never break a run
+            log.warning("pipeline_throttle_notice_failed", error=str(e)[:200])
+
+    task = asyncio.create_task(_relay())
+    try:
+        with throttle_notices(_sink):
+            yield emit
+    finally:
+        if not task.done():
+            task.cancel()
 
 
 async def sse_step_stream(

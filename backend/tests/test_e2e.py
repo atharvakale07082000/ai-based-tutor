@@ -405,6 +405,47 @@ class TestE2E_Quiz:
         assert data["elo_update"]["new_elo"] <= data["elo_update"]["old_elo"]
 
     @pytest.mark.asyncio
+    async def test_E2E_Q03b_submit_accepts_unanswered_sentinel(self, authed):
+        """-1 means 'never answered' (timer ran out / set aside) — graded wrong, not a 400.
+
+        Regression: _validate_quiz_answers used to reject any index outside
+        0..n_opts-1, so every timer expiry failed submission with a 400.
+        """
+        with mock_all_agents():
+            gen_resp = await authed.post(
+                "/api/v1/quiz/generate", json={"topic": "Statistics"}
+            )
+        quiz_id = gen_resp.json()["quiz_id"]
+        questions = gen_resp.json()["questions"]
+        # First question correct, the rest left unanswered.
+        answers = [questions[0].get("correct_index", 0)] + [-1] * (len(questions) - 1)
+
+        with mock_all_agents():
+            resp = await authed.post(
+                f"/api/v1/quiz/{quiz_id}/submit", json={"answers": answers}
+            )
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["score"] == pytest.approx(1 / len(questions))
+
+    @pytest.mark.asyncio
+    async def test_E2E_Q03c_submit_still_rejects_out_of_range(self, authed):
+        """Genuinely invalid indices must still 400 — the sentinel is the only exception."""
+        with mock_all_agents():
+            gen_resp = await authed.post(
+                "/api/v1/quiz/generate", json={"topic": "Statistics"}
+            )
+        quiz_id = gen_resp.json()["quiz_id"]
+        questions = gen_resp.json()["questions"]
+
+        with mock_all_agents():
+            resp = await authed.post(
+                f"/api/v1/quiz/{quiz_id}/submit",
+                json={"answers": [99] * len(questions)},
+            )
+        assert resp.status_code == 400
+
+    @pytest.mark.asyncio
     async def test_E2E_Q04_generate_requires_auth(self, client):
         resp = await client.post("/api/v1/quiz/generate", json={"topic": "Python"})
         assert resp.status_code == 401

@@ -31,6 +31,7 @@ from app.routers import (
     doubts,
     evals,
     feed,
+    health,
     hf,
     jobs,
     leaderboard,
@@ -182,6 +183,9 @@ app.include_router(
     leaderboard.router, prefix="/api/v1/leaderboard", tags=["leaderboard"]
 )
 app.include_router(profile.router, prefix="/api/v1/profile", tags=["profile"])
+# Ops readiness detail at /health/ready (always 200, reports which dependency is
+# missing). The 200/503 probe a load balancer acts on stays at /ready below.
+app.include_router(health.router, prefix="/health", tags=["ops"])
 # Single chat implementation (agents_v2 specialists) at /api/v1/chat — the old v1/v3 chat
 # stacks were removed; this is the one source of truth. (router defines POST /chat)
 app.include_router(chat.router, prefix="/api/v1", tags=["chat"])
@@ -231,45 +235,32 @@ async def agent_card():
 
 
 @app.get("/health", tags=["ops"])
-async def health():
-    """Liveness probe — returns 200 if the process is alive."""
+async def liveness():
+    """Liveness probe — returns 200 if the process is alive.
+
+    Named `liveness`, not `health`: a function named `health` at module scope
+    would shadow the imported `app.routers.health` module.
+    """
     return {"status": "ok", "agent": "ai-tutor", "version": VERSION}
 
 
 @app.get("/ready", tags=["ops"])
 async def ready():
     """
-    Readiness probe — checks every downstream dependency.
-    Returns 200 only when MongoDB is reachable and the HF token is configured.
-    Returns 503 if any dependency is unhealthy so the load balancer can
-    route traffic away from an unready instance.
+    Readiness probe for the load balancer — 200 when every downstream dependency
+    is usable, 503 otherwise, so traffic is routed away from an unready instance.
+
+    The checks themselves live in routers/health.py; `GET /health/ready` serves the
+    same report but always with a 200, for humans debugging *why* an instance is
+    unready. Keep this route here — /ready is what .well-known/agent-card.json and
+    the deploy probes point at.
     """
-    checks: dict[str, str] = {}
-    healthy = True
-
-    # MongoDB
-    try:
-        await get_client().admin.command("ping", serverSelectionTimeoutMS=2000)
-        checks["mongodb"] = "ok"
-    except Exception as exc:
-        checks["mongodb"] = f"error: {exc}"
-        healthy = False
-
-    # HF token present (can't call the API here, but absence guarantees failure)
-    if settings.HF_TOKEN:
-        checks["hf_token"] = "ok"
-    else:
-        checks["hf_token"] = "missing"
-        healthy = False
-
-    from fastapi.responses import JSONResponse
-
-    status_code = 200 if healthy else 503
+    report = await health.readiness_report()
     return JSONResponse(
-        status_code=status_code,
+        status_code=200 if report["ready"] else 503,
         content={
-            "status": "ok" if healthy else "degraded",
-            "checks": checks,
+            "status": "ok" if report["ready"] else "degraded",
+            "checks": report["checks"],
             "version": VERSION,
         },
     )

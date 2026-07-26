@@ -16,6 +16,7 @@ from typing import Awaitable, Callable, Optional, TypedDict
 import structlog
 from ddgs import DDGS
 
+from app.config import settings
 from app.db.mongo import col_course_plans, col_interviews, col_learners
 from app.hf.client import get_hf_client
 from app.hf.models import HF_MODELS
@@ -250,6 +251,81 @@ async def start_interview(
         topics=topics[:6],
     )
     return interview
+
+
+def interview_state(interview: dict) -> dict:
+    """Project a stored interview into the payload the interview screen resumes from.
+
+    Used by the ``GET .../interview/{interview_id}`` read endpoint so a reloaded tab (or a
+    dropped connection) can rebuild the screen mid-flight instead of starting over. The
+    fields are whitelisted on purpose: the learner sees the outstanding question and the
+    per-answer feedback they were already shown, never the internal calibration state
+    (``candidate_proficiency`` Elo, ``current_interrupt_id``) nor the final grader's
+    per-question rationale (``scoring_matrix``/``summary``, which the complete endpoint owns).
+
+    ``status`` tells the client what to do next:
+      - ``awaiting_answer`` — the agent is paused on ``current_question``; POST an answer.
+      - ``awaiting_final``  — the agent concluded; POST ``.../complete`` to grade it.
+      - ``complete``        — already graded (``final_score``/``passed`` are set).
+      - ``in_progress``     — no question outstanding and not concluded (interrupted start).
+    ``current_question`` is non-null exactly when ``status == "awaiting_answer"``.
+    """
+    questions = interview.get("questions") or []
+    answers = interview.get("answers") or []
+    question_by_id = {q.get("id"): q for q in questions}
+    answered_ids = {a.get("question_id") for a in answers}
+    # The outstanding question is the most recent one the agent asked but never got an answer to.
+    pending = next(
+        (q for q in reversed(questions) if q.get("id") not in answered_ids), None
+    )
+
+    if interview.get("completed_at") or interview.get("final_score") is not None:
+        status = "complete"
+    elif pending and interview.get("current_interrupt_id"):
+        status = "awaiting_answer"
+    elif interview.get("status") == "awaiting_final":
+        status = "awaiting_final"
+    else:
+        status = "in_progress"
+
+    return {
+        "interview_id": interview.get("interview_id"),
+        "plan_id": interview.get("plan_id"),
+        "module_id": interview.get("module_id"),
+        "module_title": interview.get("module_title", ""),
+        "status": status,
+        "current_question": (
+            {
+                "id": pending.get("id"),
+                "text": pending.get("text", ""),
+                "is_coding_question": bool(pending.get("is_coding_question")),
+                "language": pending.get("language") or None,
+                "expected_depth": pending.get("expected_depth") or "conceptual",
+            }
+            if status == "awaiting_answer" and pending
+            else None
+        ),
+        "answers": [
+            {
+                "question_id": a.get("question_id"),
+                "question_text": (question_by_id.get(a.get("question_id")) or {}).get(
+                    "text", ""
+                ),
+                "answer_text": a.get("answer_text", ""),
+                "score": a.get("score"),
+                "feedback": a.get("feedback", ""),
+                "key_points_covered": a.get("key_points_covered") or [],
+            }
+            for a in answers
+        ],
+        "answered_count": len(answers),
+        "questions_asked": len(questions),
+        "max_questions": settings.INTERVIEW_MAX_QUESTIONS,
+        "final_score": interview.get("final_score"),
+        "passed": interview.get("passed"),
+        "created_at": interview.get("created_at"),
+        "completed_at": interview.get("completed_at"),
+    }
 
 
 async def evaluate_answer(

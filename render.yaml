@@ -12,8 +12,17 @@ services:
         value: ai_tutor
       - key: SECRET_KEY
         generateValue: true
+      # Strands agents run on NVIDIA NIM — without this key every chat turn,
+      # course generation and interview fails. Set it in the Render dashboard.
+      - key: NVIDIA_API_KEY
+        sync: false
       - key: HF_TOKEN
         sync: false
+      # Chat thread memory. Empty → OS temp dir, so threads reset on every
+      # restart/redeploy. Point at a mounted persistent disk for durable memory
+      # (requires a paid plan; the free plan has no disks).
+      - key: AGENT_SESSIONS_DIR
+        value: ""
       - key: CORS_ORIGINS
         sync: false
       - key: LANGFUSE_PUBLIC_KEY

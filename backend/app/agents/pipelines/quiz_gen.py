@@ -9,6 +9,8 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
+from app.agents.steps import StepEmit, step_emitter
+
 _BLOOM_ORDER = ["remember", "understand", "apply", "analyze", "evaluate", "create"]
 
 
@@ -32,28 +34,36 @@ async def _resolve_bloom(request: dict) -> str:
     return bloom
 
 
-async def run_quiz_gen(request: dict) -> dict:
-    """Resolve difficulty, generate/cache questions, persist a quiz session."""
+async def run_quiz_gen(request: dict, emit: StepEmit = None) -> dict:
+    """Resolve difficulty, generate/cache questions, persist a quiz session.
+
+    ``emit`` is accepted for parity with the other pipelines: every caller today runs
+    this headless, in which case ``step_emitter`` is a no-op, but a streaming caller
+    gets the same capacity-wait narration for free.
+    """
     from app.db.mongo import col_quizzes
     from app.hf.quiz_questions import get_or_generate_quiz_questions
 
-    bloom = await _resolve_bloom(request)
-    questions = await get_or_generate_quiz_questions(request["topic"], bloom, count=5)
+    async with step_emitter(emit):
+        bloom = await _resolve_bloom(request)
+        questions = await get_or_generate_quiz_questions(
+            request["topic"], bloom, count=5
+        )
 
-    quiz_id = str(uuid.uuid4())
-    await col_quizzes().insert_one(
-        {
-            "id": quiz_id,
-            "learner_id": request["learner_id"],
-            "topic": request["topic"],
-            "bloom_level": bloom,
-            "questions": questions,
-            "answers": [],
-            "score": None,
-            "weak_topics": [],
-            "sentiment_mood": None,
-            "started_at": datetime.now(timezone.utc).isoformat(),
-            "completed_at": None,
-        }
-    )
-    return {"quiz_id": quiz_id, "bloom_level": bloom, "questions": questions}
+        quiz_id = str(uuid.uuid4())
+        await col_quizzes().insert_one(
+            {
+                "id": quiz_id,
+                "learner_id": request["learner_id"],
+                "topic": request["topic"],
+                "bloom_level": bloom,
+                "questions": questions,
+                "answers": [],
+                "score": None,
+                "weak_topics": [],
+                "sentiment_mood": None,
+                "started_at": datetime.now(timezone.utc).isoformat(),
+                "completed_at": None,
+            }
+        )
+        return {"quiz_id": quiz_id, "bloom_level": bloom, "questions": questions}

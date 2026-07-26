@@ -93,10 +93,10 @@ class Settings(BaseSettings):
     PISTON_BASE_URL: str = ""  # e.g. http://piston:2000
     CODE_RUN_TIMEOUT_MS: int = 10000
 
-    # MongoDB — primary datastore + evals storage
+    # MongoDB — the single datastore (users, sessions, progress, evals).
+    # Collection names are fixed in app/db/mongo.py, not configurable.
     MONGO_URL: str = "mongodb://localhost:27017"
     MONGO_DATABASE: str = "ai_tutor_evals"
-    MONGO_COLLECTION_EVALS: str = "agent_evals"
 
     # Redis (Celery broker + result backend)
     REDIS_URL: str = "redis://localhost:6379/0"

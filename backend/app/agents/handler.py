@@ -9,16 +9,25 @@ Design note on state: the shared NIM *model* is cached (connection pool, one
 asyncio loop under FastAPI), but specialist/router *Agent* instances are built
 per request — Strands Agents accumulate conversation history on the instance, so
 reusing one across requests would leak one learner's turns into another's.
+
+Design note on the queue: the model layer can stall on the NIM RPM bucket *while*
+we're awaiting the next agent event, so there'd be no point at which to tell the
+learner. Both the agent stream and the throttle callback therefore feed one queue
+that ``run_chat`` consumes, which lets a wait surface as a ``reasoning`` note in
+real time instead of as a silent multi-second gap.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
-from typing import AsyncIterator
+from contextlib import aclosing
+from typing import Any, AsyncIterator, Awaitable, Callable
 
 import structlog
 
 from app.agents import orchestrator
+from app.agents.model import throttle_notices
 from app.agents.prompt_utils import history_messages
 from app.agents.routing_meta import display_name
 from app.agents.specialists import build_specialist
@@ -28,6 +37,60 @@ log = structlog.get_logger()
 
 
 _INTERNAL_CTX_KEYS = {"history", "thread_id"}
+
+# Learner-facing note for an upstream capacity wait. First person, calm, and free of
+# infrastructure jargon — it rides the existing thinking channel, not a new event type.
+THROTTLE_NOTICE = "Give me a moment — I'm waiting on capacity."
+
+# Queue item kinds: ("event", strands_event) | ("result", value) | ("error", exc)
+# | ("throttled", wait_s) | ("end", None)
+_QueueItem = tuple[str, Any]
+
+
+def _throttle_sink_for(queue: asyncio.Queue) -> Callable[[float], None]:
+    """Build the model-layer throttle callback that feeds this turn's queue."""
+
+    def _sink(wait_s: float) -> None:
+        queue.put_nowait(("throttled", wait_s))
+
+    return _sink
+
+
+async def _pump_stream(stream: AsyncIterator, queue: asyncio.Queue) -> None:
+    """Drain an agent stream into ``queue`` (so throttle notices can interleave)."""
+    try:
+        async for event in stream:
+            await queue.put(("event", event))
+    except Exception as e:  # noqa: BLE001 - re-raised on the consumer side
+        await queue.put(("error", e))
+    finally:
+        await queue.put(("end", None))
+
+
+async def _pump_call(awaitable: Awaitable, queue: asyncio.Queue) -> None:
+    """Run a one-shot agent call, putting its result (or failure) on ``queue``."""
+    try:
+        await queue.put(("result", await awaitable))
+    except Exception as e:  # noqa: BLE001 - re-raised on the consumer side
+        await queue.put(("error", e))
+    finally:
+        await queue.put(("end", None))
+
+
+async def _consume(
+    queue: asyncio.Queue, pump: Awaitable[None]
+) -> AsyncIterator[_QueueItem]:
+    """Yield queued items until the pump signals it's done; always clean the task up."""
+    task = asyncio.create_task(pump)
+    try:
+        while True:
+            kind, item = await queue.get()
+            if kind == "end":
+                return
+            yield kind, item
+    finally:
+        if not task.done():
+            task.cancel()
 
 
 def _build_prompt(query: str, context: dict, *, include_history: bool = True) -> str:
@@ -51,51 +114,98 @@ def _build_prompt(query: str, context: dict, *, include_history: bool = True) ->
 class AgentHandler:
     """Singleton coordinator for the chat orchestrator + specialists."""
 
-    async def run_chat(self, query: str, context: dict) -> AsyncIterator[dict]:
-        """Yield wire-contract events: routing -> specialist trace/tokens -> done."""
+    async def run_chat(
+        self,
+        query: str,
+        context: dict,
+        *,
+        trace: TraceState | None = None,
+    ) -> AsyncIterator[dict]:
+        """Yield wire-contract events: routing -> specialist trace/tokens -> done.
+
+        ``trace`` lets the caller keep the per-stream ``TraceState`` after the stream
+        ends — the chat router uses its ``grounding`` (tool results, never emitted) as
+        the retrieval context for the online faithfulness eval.
+        """
         query = (query or "").strip()
         if not query:
             yield {"type": "error", "message": "Query cannot be empty."}
             return
 
-        router = orchestrator.build_router()
-        agents, reason = await orchestrator.route(query, router)
-        primary = agents[0]
-        yield {
-            "type": "routing",
-            "agent": primary,
-            "display_name": display_name(primary),
-            "reason": reason,
-        }
+        state = trace if trace is not None else TraceState()
+        queue: asyncio.Queue[_QueueItem] = asyncio.Queue()
+        told_about_wait = False  # one capacity note per turn is enough
 
-        state = TraceState()
-        thread_id = (context.get("thread_id") or "").strip() or None
-        prompt = _build_prompt(query, context, include_history=not thread_id)
-        transcript = ""
+        with throttle_notices(_throttle_sink_for(queue)):
+            # ── routing decision (one LLM call) ──────────────────────────────────
+            router = orchestrator.build_router()
+            agents, reason = ["assistant"], "heuristic fallback"
+            async with aclosing(
+                _consume(queue, _pump_call(orchestrator.route(query, router), queue))
+            ) as routing:
+                async for kind, item in routing:
+                    if kind == "throttled" and not told_about_wait:
+                        told_about_wait = True
+                        yield {"type": "reasoning", "content": THROTTLE_NOTICE}
+                    elif kind == "result":
+                        agents, reason = item
+                    elif kind == "error":  # route() swallows its own failures
+                        log.warning("agent_handler_route_error", error=str(item)[:200])
 
-        try:
-            for idx, key in enumerate(agents):
-                specialist = build_specialist(key, session_id=thread_id)
-                step_prompt = prompt
-                if transcript:
-                    step_prompt = (
-                        f"{prompt}\n\nEarlier specialists produced:\n{transcript}"
-                    )
-                answer_chunks: list[str] = []
-                async for event in specialist.stream_async(step_prompt):
-                    for wire in translate_event(event, state, forward_tokens=True):
-                        if wire["type"] == "token":
-                            answer_chunks.append(wire["content"])
-                        yield wire
-                if idx < len(agents) - 1:
-                    transcript += f"[{key}] {''.join(answer_chunks)}\n"
-        except Exception as e:  # noqa: BLE001 - surface a generic error, log details
-            log.error("agent_handler_run_error", error=str(e)[:300], agents=agents)
+            primary = agents[0]
             yield {
-                "type": "error",
-                "message": "Something went wrong on my end — send your question again.",
+                "type": "routing",
+                "agent": primary,
+                "display_name": display_name(primary),
+                "reason": reason,
             }
-            return
+
+            thread_id = (context.get("thread_id") or "").strip() or None
+            prompt = _build_prompt(query, context, include_history=not thread_id)
+            transcript = ""
+
+            # ── specialist stream(s) ────────────────────────────────────────────
+            try:
+                for idx, key in enumerate(agents):
+                    specialist = build_specialist(key, session_id=thread_id)
+                    step_prompt = prompt
+                    if transcript:
+                        step_prompt = (
+                            f"{prompt}\n\nEarlier specialists produced:\n{transcript}"
+                        )
+                    answer_chunks: list[str] = []
+                    async with aclosing(
+                        _consume(
+                            queue,
+                            _pump_stream(specialist.stream_async(step_prompt), queue),
+                        )
+                    ) as stream:
+                        async for kind, item in stream:
+                            if kind == "throttled":
+                                if not told_about_wait:
+                                    told_about_wait = True
+                                    yield {
+                                        "type": "reasoning",
+                                        "content": THROTTLE_NOTICE,
+                                    }
+                                continue
+                            if kind == "error":
+                                raise item
+                            for wire in translate_event(
+                                item, state, forward_tokens=True
+                            ):
+                                if wire["type"] == "token":
+                                    answer_chunks.append(wire["content"])
+                                yield wire
+                    if idx < len(agents) - 1:
+                        transcript += f"[{key}] {''.join(answer_chunks)}\n"
+            except Exception as e:  # noqa: BLE001 - surface a generic error, log details
+                log.error("agent_handler_run_error", error=str(e)[:300], agents=agents)
+                yield {
+                    "type": "error",
+                    "message": "Something went wrong on my end — send your question again.",
+                }
+                return
 
         for wire in finish_events(state):
             yield wire

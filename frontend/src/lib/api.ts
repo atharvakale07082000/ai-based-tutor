@@ -536,10 +536,58 @@ export type InterviewStreamEvent =
   | { type: 'finished' }
   | { type: 'error'; message: string }
 
+// ── Interview resume ─────────────────────────────────────────────────────────
+// GET /courses/{plan_id}/modules/{module_id}/interview/{interview_id} — plain JSON
+// (not SSE). Lets the UI rehydrate a live interview after a reload/navigation:
+// which question is currently pending, and everything already graded.
+//
+// Mirrors course_planner.interview_state() — a deliberately whitelisted projection.
+// Internal calibration state (candidate_proficiency Elo, current_interrupt_id) and the
+// final grader's rationale (scoring_matrix/summary) are withheld server-side by design.
+
+export interface InterviewAnsweredQuestion {
+  question_id: number
+  question_text: string
+  answer_text: string
+  /** null if the answer was recorded but never graded. */
+  score: number | null
+  feedback: string
+  key_points_covered: string[]
+}
+
+export interface InterviewState {
+  interview_id: string
+  plan_id: string
+  module_id: string
+  module_title: string
+  /**
+   * What the client should do next:
+   * - `awaiting_answer` — agent paused on `current_question`; POST an answer.
+   * - `awaiting_final`  — agent concluded; POST `.../complete` to grade it.
+   * - `complete`        — already graded (`final_score`/`passed` are set).
+   * - `in_progress`     — nothing outstanding, not concluded (interrupted start).
+   */
+  status: 'awaiting_answer' | 'awaiting_final' | 'complete' | 'in_progress'
+  /** Non-null exactly when `status === 'awaiting_answer'`. */
+  current_question: InterviewQuestion | null
+  /** Questions already answered, chronological, each with its grade. */
+  answers: InterviewAnsweredQuestion[]
+  answered_count: number
+  questions_asked: number
+  max_questions: number
+  final_score: number | null
+  passed: boolean | null
+  created_at: string
+  completed_at: string | null
+}
+
 export const coursesAPI = {
   create: (goal: string) => api.post<CoursePlan>('/courses/plan', { goal }),
   list: () => api.get<CoursePlan[]>('/courses/'),
   get: (planId: string) => api.get<CoursePlan>(`/courses/${planId}`),
+  /** Rehydrate an in-progress module interview (plain JSON; `start`/`answer` are SSE). */
+  getInterview: (planId: string, moduleId: string, interviewId: string) =>
+    api.get<InterviewState>(`/courses/${planId}/modules/${moduleId}/interview/${interviewId}`),
   completeInterview: (planId: string, moduleId: string, interviewId: string) =>
     api.post(`/courses/${planId}/modules/${moduleId}/interview/${interviewId}/complete`),
   runCode: (planId: string, moduleId: string, interviewId: string, code: string, language = 'python') =>
@@ -712,6 +760,21 @@ export type V2Event =
   | V2ErrorEvent
   | StepEvent
 
+// ─── Stream cancellation ──────────────────────────────────────────────────────
+// Both streaming helpers below accept `{ signal }`. Aborting is a normal user
+// action ("Stop"), never a failure: the helper resolves quietly instead of
+// throwing, so callers need no special-casing and no error toast fires.
+
+export interface StreamOptions {
+  /** Abort the in-flight stream. On abort the promise resolves quietly (no throw). */
+  signal?: AbortSignal
+}
+
+/** True for the `AbortError` DOMException browsers raise when a fetch/reader is aborted. */
+export function isAbortError(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && (err as { name?: string }).name === 'AbortError'
+}
+
 // Single chat endpoint: /api/v1/chat (BASE_URL already includes /api/v1).
 export const chatAPI = {
   streamChat: async (
@@ -721,16 +784,26 @@ export const chatAPI = {
     context?: Record<string, unknown>,
     /** Stable chat-thread id → enables persistent per-thread memory server-side. */
     sessionId?: string,
+    options?: StreamOptions,
   ): Promise<void> => {
-    const response = await fetch(`${BASE_URL}/chat`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: accessToken ? `Bearer ${accessToken}` : '',
-        ...(sessionId ? { 'X-Session-Id': sessionId } : {}),
-      },
-      body: JSON.stringify({ message, history: history ?? [], context: context ?? {} }),
-    })
+    const signal = options?.signal
+    if (signal?.aborted) return
+    let response: Response
+    try {
+      response = await fetch(`${BASE_URL}/chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: accessToken ? `Bearer ${accessToken}` : '',
+          ...(sessionId ? { 'X-Session-Id': sessionId } : {}),
+        },
+        body: JSON.stringify({ message, history: history ?? [], context: context ?? {} }),
+        signal,
+      })
+    } catch (err) {
+      if (isAbortError(err) || signal?.aborted) return
+      throw err
+    }
     if (!response.ok || !response.body) throw new Error('V2 stream failed')
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
@@ -751,7 +824,11 @@ export const chatAPI = {
       }
     } catch (err) {
       reader.cancel().catch(() => {})
+      if (isAbortError(err) || signal?.aborted) return // user pressed Stop — not an error
       throw new Error(err instanceof Error ? err.message : 'Stream read error')
+    } finally {
+      // Aborting mid-stream leaves the body locked; releasing is a no-op if already done.
+      if (signal?.aborted) reader.cancel().catch(() => {})
     }
   },
 }
@@ -765,15 +842,26 @@ export async function streamSSE(
   path: string,
   body: unknown,
   onEvent: (event: { type: string } & Record<string, unknown>) => void,
+  options?: StreamOptions,
 ): Promise<void> {
-  const response = await fetch(`${BASE_URL}${path}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: accessToken ? `Bearer ${accessToken}` : '',
-    },
-    body: JSON.stringify(body ?? {}),
-  })
+  const signal = options?.signal
+  // Already cancelled before we even hit the network — nothing to do.
+  if (signal?.aborted) return
+  let response: Response
+  try {
+    response = await fetch(`${BASE_URL}${path}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: accessToken ? `Bearer ${accessToken}` : '',
+      },
+      body: JSON.stringify(body ?? {}),
+      signal,
+    })
+  } catch (err) {
+    if (isAbortError(err) || signal?.aborted) return
+    throw err
+  }
   if (!response.ok || !response.body) throw new Error(`Stream failed: ${response.status}`)
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
@@ -798,6 +886,10 @@ export async function streamSSE(
     }
   } catch (err) {
     reader.cancel().catch(() => {})
+    if (isAbortError(err) || signal?.aborted) return // user pressed Stop — not an error
     throw new Error(err instanceof Error ? err.message : 'Stream read error')
+  } finally {
+    // Aborting mid-stream leaves the body locked; releasing is a no-op if already done.
+    if (signal?.aborted) reader.cancel().catch(() => {})
   }
 }

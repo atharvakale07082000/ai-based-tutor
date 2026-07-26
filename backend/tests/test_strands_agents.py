@@ -1,13 +1,18 @@
 """
-Tests for the Strands agents layer: the SSE stream adapter, the skills loader,
-the orchestrator's routing fallback, the guardrail hook, and the tool adapters.
+Tests for the Strands agents layer: the SSE stream adapter, the chat handler's
+wire contract, the skills loader, the orchestrator's routing fallback, the
+guardrail hook, and the tool adapters.
 """
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
-from app.agents import orchestrator, tools
+from app.agents import handler as handler_mod
+from app.agents import model as nim_model
+from app.agents import orchestrator, stream_adapter, tools
 from app.agents.hooks import GuardrailHook
 from app.agents.skills import load_all_skills, load_skill, skills_prompt_block
 from app.agents.stream_adapter import (
@@ -127,6 +132,130 @@ def test_action_for_tool_maps_side_effects():
     # Non-side-effect tools produce no action; errored payloads are ignored.
     assert action_for_tool("get_proficiency", {"xp": 1}) is None
     assert action_for_tool("save_quiz", {"error": "boom"}) is None
+
+
+def test_trace_state_grounding_is_bounded():
+    """Grounding is capped in entries and per-entry length so a long tool chain can't grow unbounded."""
+    st = TraceState()
+    for _ in range(stream_adapter._GROUNDING_MAX_ENTRIES + 5):
+        st.add_grounding("x" * (stream_adapter._GROUNDING_MAX_CHARS + 500))
+    assert len(st.grounding) == stream_adapter._GROUNDING_MAX_ENTRIES
+    assert all(len(g) == stream_adapter._GROUNDING_MAX_CHARS for g in st.grounding)
+    # Empty/blank results are not worth grading against.
+    st2 = TraceState()
+    st2.add_grounding("   ")
+    assert st2.grounding == []
+
+
+# ── handler: grounding capture + capacity notices ─────────────────────────────
+
+
+class _FakeSpecialist:
+    """Stand-in for a Strands Agent: replays a canned event stream."""
+
+    def __init__(self, events, before_stream=None):
+        self._events = events
+        self._before_stream = before_stream
+
+    async def stream_async(self, prompt):
+        if self._before_stream is not None:
+            self._before_stream()
+        for event in self._events:
+            yield event
+
+
+def _patch_chat_pipeline(monkeypatch, specialist, agents=("progress",)):
+    """Patch the handler module's collaborators (agent-module level, not tools level)."""
+
+    async def _fake_route(query, router):
+        return list(agents), "test route"
+
+    monkeypatch.setattr(handler_mod.orchestrator, "build_router", lambda: object())
+    monkeypatch.setattr(handler_mod.orchestrator, "route", _fake_route)
+    monkeypatch.setattr(
+        handler_mod, "build_specialist", lambda key, session_id=None: specialist
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_chat_captures_grounding_but_never_emits_tool_events(monkeypatch):
+    """Tool results feed the faithfulness eval's retrieval context — and nothing else."""
+    events = [
+        {
+            "type": "tool_use_stream",
+            "current_tool_use": {
+                "toolUseId": "t1",
+                "name": "get_proficiency",
+                "input": '{"learner_id": "L1"}',
+            },
+        },
+        {
+            "type": "tool_result",
+            "tool_result": {
+                "toolUseId": "t1",
+                "status": "success",
+                "content": [{"json": {"topic": "SQL joins", "mastery": 0.62}}],
+            },
+        },
+        {"data": "<reasoning>Checking your record.</reasoning>You're at 62% on joins."},
+    ]
+    _patch_chat_pipeline(monkeypatch, _FakeSpecialist(events))
+
+    trace = TraceState()
+    wire = [
+        ev
+        async for ev in handler_mod.handler.run_chat("how am i doing", {}, trace=trace)
+    ]
+
+    kinds = [e["type"] for e in wire]
+    assert "tool_call" not in kinds and "tool_result" not in kinds
+    assert set(kinds) <= {"routing", "reasoning", "token", "action", "done"}
+    assert kinds[0] == "routing" and kinds[-1] == "done"
+
+    # The tool payload reached the evaluator, not the learner.
+    assert len(trace.grounding) == 1
+    assert "SQL joins" in trace.grounding[0] and "0.62" in trace.grounding[0]
+    assert "0.62" not in json.dumps(wire)
+
+
+@pytest.mark.asyncio
+async def test_run_chat_reports_capacity_wait_as_reasoning(monkeypatch):
+    """An RPM wait surfaces on the existing thinking channel, once, in plain language."""
+
+    def _stall():
+        # What _RpmBucket.acquire does right before it sleeps; a repeated wait
+        # must not spam the learner.
+        nim_model.notify_throttle(3.0)
+        nim_model.notify_throttle(3.0)
+
+    _patch_chat_pipeline(
+        monkeypatch,
+        _FakeSpecialist([{"data": "Hi there."}], before_stream=_stall),
+    )
+
+    wire = [ev async for ev in handler_mod.handler.run_chat("hi", {})]
+    notes = [
+        e
+        for e in wire
+        if e["type"] == "reasoning" and e["content"] == handler_mod.THROTTLE_NOTICE
+    ]
+    assert len(notes) == 1
+    assert set(e["type"] for e in wire) <= {"routing", "reasoning", "token", "done"}
+    # Product voice: first person, no infrastructure jargon.
+    lowered = handler_mod.THROTTLE_NOTICE.lower()
+    assert "i'm" in lowered
+    assert not any(w in lowered for w in ("rate limit", "quota", "api", "429"))
+
+
+def test_notify_throttle_without_subscriber_is_silent():
+    """Pipelines that never subscribe (or tests) must not blow up on a throttle."""
+    assert nim_model.notify_throttle(1.0) is None
+
+    seen: list[float] = []
+    with nim_model.throttle_notices(seen.append):
+        nim_model.notify_throttle(2.5)
+    nim_model.notify_throttle(9.0)  # after the context: no longer delivered
+    assert seen == [2.5]
 
 
 # ── skills ────────────────────────────────────────────────────────────────────

@@ -6,13 +6,20 @@ rule) so the tests never hit NVIDIA NIM. A ``_FakeAgent`` scripts the ``stream_a
 and the terminal ``AgentResult`` (with or without interrupts), which lets us verify the turn
 drivers end-to-end: reasoning/question emission, DB persistence of the paused interrupt, the
 tuned-scorer hand-off, and the hard cap — all without a live model or Mongo.
+
+The resume endpoint (``GET .../interview/{interview_id}``) is covered here too: it is the
+read side of the same live interview, and its payload comes from
+``course_planner.interview_state``.
 """
 
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 import app.agents.interview_agent as ia
+import app.routers.courses as courses_router
 from app.config import settings
 
 
@@ -61,6 +68,73 @@ def _interview(**over) -> dict:
     }
     base.update(over)
     return base
+
+
+USER_ID = "u-owner"
+
+
+def _stored_interview(**over) -> dict:
+    """A mid-interview Mongo document: two questions asked, the first one answered."""
+    base = {
+        "interview_id": "iv-1",
+        "plan_id": "plan-1",
+        "module_id": "mod-1",
+        "user_id": USER_ID,
+        "module_title": "SQL Joins",
+        "module_topics": ["joins", "indexes"],
+        "candidate_proficiency": {"joins": 540},
+        "questions": [
+            {
+                "id": 1,
+                "text": "Explain an INNER JOIN vs a LEFT JOIN.",
+                "is_coding_question": False,
+                "language": None,
+                "expected_depth": "conceptual",
+            },
+            {
+                "id": 2,
+                "text": "Write a query joining orders and customers.",
+                "is_coding_question": True,
+                "language": "sql",
+                "expected_depth": "applied",
+            },
+        ],
+        "answers": [
+            {
+                "question_id": 1,
+                "answer_text": "An inner join keeps matching rows...",
+                "score": 7,
+                "feedback": "Solid — mention NULL handling.",
+                "key_points_covered": ["inner"],
+            }
+        ],
+        "turn_count": 2,
+        "current_interrupt_id": "int-2",
+        "status": "in_progress",
+        "final_score": None,
+        "passed": None,
+        "scoring_matrix": [],
+        "summary": None,
+        "created_at": "2026-07-25T09:00:00+00:00",
+        "completed_at": None,
+    }
+    base.update(over)
+    return base
+
+
+@pytest.fixture
+def as_learner():
+    """Authenticate the ASGI client as the interview's owner."""
+    from app.auth.jwt import get_current_user_id
+    from app.main import app
+
+    app.dependency_overrides[get_current_user_id] = lambda: USER_ID
+    yield USER_ID
+    app.dependency_overrides.pop(get_current_user_id, None)
+
+
+def _url(interview_id: str = "iv-1") -> str:
+    return f"/api/v1/courses/plan-1/modules/mod-1/interview/{interview_id}"
 
 
 # ── stream_start ──────────────────────────────────────────────────────────────
@@ -153,8 +227,12 @@ async def test_stream_answer_scores_then_next_question(monkeypatch):
 
     ev = next(e for e in out if e["type"] == "evaluation")
     assert ev["score"] == 7 and ev["question_id"] == 1
+    # answered/total discriminator so the client can render "2 of 8" without extra state
+    assert ev["answered_count"] == 1
+    assert ev["max_questions"] == settings.INTERVIEW_MAX_QUESTIONS
     q = next(e for e in out if e["type"] == "question")
     assert q["id"] == 2 and q["text"].startswith("When would a LEFT JOIN")
+    assert q["max_questions"] == settings.INTERVIEW_MAX_QUESTIONS
     eval_mock.assert_awaited_once_with("iv-1", 1, "An inner join...")
 
 
@@ -219,6 +297,43 @@ def test_system_prompt_injects_context_rubric_and_caps():
     assert "Interview coaching" in prompt or "Calibrate" in prompt
 
 
+def test_interview_state_status_ladder():
+    """`status` distinguishes awaiting-answer / concluded / graded / interrupted-start."""
+    from app.agents.course_planner import interview_state
+
+    # concluded by the agent, not yet scored
+    concluded = interview_state(
+        {
+            **_stored_interview(),
+            "current_interrupt_id": None,
+            "status": "awaiting_final",
+        }
+    )
+    assert concluded["status"] == "awaiting_final"
+    assert concluded["current_question"] is None
+
+    # scored — the review pipeline stamped final_score/completed_at
+    graded = interview_state(
+        {
+            **_stored_interview(),
+            "current_interrupt_id": None,
+            "status": "awaiting_final",
+            "final_score": 72.0,
+            "passed": True,
+            "completed_at": "2026-07-25T10:00:00+00:00",
+        }
+    )
+    assert graded["status"] == "complete"
+    assert graded["final_score"] == 72.0 and graded["passed"] is True
+
+    # nothing asked yet (start stream died before the first question)
+    fresh = interview_state(
+        {**_stored_interview(), "questions": [], "answers": [], "turn_count": 0}
+    )
+    assert fresh["status"] == "in_progress"
+    assert fresh["current_question"] is None and fresh["answered_count"] == 0
+
+
 def test_format_answer_surfaces_answer_and_score():
     text = ia._format_answer(
         {
@@ -230,3 +345,69 @@ def test_format_answer_surfaces_answer_and_score():
     assert "A join combines rows" in text
     assert "8/10" in text
     assert "ask 1 more" in text
+
+
+# ── GET .../interview/{interview_id} (resume a dropped interview) ──────────────
+
+
+async def test_get_interview_returns_resumable_state(client, as_learner, monkeypatch):
+    """Mid-interview read returns the outstanding question + the graded answers so far."""
+    monkeypatch.setattr(
+        courses_router, "get_interview", AsyncMock(return_value=_stored_interview())
+    )
+
+    r = await client.get(_url())
+    assert r.status_code == 200, r.text
+    body = r.json()
+
+    assert body["interview_id"] == "iv-1"
+    assert body["module_title"] == "SQL Joins"
+    assert body["status"] == "awaiting_answer"
+    assert body["answered_count"] == 1
+    assert body["questions_asked"] == 2
+    assert body["max_questions"] == settings.INTERVIEW_MAX_QUESTIONS
+    assert body["final_score"] is None and body["passed"] is None
+
+    # the question the agent is paused on — same shape as the SSE `question` event
+    q = body["current_question"]
+    assert q["id"] == 2
+    assert q["text"].startswith("Write a query")
+    assert q["is_coding_question"] is True and q["language"] == "sql"
+    assert q["expected_depth"] == "applied"
+
+    # the already-answered turn, with the feedback the learner has seen
+    (answered,) = body["answers"]
+    assert answered["question_id"] == 1
+    assert answered["question_text"].startswith("Explain an INNER JOIN")
+    assert answered["score"] == 7
+    assert answered["feedback"].startswith("Solid")
+    assert answered["key_points_covered"] == ["inner"]
+
+    # internal state stays server-side
+    assert "candidate_proficiency" not in body
+    assert "current_interrupt_id" not in body
+    assert "scoring_matrix" not in body and "summary" not in body
+
+
+async def test_get_interview_404_for_other_users_interview(
+    client, as_learner, monkeypatch
+):
+    """Ownership is enforced exactly like submit_answer: someone else's interview is a 404."""
+    monkeypatch.setattr(
+        courses_router,
+        "get_interview",
+        AsyncMock(return_value=_stored_interview(user_id="someone-else")),
+    )
+
+    r = await client.get(_url())
+    assert r.status_code == 404
+    assert r.json()["detail"] == "Interview not found"
+
+
+async def test_get_interview_404_for_unknown_id(client, as_learner, monkeypatch):
+    """An interview id that doesn't exist is a 404, not a 500."""
+    monkeypatch.setattr(courses_router, "get_interview", AsyncMock(return_value=None))
+
+    r = await client.get(_url("nope"))
+    assert r.status_code == 404
+    assert r.json()["detail"] == "Interview not found"

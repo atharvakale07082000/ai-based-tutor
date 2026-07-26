@@ -15,6 +15,7 @@ from structlog.contextvars import bind_contextvars
 
 from app.agents.handler import handler
 from app.agents.steps import StepTimeline
+from app.agents.stream_adapter import TraceState
 from app.auth.jwt import get_current_user_id
 from app.db.mongo import col_learners
 from app.guardrails import check_input
@@ -94,18 +95,20 @@ async def v2_chat(
                 "thread_id": request.headers.get("X-Session-Id", ""),
             }
 
-            # Live step timeline: routing done → working (+ one step per tool call) → composing answer.
+            # Live step timeline: routing done → working → composing answer.
             tl = StepTimeline("chat")
             answered = False
             answer_text = ""  # accumulated for online eval sampling
-            tool_grounding: list[
-                str
-            ] = []  # tool results = the retrieval context for faithfulness
+            # The handler's TraceState collects tool results as `grounding` while it
+            # translates the stream. Those never reach the wire (the mechanical tool
+            # workflow stays hidden); they're the retrieval context the faithfulness
+            # metric grades the answer against below.
+            trace = TraceState()
 
             # The handler performs the always-on LLM routing decision itself and
             # emits it as the first `routing` event; we frame the StepTimeline around
-            # the events it yields (routing → thought/tool_call/tool_result/token → done).
-            async for event in handler.run_chat(stripped, context):
+            # the events it yields (routing → reasoning/token/action → done).
+            async for event in handler.run_chat(stripped, context, trace=trace):
                 etype = event.get("type")
                 if etype == "routing":
                     agent_name = event.get("agent", "assistant")
@@ -119,15 +122,7 @@ async def v2_chat(
                     yield f"data: {json.dumps(tl.done('route'))}\n\n"
                     yield f"data: {json.dumps(tl.start('work'))}\n\n"
                     continue
-                if etype == "tool_call":
-                    sid = f"tool:{event.get('name', 'tool')}"
-                    label = f"Looking up {str(event.get('name', 'information')).replace('_', ' ')}"
-                    yield f"data: {json.dumps(tl.start(sid, label))}\n\n"
-                elif etype == "tool_result":
-                    sid = f"tool:{event.get('name', 'tool')}"
-                    tool_grounding.append(str(event.get("result", ""))[:1500])
-                    yield f"data: {json.dumps(tl.done(sid))}\n\n"
-                elif etype == "token":
+                if etype == "token":
                     answer_text += str(event.get("content", ""))
                     if not answered:
                         answered = True
@@ -155,7 +150,7 @@ async def v2_chat(
                     stripped,
                     answer_text,
                     turns,
-                    retrieval_context=tool_grounding or None,
+                    retrieval_context=trace.grounding or None,
                     learner_id=context.get("learner_id", ""),
                     session_id=session_id,
                 )

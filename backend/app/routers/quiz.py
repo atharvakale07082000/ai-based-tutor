@@ -126,6 +126,11 @@ async def get_quiz(quiz_id: str, user_id: str = Depends(get_current_user_id)):
     )
 
 
+# Sentinel the client sends for a question the learner never answered (ran the timer
+# out, or explicitly set it aside and submitted anyway). Graded as incorrect, not rejected.
+UNANSWERED = -1
+
+
 def _validate_quiz_answers(questions: list, answers: list) -> None:
     """Raise HTTP 400 if the answer set is the wrong length or has out-of-range indices."""
     if len(answers) != len(questions):
@@ -133,6 +138,8 @@ def _validate_quiz_answers(questions: list, answers: list) -> None:
             400, f"Expected {len(questions)} answers, got {len(answers)}"
         )
     for i, (ans, q) in enumerate(zip(answers, questions)):
+        if ans == UNANSWERED:
+            continue
         n_opts = len(q.get("options", []))
         if n_opts and not (0 <= ans < n_opts):
             raise HTTPException(

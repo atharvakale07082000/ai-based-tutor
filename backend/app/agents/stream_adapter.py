@@ -17,6 +17,11 @@ events, and everything after it is the answer. Side-effect tools still produce
 ``action`` cards (a generated quiz, updated progress) — those are outcomes, not
 workflow.
 
+Hidden from the wire ≠ thrown away: tool results are still accumulated on the
+``TraceState`` as ``grounding`` so the online faithfulness eval can check the
+answer against the facts the agent actually retrieved (see ``routers/chat.py``).
+That list never becomes an event.
+
 One ``TraceState`` instance tracks a single agent stream.
 """
 
@@ -42,6 +47,12 @@ _ACTION_TOOLS: dict[str, str] = {
 _R_OPEN = "<reasoning>"
 _R_CLOSE = "</reasoning>"
 
+# Bounds on the retrieval context kept for the online faithfulness eval, so a long
+# tool chain can't balloon memory. Per-entry cap matches what the chat router used
+# to apply before the reasoning-stream refactor dropped the tool events.
+_GROUNDING_MAX_ENTRIES = 8
+_GROUNDING_MAX_CHARS = 1500
+
 
 @dataclass
 class _ToolCall:
@@ -60,10 +71,22 @@ class TraceState:
     tools: dict[str, _ToolCall] = field(default_factory=dict)
     in_reasoning: bool = False
     carry: str = ""  # held-back tail that might be a partial <reasoning> tag
+    # Tool results seen on this stream, server-side only (never emitted): the
+    # retrieval context the faithfulness metric grades the answer against.
+    grounding: list[str] = field(default_factory=list)
 
     def next_step(self) -> int:
         self.step += 1
         return self.step
+
+    def add_grounding(self, payload: Any) -> None:
+        """Record one tool result as retrieval context (bounded in count and length)."""
+        if len(self.grounding) >= _GROUNDING_MAX_ENTRIES:
+            return
+        text = payload if isinstance(payload, str) else json.dumps(payload, default=str)
+        text = text.strip()
+        if text:
+            self.grounding.append(text[:_GROUNDING_MAX_CHARS])
 
 
 def _parse_args(raw: str) -> dict | None:
@@ -187,13 +210,15 @@ def translate_event(
         )
         return events
 
-    # Completed tool execution → surface only an `action` card for side-effect tools.
+    # Completed tool execution → keep the payload as grounding (server-side only)
+    # and surface an `action` card for side-effect tools; nothing else reaches the wire.
     if event.get("type") == "tool_result":
         tool_result = event.get("tool_result") or {}
         tool_id = tool_result.get("toolUseId", "")
         call = state.tools.get(tool_id)
         name = call.name if call else "tool"
         payload = _tool_result_payload(tool_result)
+        state.add_grounding(payload)
         action = action_for_tool(name, payload)
         if action:
             events.append(action)

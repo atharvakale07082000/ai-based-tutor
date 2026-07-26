@@ -14,12 +14,14 @@ from app.agents.course_planner import (
     create_course_plan,
     get_interview,
     get_plan,
+    interview_state,
     list_plans,
     start_interview,
 )
 from app.agents.interview_agent import stream_answer, stream_start
 from app.agents.steps import sse_step_stream
 from app.auth.jwt import get_current_user_id
+from app.config import settings
 from app.guardrails import check_topic, topic_reject_message
 
 _SSE_HEADERS = {"X-Accel-Buffering": "no", "Cache-Control": "no-cache"}
@@ -161,8 +163,8 @@ async def start_module_interview(
 ):
     """Begin an adaptive AI interview: create it, then stream the agent's first question as SSE.
 
-    Emits `interview_started` (carrying interview_id), live `reasoning` while the agent thinks,
-    a `question` event, then `[DONE]`.
+    Emits `interview_started` (carrying interview_id, module_title and the max-question
+    ceiling), live `reasoning` while the agent thinks, a `question` event, then `[DONE]`.
     """
     plan = await get_plan(plan_id)
     if not plan or plan["user_id"] != user_id:
@@ -185,6 +187,7 @@ async def start_module_interview(
             "type": "interview_started",
             "interview_id": interview["interview_id"],
             "module_title": module["title"],
+            "max_questions": settings.INTERVIEW_MAX_QUESTIONS,
         }
         yield f"data: {json.dumps(started)}\n\n"
         try:
@@ -202,6 +205,26 @@ async def start_module_interview(
     return StreamingResponse(
         event_stream(), media_type="text/event-stream", headers=_SSE_HEADERS
     )
+
+
+@router.get("/{plan_id}/modules/{module_id}/interview/{interview_id}")
+async def get_interview_progress(
+    plan_id: str,
+    module_id: str,
+    interview_id: str,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Read an in-progress interview back so a reloaded tab can resume it (plain JSON, not SSE).
+
+    Server state (the interview doc + the agent's paused session) outlives the browser tab,
+    so this returns the outstanding question, the answers graded so far, and a `status`
+    telling the client whether to answer, score, or show the final result. See
+    `course_planner.interview_state` for the field-by-field contract.
+    """
+    interview = await get_interview(interview_id)
+    if not interview or interview["user_id"] != user_id:
+        raise HTTPException(404, "Interview not found")
+    return interview_state(interview)
 
 
 @router.post("/{plan_id}/modules/{module_id}/interview/{interview_id}/answer")

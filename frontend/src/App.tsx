@@ -12,7 +12,6 @@ import { CommandPalette } from '@/components/layout/CommandPalette'
 import { PageWrapper } from '@/components/layout/PageWrapper'
 import { ErrorBoundary } from '@/components/layout/ErrorBoundary'
 import { PomodoroTimer } from '@/components/ui/PomodoroTimer'
-import { useAgentSocket } from '@/hooks/useAgentSocket'
 
 const LandingPage        = lazy(() => import('@/pages/LandingPage'))
 const OnboardingPage     = lazy(() => import('@/pages/OnboardingPage'))
@@ -111,8 +110,6 @@ const PUBLIC_ROUTES = ['/', '/onboarding', '/login', '/reset-password']
 
 function AppShell({ children }: { children: React.ReactNode }) {
   const location = useLocation()
-  const learnerId = useLearnerStore((s) => s.id ?? undefined)
-  useAgentSocket({ learnerId })
 
   const isPublic = PUBLIC_ROUTES.includes(location.pathname)
 

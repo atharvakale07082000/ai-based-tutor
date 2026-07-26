@@ -250,7 +250,11 @@ async def _drive(
             q_id=next_id,
             is_coding=question["is_coding_question"],
         )
-        yield {"type": "question", **question}
+        yield {
+            "type": "question",
+            **question,
+            "max_questions": settings.INTERVIEW_MAX_QUESTIONS,
+        }
     else:
         await col_interviews().update_one(
             {"interview_id": interview_id},
@@ -292,12 +296,17 @@ async def stream_answer(
         )
         yield {"type": "error", "message": "Could not score that answer — try again."}
         return
+    # evaluate_answer pushed this evaluation into answers[]; mirror it locally so the
+    # in-memory copy (and the answered/total counter below) stays consistent.
+    interview["answers"] = [*(interview.get("answers") or []), evaluation]
     yield {
         "type": "evaluation",
         "question_id": question_id,
         "score": evaluation.get("score"),
         "feedback": evaluation.get("feedback", ""),
         "key_points_covered": evaluation.get("key_points_covered", []),
+        "answered_count": len(interview["answers"]),
+        "max_questions": settings.INTERVIEW_MAX_QUESTIONS,
     }
 
     # 2) Resume the paused agent with the answer + eval so it picks the next question.
