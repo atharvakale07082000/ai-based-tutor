@@ -7,18 +7,47 @@ import { Badge } from '@/components/ui/Badge'
 import { Icon } from '@/components/ui/Icon'
 import { ReasoningStream } from '@/components/agents/ReasoningStream'
 import { useAgentTimeline } from '@/hooks/useAgentTimeline'
-import { coursesAPI, streamSSE, type InterviewQuestion } from '@/lib/api'
+import { coursesAPI, streamSSE, type InterviewQuestion, type InterviewState } from '@/lib/api'
 
 // Lazy-load Monaco so it doesn't bloat the initial bundle
 const MonacoEditor = lazy(() => import('@monaco-editor/react'))
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type Phase = 'loading' | 'intro' | 'question' | 'recording' | 'evaluating' | 'feedback' | 'scoring' | 'complete'
+type Phase =
+  | 'loading' | 'resume' | 'intro' | 'question' | 'recording'
+  | 'evaluating' | 'feedback' | 'scoring' | 'complete' | 'error'
 
-// Soft cap mirrored from backend settings.INTERVIEW_MAX_QUESTIONS — the agent decides when to
-// stop, so this only drives the header progress bar (total is unknown until the agent concludes).
+// Fallback cap, mirrored from backend settings.INTERVIEW_MAX_QUESTIONS. The real ceiling arrives
+// on the `interview_started`/`question`/`evaluation` frames (and in the resume payload); this is
+// only what we show before the first frame lands.
 const MAX_Q = 8
+
+// ── Web Speech API ────────────────────────────────────────────────────────────
+// Not in TypeScript's DOM lib (still a draft spec, webkit-prefixed in Chrome/Safari), so the
+// slice we actually use is typed here rather than reached for through `any`.
+
+interface SpeechAlternative { transcript: string }
+interface SpeechResult { isFinal: boolean; readonly length: number; [i: number]: SpeechAlternative | undefined }
+interface SpeechResultList { readonly length: number; [i: number]: SpeechResult | undefined }
+interface SpeechRecognitionEventLike { resultIndex: number; results: SpeechResultList }
+interface SpeechRecognitionLike {
+  continuous: boolean
+  interimResults: boolean
+  lang: string
+  onresult: ((e: SpeechRecognitionEventLike) => void) | null
+  onerror: (() => void) | null
+  start: () => void
+  stop: () => void
+}
+
+function getSpeechRecognitionCtor(): (new () => SpeechRecognitionLike) | undefined {
+  const w = window as unknown as {
+    SpeechRecognition?: new () => SpeechRecognitionLike
+    webkitSpeechRecognition?: new () => SpeechRecognitionLike
+  }
+  return w.SpeechRecognition ?? w.webkitSpeechRecognition
+}
 
 // Map a `question` SSE frame (untyped Record) into a typed question.
 function toQuestion(e: Record<string, unknown>): InterviewQuestion {
@@ -33,11 +62,15 @@ function toQuestion(e: Record<string, unknown>): InterviewQuestion {
 
 interface AnswerResult {
   question_id: number
-  score: number
+  /** null when the answer was recorded but never graded (resumed sessions only). */
+  score: number | null
   feedback: string
   answer_text: string
   key_points_covered: string[]
 }
+
+const scoreTone = (score: number | null) =>
+  score == null ? 'outline' : score >= 7 ? 'pos' : score >= 5 ? 'warn' : 'neg'
 
 interface FinalResult {
   final_score: number
@@ -51,6 +84,76 @@ interface FinalResult {
   }>
   summary: string
   total_questions: number
+}
+
+// ── Resume support ────────────────────────────────────────────────────────────
+// The whole interview lives server-side (the interview doc + the agent's paused Strands
+// session); the browser only holds the id that unlocks it. Keeping that id in localStorage —
+// scoped per plan+module — is what lets a reloaded tab or a dropped connection get back in
+// instead of abandoning every answered question.
+
+const resumeKey = (planId: string, moduleId: string) => `atelier.interview.${planId}.${moduleId}`
+
+// localStorage throws in private mode / when the quota is full — never let that break the page.
+function rememberInterview(planId?: string, moduleId?: string, interviewId?: string) {
+  if (!planId || !moduleId || !interviewId) return
+  try { window.localStorage.setItem(resumeKey(planId, moduleId), interviewId) } catch { /* no persistence */ }
+}
+function recallInterview(planId?: string, moduleId?: string): string | null {
+  if (!planId || !moduleId) return null
+  try { return window.localStorage.getItem(resumeKey(planId, moduleId)) } catch { return null }
+}
+function forgetInterview(planId?: string, moduleId?: string) {
+  if (!planId || !moduleId) return
+  try { window.localStorage.removeItem(resumeKey(planId, moduleId)) } catch { /* nothing to clear */ }
+}
+
+/** Per-answer feedback cards, rebuilt from the server's projection. */
+const historyFromState = (s: InterviewState): AnswerResult[] =>
+  s.answers.map((a) => ({
+    question_id: a.question_id,
+    score: a.score,
+    feedback: a.feedback ?? '',
+    answer_text: a.answer_text ?? '',
+    key_points_covered: a.key_points_covered ?? [],
+  }))
+
+/**
+ * The questions already answered. Only their count and ids matter after a resume (they position
+ * the step dots and the "Question n" counter) — the learner is put back on `current_question`.
+ */
+const askedFromState = (s: InterviewState): InterviewQuestion[] =>
+  s.answers.map((a) => ({
+    id: a.question_id,
+    text: a.question_text ?? '',
+    is_coding_question: (a.answer_text ?? '').startsWith('[Code Answer]'),
+    language: null,
+    expected_depth: 'conceptual',
+  }))
+
+/**
+ * Rebuild the result screen for an interview that was already graded. The read endpoint
+ * withholds the grader's rationale (`scoring_matrix`/`summary`) by design, so the breakdown is
+ * reconstructed from the per-answer feedback the learner had already been shown.
+ */
+const finalFromState = (s: InterviewState): FinalResult => ({
+  final_score: s.final_score ?? 0,
+  passed: !!s.passed,
+  scoring_matrix: s.answers.map((a) => ({
+    question_id: a.question_id,
+    score: a.score ?? 0,
+    justification: a.feedback ?? '',
+    concepts_covered: a.key_points_covered ?? [],
+    concepts_missed: [],
+  })),
+  summary: '',
+  total_questions: s.answers.length,
+})
+
+function formatStarted(iso: string | null | undefined): string | null {
+  if (!iso) return null
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? null : d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 }
 
 // ── Shared styles ─────────────────────────────────────────────────────────────
@@ -383,9 +486,20 @@ export default function ModuleInterviewPage() {
   const [finalResult,        setFinalResult]        = useState<FinalResult | null>(null)
   const [isSpeaking,         setIsSpeaking]         = useState(false)
   const [displayedQ,         setDisplayedQ]         = useState('')
+  // Ceiling the agent is working towards (backend INTERVIEW_MAX_QUESTIONS), learnt from the
+  // stream frames / resume payload so the learner always sees how far the interview can run.
+  const [maxQuestions,       setMaxQuestions]       = useState(MAX_Q)
+  // A recoverable interview found on mount — offered, never forced.
+  const [resumeState,        setResumeState]        = useState<InterviewState | null>(null)
+  const [resumeChecked,      setResumeChecked]      = useState(false)
+  // Non-null while we're talking to the resume endpoint — doubles as the spinner's caption.
+  const [restoring,          setRestoring]          = useState<string | null>(null)
+  const [restoredResult,     setRestoredResult]     = useState(false)
+  // Mid-interview failure: the server still has everything, so we offer a real retry.
+  const [recovery,           setRecovery]           = useState<{ message: string; action: 'resync' | 'complete' | 'restart' } | null>(null)
 
   const mediaRef       = useRef<MediaRecorder | null>(null)
-  const recognitionRef = useRef<any>(null)
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null)
   const transcriptRef  = useRef('')
 
   const { data: plan } = useQuery({
@@ -397,13 +511,52 @@ export default function ModuleInterviewPage() {
   })
   const currentModule = plan?.modules.find((m) => m.id === moduleId)
 
-  // Show the intro once the plan (module title/topics) has loaded. Questions are NOT fetched up
-  // front anymore — the interrupt-driven agent generates them one at a time once the user begins.
+  // Show the intro once the plan (module title/topics) has loaded AND we know whether there's an
+  // interview to resume — otherwise the intro would flash before the resume offer replaces it.
+  // Questions are NOT fetched up front: the agent generates them one at a time once we begin.
   useEffect(() => {
-    if (plan && phase === 'loading') setPhase('intro')
-  }, [plan, phase])
+    if (plan && resumeChecked && phase === 'loading') setPhase('intro')
+  }, [plan, resumeChecked, phase])
+
+  // On mount, look for an interview this tab (or a previous one) left running server-side.
+  useEffect(() => {
+    if (!planId || !moduleId) return
+    const stored = recallInterview(planId, moduleId)
+    if (!stored) { setResumeChecked(true); return }
+    let cancelled = false
+    setRestoring('Checking for an interview in progress…')
+    coursesAPI.getInterview(planId, moduleId, stored)
+      .then(({ data }) => {
+        if (cancelled) return
+        if (data.status === 'complete') {
+          // Already graded — show the verdict, don't re-run scoring, and stop tracking it.
+          forgetInterview(planId, moduleId)
+          setMaxQuestions(data.max_questions || MAX_Q)
+          setEvalHistory(historyFromState(data))
+          setFinalResult(finalFromState(data))
+          setRestoredResult(true)
+          setFinished(true)
+          setPhase('complete')
+          return
+        }
+        if (data.status === 'in_progress' && data.answered_count === 0) {
+          // The start turn died before the agent asked anything: no answers, no pending question,
+          // and no interrupt to resume from. There is nothing to save — drop it silently.
+          forgetInterview(planId, moduleId)
+          return
+        }
+        setResumeState(data)
+        setPhase('resume')
+      })
+      // 404 / 403 / stale id — the interview is gone. Clear it and let the intro render as usual;
+      // the learner never asked about this id, so there's nothing to alarm them with.
+      .catch(() => { if (!cancelled) forgetInterview(planId, moduleId) })
+      .finally(() => { if (!cancelled) { setRestoring(null); setResumeChecked(true) } })
+    return () => { cancelled = true }
+  }, [planId, moduleId])
 
   const currentQuestion = questions[currentQIdx]
+  const questionText = currentQuestion?.text ?? ''
   const isCoding = !!currentQuestion?.is_coding_question
   const codingLang = currentQuestion?.language ?? 'python'
 
@@ -411,46 +564,73 @@ export default function ModuleInterviewPage() {
   const startInterviewStream = async () => {
     if (!planId || !moduleId) return
     setQuestions([]); setCurrentQIdx(0); setEvalHistory([]); setFinished(false); setCurrentEval(null)
+    setRecovery(null); setFinalResult(null); setRestoredResult(false)
     setPhase('question')  // shows a "preparing question" state until the first question arrives
     let gotQuestion = false
+    let startedId: string | null = null
     try {
       await streamSSE(
         `/courses/${planId}/modules/${moduleId}/interview/start`,
         {},
         (event) => {
-          if (event.type === 'interview_started') setInterviewId(String(event.interview_id))
-          else if (event.type === 'question') { gotQuestion = true; setQuestions([toQuestion(event)]); setCurrentQIdx(0) }
+          if (event.type === 'interview_started') {
+            startedId = String(event.interview_id)
+            setInterviewId(startedId)
+            // Persist immediately: from here on a reload can find its way back.
+            rememberInterview(planId, moduleId, startedId)
+            if (event.max_questions) setMaxQuestions(Number(event.max_questions))
+          } else if (event.type === 'question') {
+            gotQuestion = true
+            if (event.max_questions) setMaxQuestions(Number(event.max_questions))
+            setQuestions([toQuestion(event)]); setCurrentQIdx(0)
+          }
           else if (event.type === 'finished') setFinished(true)
           else if (event.type === 'error') toast.error(String(event.message ?? 'Could not start interview'))
         },
       )
       if (!gotQuestion) throw new Error('no question')
     } catch {
-      toast.error('Could not start interview')
-      setPhase('intro')
+      if (startedId) {
+        // The interview exists server-side but never produced a question — retry, don't strand it.
+        setRecovery({ message: 'The interviewer never sent your first question. Nothing is lost — try again.', action: 'restart' })
+        setPhase('error')
+      } else {
+        toast.error('Could not start interview')
+        setPhase('intro')
+      }
     }
+  }
+
+  /** Discard whatever is stored and put the learner back on the intro, ready to start fresh. */
+  const startOver = () => {
+    window.speechSynthesis?.cancel()
+    forgetInterview(planId, moduleId)
+    setResumeState(null); setInterviewId(null); setFinalResult(null); setRestoredResult(false)
+    setQuestions([]); setCurrentQIdx(0); setEvalHistory([]); setCurrentEval(null); setFinished(false)
+    setMaxQuestions(MAX_Q); setRecovery(null)
+    updateTranscript(''); setInterimTranscript(''); setCodeValue('')
+    setPhase('intro')
   }
 
   // Typewriter for question text
   useEffect(() => {
-    if (!currentQuestion) return
-    if (phase !== 'question') { setDisplayedQ(currentQuestion.text); return }
+    if (!questionText) return
+    if (phase !== 'question') { setDisplayedQ(questionText); return }
     let i = 0
     setDisplayedQ('')
-    const full = currentQuestion.text
-    const id = setInterval(() => { i++; setDisplayedQ(full.slice(0, i)); if (i >= full.length) clearInterval(id) }, 20)
+    const id = setInterval(() => { i++; setDisplayedQ(questionText.slice(0, i)); if (i >= questionText.length) clearInterval(id) }, 20)
     return () => clearInterval(id)
-  }, [currentQuestion?.id, phase])
+  }, [questionText, phase])
 
   // Reset code editor when question changes
   useEffect(() => { setCodeValue('') }, [currentQIdx])
 
   // Auto-speak question (verbal only)
   useEffect(() => {
-    if (phase !== 'question' || !currentQuestion || isCoding) return
+    if (phase !== 'question' || !questionText || isCoding) return
     const t = setTimeout(() => {
       setIsSpeaking(true)
-      const utt = new SpeechSynthesisUtterance(`Question ${currentQIdx + 1}. ${currentQuestion.text}`)
+      const utt = new SpeechSynthesisUtterance(`Question ${currentQIdx + 1}. ${questionText}`)
       utt.rate = 0.92
       const v = window.speechSynthesis?.getVoices().find((v) => v.lang.startsWith('en') && v.localService)
       if (v) utt.voice = v
@@ -460,7 +640,7 @@ export default function ModuleInterviewPage() {
       window.speechSynthesis?.speak(utt)
     }, 400)
     return () => { clearTimeout(t); window.speechSynthesis?.cancel(); setIsSpeaking(false) }
-  }, [currentQIdx, phase, isCoding])
+  }, [currentQIdx, questionText, phase, isCoding])
 
   // Cleanup media resources when the component unmounts mid-interview
   useEffect(() => {
@@ -495,16 +675,18 @@ export default function ModuleInterviewPage() {
       mediaRef.current = rec
     } catch { /* mic unavailable */ }
 
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    const SR = getSpeechRecognitionCtor()
     if (SR) {
       const rec = new SR()
       rec.continuous = true; rec.interimResults = true; rec.lang = 'en-US'
-      rec.onresult = (e: any) => {
+      rec.onresult = (e) => {
         let fin = '', int = ''
         for (let i = e.resultIndex; i < e.results.length; i++) {
-          const r = e.results[i]?.[0]; if (!r) continue
-          if (e.results[i].isFinal) fin += r.transcript + ' '
-          else int += r.transcript
+          const res = e.results[i]
+          const alt = res?.[0]
+          if (!res || !alt) continue
+          if (res.isFinal) fin += alt.transcript + ' '
+          else int += alt.transcript
         }
         if (fin) updateTranscript((p) => p + fin)
         setInterimTranscript(int)
@@ -543,6 +725,7 @@ export default function ModuleInterviewPage() {
         (event) => {
           if (event.type === 'evaluation') {
             gotEval = true
+            if (event.max_questions) setMaxQuestions(Number(event.max_questions))
             const result: AnswerResult = {
               question_id: Number(event.question_id ?? qid),
               score: Number(event.score ?? 0),
@@ -560,6 +743,7 @@ export default function ModuleInterviewPage() {
               window.speechSynthesis?.speak(utt)
             }
           } else if (event.type === 'question') {
+            if (event.max_questions) setMaxQuestions(Number(event.max_questions))
             setQuestions((prev) => [...prev, toQuestion(event)])
           } else if (event.type === 'finished') {
             setFinished(true)
@@ -570,8 +754,77 @@ export default function ModuleInterviewPage() {
       )
       if (!gotEval) throw new Error('no evaluation')
     } catch {
-      toast.error('Evaluation failed — try again')
+      if (gotEval) {
+        // Scored, but the turn died before the next question arrived. The feedback on screen is
+        // real; the Next button will re-sync with the server.
+        toast('Connection dropped after scoring — your answer was saved', { icon: 'ℹ️' })
+      } else {
+        // We don't know whether the server scored it. Don't guess and don't discard the
+        // interview — read the authoritative state back and carry on from there.
+        setRecovery({ message: 'We lost the connection while your answer was being scored. Your interview is saved on our side.', action: 'resync' })
+        setPhase('error')
+      }
+    }
+  }
+
+  /**
+   * Pull the authoritative interview state from the server and put the UI back on it.
+   * Used both by the resume offer and by mid-interview error recovery.
+   */
+  const applyServerState = (s: InterviewState) => {
+    setInterviewId(s.interview_id)
+    setMaxQuestions(s.max_questions || MAX_Q)
+    setResumeState(null); setRecovery(null); setCurrentEval(null)
+    setInterimTranscript('')
+    // Reconnecting onto the very question the learner was answering? Keep their draft.
+    if (!(s.status === 'awaiting_answer' && s.current_question?.id === currentQuestion?.id)) {
+      updateTranscript(''); setCodeValue('')
+    }
+    const history = historyFromState(s)
+    const asked = askedFromState(s)
+    setEvalHistory(history)
+
+    if (s.status === 'complete') {
+      forgetInterview(planId, moduleId)
+      setQuestions(asked); setCurrentQIdx(Math.max(asked.length - 1, 0)); setFinished(true)
+      setFinalResult(finalFromState(s)); setRestoredResult(true); setPhase('complete')
+      return
+    }
+    if (s.status === 'awaiting_answer' && s.current_question) {
+      setQuestions([...asked, s.current_question])
+      setCurrentQIdx(asked.length)
+      setFinished(false)
       setPhase('question')
+      return
+    }
+    // `awaiting_final` (the agent concluded) and `in_progress` with answers already banked both
+    // end the same way: there is no question left to ask and no interrupt to resume, so the only
+    // way to honour the work already done is to send it for final scoring.
+    setQuestions(asked); setCurrentQIdx(Math.max(asked.length - 1, 0)); setFinished(true)
+    if (history.length > 0) {
+      void handleComplete(s.interview_id)
+    } else {
+      forgetInterview(planId, moduleId)
+      setPhase('intro')
+    }
+  }
+
+  /** Retry after a mid-interview failure — keeps the session instead of reloading the page. */
+  const retryRecovery = async () => {
+    const action = recovery?.action
+    setRecovery(null)
+    if (action === 'complete') { void handleComplete(); return }
+    if (action === 'restart') { forgetInterview(planId, moduleId); setInterviewId(null); void startInterviewStream(); return }
+    if (!planId || !moduleId || !interviewId) { startOver(); return }
+    setPhase('loading'); setRestoring('Reconnecting to your interview…')
+    try {
+      const { data } = await coursesAPI.getInterview(planId, moduleId, interviewId)
+      applyServerState(data)
+    } catch {
+      setRecovery({ message: "We still can't reach your interview. It's safe on our side — try again in a moment.", action: 'resync' })
+      setPhase('error')
+    } finally {
+      setRestoring(null)
     }
   }
 
@@ -599,15 +852,18 @@ export default function ModuleInterviewPage() {
     }
   }
 
-  const handleComplete = async () => {
-    if (!interviewId) return
+  // `idOverride` lets a resume kick off scoring before the interviewId state has settled.
+  const handleComplete = async (idOverride?: string) => {
+    const id = idOverride ?? interviewId
+    if (!id) return
     setPhase('scoring')
+    setRecovery(null)
     resetScoring()
     window.speechSynthesis?.cancel()
     let scored: FinalResult | null = null
     try {
       await streamSSE(
-        `/courses/${planId}/modules/${moduleId}/interview/${interviewId}/complete/stream`,
+        `/courses/${planId}/modules/${moduleId}/interview/${id}/complete/stream`,
         {},
         (event) => {
           if (event.type === 'step') {
@@ -621,6 +877,9 @@ export default function ModuleInterviewPage() {
       )
       if (!scored) throw new Error('no result')
       const r = scored as FinalResult
+      // Graded and banked — there is nothing left to resume.
+      forgetInterview(planId, moduleId)
+      setRestoredResult(false)
       setFinalResult(r)
       setPhase('complete')
       const utt = new SpeechSynthesisUtterance(
@@ -631,15 +890,25 @@ export default function ModuleInterviewPage() {
       utt.rate = 0.92
       window.speechSynthesis?.speak(utt)
     } catch {
-      toast.error('Could not finalize interview')
-      setPhase('feedback')
+      // Scoring is replayable — the answers are all stored server-side.
+      setRecovery({ message: 'Scoring didn’t finish. Every answer is saved — run it again.', action: 'complete' })
+      setPhase('error')
     }
   }
 
-  // Total is unknown (the agent decides length), so drive the bar off answered count vs the cap.
+  // ── Progress ─────────────────────────────────────────────────────────────────
+  // The agent picks questions adaptively, so the total is unknown until it concludes — what the
+  // learner gets is their position and the ceiling ("Question 3 · up to 6").
+  const questionNo = Math.min(currentQIdx + 1, maxQuestions)
+  const progressLabel = `Question ${questionNo} · up to ${maxQuestions}`
+  const headerLabel = phase === 'intro' ? 'Intro'
+    : phase === 'resume' ? 'Paused'
+    : phase === 'error' ? 'Paused'
+    : progressLabel
   const headerProgress = phase === 'intro' ? 0
     : finished || phase === 'complete' ? 100
-    : Math.min((evalHistory.length / MAX_Q) * 100 + 8, 96)
+    : phase === 'resume' ? Math.min(((resumeState?.answered_count ?? 0) / maxQuestions) * 100, 96)
+    : Math.min((evalHistory.length / maxQuestions) * 100 + 8, 96)
 
   // ── Layouts ──────────────────────────────────────────────────────────────────
 
@@ -647,7 +916,7 @@ export default function ModuleInterviewPage() {
     return (
       <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }}>
         <div style={{ width: 40, height: 40, borderRadius: '50%', border: '3px solid var(--line-2)', borderTopColor: 'var(--ink-0)', animation: 'spin 0.8s linear infinite' }} />
-        <span className="t-sm fg-3">Starting interview…</span>
+        <span className="t-sm fg-3" role="status">{restoring ?? 'Starting interview…'}</span>
       </div>
     )
   }
@@ -686,6 +955,11 @@ export default function ModuleInterviewPage() {
                 {finalResult.passed ? 'Module Passed ✓' : 'Not Passed — Review & Retry'}
               </Badge>
             </div>
+            {restoredResult && (
+              <p className="t-xs fg-3" style={{ marginTop: 10 }}>
+                Restored from your previous session — this interview was already graded.
+              </p>
+            )}
           </div>
 
           {finalResult.summary && (
@@ -717,9 +991,10 @@ export default function ModuleInterviewPage() {
           )}
 
           <div style={{ display: 'flex', gap: 8 }}>
-            <Button variant="secondary" full onClick={() => navigate(`/courses/${planId}`)}>Back to Plan</Button>
+            <Button variant="secondary" size="lg" full style={{ minHeight: 44 }} onClick={() => navigate(`/courses/${planId}`)}>Back to Plan</Button>
             {!finalResult.passed && (
-              <Button variant="primary" full onClick={() => window.location.reload()}>Retry</Button>
+              // Was a full page reload, which threw the SPA away to get back to the intro.
+              <Button variant="primary" size="lg" full style={{ minHeight: 44 }} onClick={startOver}>Retry</Button>
             )}
           </div>
         </div>
@@ -752,8 +1027,16 @@ export default function ModuleInterviewPage() {
             <div style={{ height: '100%', borderRadius: 2, background: 'var(--ink-0)', width: `${headerProgress}%`, transition: 'width 0.6s cubic-bezier(.4,0,.2,1)' }} />
           </div>
 
-          <span className="t-xs fg-3 mono" style={{ flexShrink: 0 }}>
-            {phase === 'intro' ? 'Intro' : `Q${currentQIdx + 1}`}
+          <span
+            className="t-xs fg-3 mono"
+            style={{ flexShrink: 0, whiteSpace: 'nowrap' }}
+            role="status"
+            aria-live="polite"
+            aria-label={phase === 'intro' || phase === 'resume' || phase === 'error'
+              ? headerLabel
+              : `Question ${questionNo} of up to ${maxQuestions}`}
+          >
+            {headerLabel}
           </span>
         </div>
       </div>
@@ -761,6 +1044,96 @@ export default function ModuleInterviewPage() {
       {/* ── Body ──────────────────────────────────────────────────────────────── */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '24px 16px 32px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
         <div style={{ width: '100%', maxWidth: 640, display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+          {/* ── Resume offer ──────────────────────────────────────────────── */}
+          {/* An interview is still open server-side. Offering it (rather than silently resuming,
+              or silently starting over) keeps a fresh interview one click away. */}
+          {phase === 'resume' && resumeState && (
+            <div style={{ ...S.card, ...S.fadeIn }}>
+              <div style={{ textAlign: 'center', marginBottom: 20 }}>
+                <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'var(--paper-2)', display: 'grid', placeItems: 'center', margin: '0 auto 16px' }}>
+                  <Icon name="refresh" size={22} style={{ color: 'var(--accent)' }} />
+                </div>
+                <h2 className="display" style={{ fontSize: 24, fontWeight: 600, letterSpacing: '-0.03em', marginBottom: 6 }}>
+                  Pick up where you left off?
+                </h2>
+                <p className="t-sm fg-2">
+                  You have an unfinished interview on <strong>{resumeState.module_title || currentModule?.title}</strong>.
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 22 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 8, background: 'var(--paper-2)' }}>
+                  <Icon name="check" size={15} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+                  <span className="t-xs fg-2" style={{ flex: 1, lineHeight: 1.5 }}>
+                    {resumeState.answered_count} of up to {resumeState.max_questions} questions answered and scored.
+                  </span>
+                </div>
+                {formatStarted(resumeState.created_at) && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 8, background: 'var(--paper-2)' }}>
+                    <Icon name="clock" size={15} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+                    <span className="t-xs fg-2" style={{ flex: 1, lineHeight: 1.5 }}>Started {formatStarted(resumeState.created_at)}</span>
+                  </div>
+                )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 8, background: 'var(--paper-2)' }}>
+                  <Icon name="sparkle" size={15} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+                  <span className="t-xs fg-2" style={{ flex: 1, lineHeight: 1.5 }}>
+                    {resumeState.status === 'awaiting_answer'
+                      ? 'The interviewer is waiting on your next answer.'
+                      : resumeState.status === 'awaiting_final'
+                        ? 'The interviewer is done asking — only the final score is left.'
+                        : 'The interviewer stopped between questions, so we can score the answers you gave.'}
+                  </span>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <Button
+                  variant="primary" size="lg" full iconRight="arrow" style={{ minHeight: 44 }}
+                  onClick={() => applyServerState(resumeState)}
+                >
+                  {resumeState.status === 'awaiting_answer'
+                    ? 'Resume interview'
+                    : resumeState.status === 'awaiting_final'
+                      ? 'Finish & get my score'
+                      : 'Score my answers so far'}
+                </Button>
+                <Button variant="secondary" size="lg" full style={{ minHeight: 44 }} onClick={startOver}>
+                  Discard it and start a new interview
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* ── Recovery ──────────────────────────────────────────────────── */}
+          {/* Something failed mid-interview. Server state survives, so retry means "re-sync and
+              carry on", never "throw the session away and reload". */}
+          {phase === 'error' && recovery && (
+            <div style={{ ...S.card, ...S.fadeIn }}>
+              <div style={{ textAlign: 'center', marginBottom: 20 }}>
+                <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'var(--paper-2)', display: 'grid', placeItems: 'center', margin: '0 auto 16px' }}>
+                  <Icon name="alert" size={22} style={{ color: 'var(--warn)' }} />
+                </div>
+                <h2 className="display" style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-0.03em', marginBottom: 6 }}>
+                  Interview interrupted
+                </h2>
+                <p className="t-sm fg-2" role="alert">{recovery.message}</p>
+                {evalHistory.length > 0 && (
+                  <p className="t-xs fg-3" style={{ marginTop: 6 }}>
+                    {evalHistory.length} answer{evalHistory.length === 1 ? '' : 's'} already scored and kept.
+                  </p>
+                )}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <Button variant="primary" size="lg" full iconRight="arrow" style={{ minHeight: 44 }} onClick={() => { void retryRecovery() }}>
+                  {recovery.action === 'complete' ? 'Score my answers' : recovery.action === 'restart' ? 'Try again' : 'Reconnect and continue'}
+                </Button>
+                <Button variant="secondary" size="lg" full style={{ minHeight: 44 }} onClick={startOver}>
+                  Discard it and start a new interview
+                </Button>
+              </div>
+            </div>
+          )}
 
           {/* ── Intro ─────────────────────────────────────────────────────── */}
           {phase === 'intro' && (
@@ -783,7 +1156,7 @@ export default function ModuleInterviewPage() {
                 {[
                   { icon: 'sparkle', text: 'An AI interviewer asks one question at a time, adapting to your answers.' },
                   { icon: 'mic', text: 'Answer by voice or by typing — coding questions open a live editor.' },
-                  { icon: 'check', text: `Up to ${MAX_Q} questions; each is scored, then you get a final assessment.` },
+                  { icon: 'check', text: `Up to ${maxQuestions} questions; each is scored, then you get a final assessment.` },
                 ].map((row) => (
                   <div key={row.text} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 8, background: 'var(--paper-2)' }}>
                     <Icon name={row.icon} size={15} style={{ color: 'var(--accent)', flexShrink: 0 }} />
@@ -960,9 +1333,9 @@ export default function ModuleInterviewPage() {
           {phase === 'feedback' && currentEval && (
             <div style={{ ...S.card, ...S.fadeIn }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                <span className="t-sm fg-2" style={{ fontWeight: 500 }}>Q{currentQIdx + 1} result</span>
-                <Badge tone={currentEval.score >= 7 ? 'pos' : currentEval.score >= 5 ? 'warn' : 'neg'} size="sm">
-                  {currentEval.score}/10
+                <span className="t-sm fg-2" style={{ fontWeight: 500 }}>Question {questionNo} result</span>
+                <Badge tone={scoreTone(currentEval.score)} size="sm">
+                  {currentEval.score != null ? `${currentEval.score}/10` : 'Not graded'}
                 </Badge>
               </div>
 
@@ -999,9 +1372,13 @@ export default function ModuleInterviewPage() {
       </div>
 
       {/* ── Footer: step dots ─────────────────────────────────────────────────── */}
-      {interviewId && currentQuestion && !['intro', 'loading', 'scoring', 'complete'].includes(phase) && (
-        <div style={{ flexShrink: 0, padding: '10px 18px', borderTop: '1px solid var(--line-1)', background: 'var(--paper-1)', display: 'flex', justifyContent: 'center' }}>
-          <StepDots total={Math.max(questions.length, currentQIdx + 1)} current={currentQIdx} evals={evalHistory} />
+      {interviewId && currentQuestion && !['intro', 'loading', 'resume', 'error', 'scoring', 'complete'].includes(phase) && (
+        <div
+          style={{ flexShrink: 0, padding: '10px 18px', borderTop: '1px solid var(--line-1)', background: 'var(--paper-1)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}
+          aria-hidden="true"  /* the header counter carries this for screen readers */
+        >
+          <StepDots total={Math.max(questions.length, currentQIdx + 1, maxQuestions)} current={currentQIdx} evals={evalHistory} />
+          <span className="t-xs fg-3 mono">{questionNo}/{maxQuestions}</span>
         </div>
       )}
     </div>
