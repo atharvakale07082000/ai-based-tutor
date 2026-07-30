@@ -191,7 +191,7 @@ export default function DashboardPage() {
             </div>
           ) : (
             <Card padding="none">
-              {items.slice(0, 5).map((m: any, i: number) => {
+              {items.slice(0, 5).map((m, i) => {
                 const isOpening = loadingModuleId === m.id
                 return (
                   <div
@@ -246,7 +246,7 @@ export default function DashboardPage() {
             </Card>
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
-              {sessions.slice(0, 4).map((s: any) => (
+              {sessions.slice(0, 4).map((s) => (
                 <Card key={s.id} hover padding="sm" style={{ cursor: 'pointer' }} onClick={() => navigate('/doubts')}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                     <Badge size="xs" tone={s.sentiment_mood === 'POSITIVE' ? 'pos' : s.sentiment_mood === 'NEGATIVE' ? 'neg' : 'neutral'} dot>

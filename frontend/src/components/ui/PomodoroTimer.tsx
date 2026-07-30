@@ -38,8 +38,25 @@ export function PomodoroTimer() {
     startedRef.current = null
   }, [sessionMinutes])
 
-  // Reset when session length changes
-  useEffect(() => { reset() }, [sessionMinutes])
+  // Reset when session length changes. `reset` is itself memoised on
+  // `sessionMinutes`, so depending on it is exactly "when the length changes".
+  useEffect(() => { reset() }, [reset])
+
+  // What runs when the countdown hits zero. Recreated every render so it always
+  // closes over the current route/session length/mutation, then parked in a ref:
+  // the ticking effect below reads it through the ref, which is why that effect
+  // can depend on `running` alone. Putting these values in its dep array would
+  // tear down and restart the interval on every navigation, losing the tick.
+  const onComplete = () => {
+    const elapsed = Math.round((Date.now() - (startedRef.current ?? Date.now())) / 60000)
+    recordMut.mutate({ minutes: elapsed, topic: location.pathname.split('/')[2] ?? 'study' })
+    // Browser notification if supported
+    if ('Notification' in window && Notification.permission === 'granted') {
+      new Notification('Pomodoro complete!', { body: `${sessionMinutes}m session done. Time for a break.`, icon: '/icon.png' })
+    }
+  }
+  const onCompleteRef = useRef(onComplete)
+  useEffect(() => { onCompleteRef.current = onComplete })
 
   useEffect(() => {
     if (!running) return
@@ -50,12 +67,7 @@ export function PomodoroTimer() {
           clearInterval(intervalRef.current!)
           setRunning(false)
           setCompleted(true)
-          const elapsed = Math.round((Date.now() - (startedRef.current ?? Date.now())) / 60000)
-          recordMut.mutate({ minutes: elapsed, topic: location.pathname.split('/')[2] ?? 'study' })
-          // Browser notification if supported
-          if ('Notification' in window && Notification.permission === 'granted') {
-            new Notification('Pomodoro complete!', { body: `${sessionMinutes}m session done. Time for a break.`, icon: '/icon.png' })
-          }
+          onCompleteRef.current()
           return 0
         }
         return s - 1

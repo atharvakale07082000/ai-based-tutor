@@ -1,7 +1,12 @@
+import type { ComponentProps } from 'react'
 import { useAgentStore } from '@/stores/agentStore'
 import { AgentPill } from '@/components/ui/AgentPill'
 
-const AGENT_ACTIVITY: Record<string, { kind: 'curr' | 'quiz' | 'prog' | 'doubt'; label: string }> = {
+/** The exact unions AgentPill accepts, so a rename there breaks here at compile time. */
+type PillKind = NonNullable<ComponentProps<typeof AgentPill>['kind']>
+type PillState = NonNullable<ComponentProps<typeof AgentPill>['state']>
+
+const AGENT_ACTIVITY: Record<string, { kind: PillKind; label: string }> = {
   curriculum: { kind: 'curr',  label: 'Learning Path' },
   quiz:       { kind: 'quiz',  label: 'Quiz Creator' },
   progress:   { kind: 'prog',  label: 'Progress' },
@@ -14,7 +19,8 @@ export function AgentStatusBar() {
   const items = Object.entries(AGENT_ACTIVITY).map(([key, meta]) => {
     const agent = agents[key as keyof typeof agents]
     const status = agent?.status ?? 'idle'
-    const state = status === 'active' ? 'active' : status === 'processing' ? 'thinking' : 'idle'
+    const state: PillState =
+      status === 'active' ? 'active' : status === 'processing' ? 'thinking' : 'idle'
     const text =
       state === 'active' ? 'Working…' :
       state === 'thinking' ? 'Thinking…' :
@@ -53,7 +59,7 @@ export function AgentStatusBar() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, flex: 1, overflowX: 'auto' }} className="scrollbar-hide">
         {items.map((a) => (
           <div key={a.kind} style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
-            <AgentPill kind={a.kind} state={a.state as any} mini />
+            <AgentPill kind={a.kind} state={a.state} mini />
             <span className="t-xs fg-2">·</span>
             <span className="t-xs fg-1">{a.text}</span>
             {a.latency != null && a.latency > 0 && (

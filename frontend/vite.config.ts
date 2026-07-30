@@ -45,9 +45,6 @@ export default defineConfig({
           // monaco from a CDN at runtime, which is why this chunk is only ~15 kB.
           if (/^(@monaco-editor|monaco-editor)\//.test(pkg)) return 'vendor-monaco'
 
-          // Charts (recharts + its d3 tail) — reachable only from the admin dashboard.
-          if (/^(recharts|d3-|victory-|internmap)/.test(pkg)) return 'vendor-charts'
-
           if (/^(react|react-dom|scheduler|use-sync-external-store)\//.test(pkg)) return 'vendor-react'
           if (/^(react-router|react-router-dom|@remix-run)\//.test(pkg)) return 'vendor-router'
           if (/^@tanstack\//.test(pkg)) return 'vendor-query'

@@ -31,10 +31,11 @@ curriculum, progress, assistant — each with on-demand **skills** and streaming
 | Progressive-disclosure skills | Specialists load `SKILL.md` instructions on demand via a `load_skill` tool |
 | Reasoning stream | The agent's `<reasoning>` note is streamed as "thinking" — never the raw tool workflow |
 | Persistent thread memory | A chat thread keeps durable, cross-specialist memory (Strands sessions) |
+| Resumable interviews | A reloaded tab rejoins a live module interview instead of losing it |
 | Adaptive curriculum | Elo proficiency drives Bloom-calibrated content and quiz difficulty |
 | Elo-based progress | Rating updates after every quiz; mastery threshold at 700 |
 | Guardrails | Input/output safety filtering on every agent call |
-| Online evals | Random-sampled DeepEval metrics judged by NVIDIA NIM, stored in MongoDB |
+| Online evals | Random-sampled DeepEval metrics judged by NVIDIA NIM, stored in MongoDB (**opt-in extra** — see [Evals](#evals)) |
 
 ---
 
@@ -46,7 +47,7 @@ curriculum, progress, assistant — each with on-demand **skills** and streaming
 │  Landing → Onboarding → Dashboard → Courses → ModulePlayer       │
 │  Ask Atelier (chat) → Quiz → Progress → Interview → Job Tracker  │
 └───────────────────────────┬─────────────────────────────────────┘
-                            │ HTTPS / Socket.IO / SSE
+                            │ HTTPS / SSE
 ┌───────────────────────────▼─────────────────────────────────────┐
 │                    FastAPI Backend (Python)                      │
 │                                                                  │
@@ -72,7 +73,7 @@ curriculum, progress, assistant — each with on-demand **skills** and streaming
 │  │ (OpenAIModel) │  │ (@tool adapt)│  │  (Together / NVIDIA)  │  │
 │  └───────────────┘  └──────────────┘  └───────────────────────┘  │
 │                                                                  │
-│  SQLite (users / sessions)      MongoDB (evals + progress)       │
+│                     MongoDB (all persistence)                    │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -81,6 +82,11 @@ the **Strands Agents SDK**. All models come from `agents/model.py::get_nim_model
 (NVIDIA NIM via the OpenAI-compatible endpoint); nothing else constructs a Strands
 `Agent`. (The former LangGraph v1 graph, the `agents_v2` ReAct package, and the
 plan-execute workflow framework have all been removed.)
+
+> **One datastore.** MongoDB holds everything — users, sessions, quizzes,
+> progress, interviews, evals. There is no SQL database: no SQLAlchemy, no
+> SQLite, no Alembic, no migration step. Earlier revisions of this README
+> described a SQLite/Alembic setup that never existed in the code.
 
 ---
 
@@ -113,7 +119,7 @@ conversation state on the instance, so only the *model* is cached, never the age
 | **quiz** | Adaptive, Bloom-calibrated quizzes | `quiz-authoring` | `get_proficiency`, `score_difficulty`, `generate_quiz`, `save_quiz` |
 | **curriculum** | Personalized learning paths | `curriculum-design`, `web-research` | `classify_topic`, `get_topic_graph`, `get_proficiency`, `web_search` |
 | **progress** | Elo update + mood, progress reports | `progress-tracking` | `get_proficiency`, `calculate_elo`, `analyze_sentiment`, `save_progress` |
-| **assistant** | General-purpose fallback | `explanation`, `web-research` | all 14 tools |
+| **assistant** | General-purpose fallback, chat mock interviews | `explanation`, `web-research`, `interview-coaching` | all 14 tools |
 
 ### Skills (progressive disclosure)
 
@@ -124,9 +130,10 @@ specialist's system prompt (an `<available_skills>` block); the full body is loa
 on demand when the agent calls the **`load_skill`** tool.
 
 > A `SKILL.md` runs only if a specialist lists it in `SPECIALISTS[...].skills`.
-> `interview-coaching` and `job-analysis` currently exist on disk but are
-> **orphaned** — the live interview runtime is the YAML prompts
-> (`prompts/course_planner.yaml` + `prompts/interview_scorer.yaml`), not the SKILL.md.
+> `interview-coaching` is live twice over — it backs the **assistant** specialist's
+> chat mock interviews, and its body is the rubric loaded by the module interview
+> agent. **`job-analysis` is the only orphaned skill** (present on disk, listed by
+> no specialist).
 
 ### Reasoning stream (not a tool workflow)
 
@@ -139,6 +146,12 @@ only side-effect tools (`save_quiz`, `save_progress`) still emit an `action` car
 Generation pipelines emit `step` events written as first-person reasoning. The
 frontend renders both via `components/agents/ReasoningStream.tsx`.
 
+Tool results are still captured for evaluation even though they never reach the
+UI: `TraceState.grounding` accumulates them inside the adapter (bounded to 8
+entries × 1500 chars) and `routers/chat.py` passes them as `retrieval_context`, so
+DeepEval can attach its `FaithfulnessMetric` — when DeepEval is installed (see
+[Evals](#evals)).
+
 ### Persistent thread memory
 
 When a request carries a chat-thread id (`X-Session-Id`), the specialist is wired
@@ -147,6 +160,25 @@ specialists in the thread share one `agent_id` — so memory carries **across**
 specialists (e.g. "quiz me on that" after a doubt turn). A `SlidingWindow`
 (`CHAT_MEMORY_WINDOW`, default 40 messages) bounds context. Without a thread id the
 agent is stateless (the generation pipelines that reuse the builder stay memoryless).
+
+> **Known limitation.** When `X-Session-Id` is present the client's `history` array
+> is ignored entirely — the session *is* the model's context. Chat "regenerate" and
+> "edit & resend" are therefore presentation-level rewinds: the superseded turn stays
+> in the model's memory, and the UI says so inline. A true rewind needs a backend
+> session-truncation path, which does not exist yet.
+
+### Live module interview
+
+The module interview is an interrupt-driven Strands agent: one adaptive question
+per turn, paused between HTTP turns via a Strands **interrupt** persisted to a
+`FileSessionManager` session. `interview/start` and `interview/{id}/answer` are SSE.
+The agent only *chooses* questions — the tuned YAML rubrics still own all grading.
+
+Because all state is server-side, an interrupted interview is **resumable**:
+`GET .../interview/{interview_id}` returns a whitelisted projection with a status
+ladder (`awaiting_answer` / `awaiting_final` / `complete` / `in_progress`), and the
+frontend keeps the id in `localStorage`. Internal calibration state (Elo,
+interrupt ids) and the grader's per-question rationale are deliberately withheld.
 
 ### Elo & Bloom mapping
 
@@ -173,6 +205,10 @@ Update formula:      new_elo = clamp(current + 32 × (score − expected), 0, 10
 | NIM RPM bucket | `NIM_RPM_LIMIT` (40) | Sliding-window token bucket for the NVIDIA free tier |
 | Model cache | `@lru_cache` | The NIM *model* is cached; *agents* are built per request |
 
+When the RPM bucket makes a request wait, the delay is announced rather than
+stalling silently — `model.py` exposes a `throttle_notices` sink that the chat
+handler surfaces as a `reasoning` event and the pipelines as a `capacity` `step`.
+
 ---
 
 ## Tech Stack
@@ -185,14 +221,16 @@ Update formula:      new_elo = clamp(current + 32 × (score − expected), 0, 10
 | Agents | **Strands Agents SDK** (orchestrator + specialists + skills) |
 | Agent model | NVIDIA NIM via `OpenAIModel` (`qwen/qwen3-next-80b-a3b-instruct`) |
 | Heavy generation | Hugging Face Inference (Together / NVIDIA fallback) |
-| Database | SQLite via SQLAlchemy async + aiosqlite (users / sessions) |
-| Eval + progress store | MongoDB via Motor (async) |
-| Real-time | Socket.IO + SSE (`text/event-stream`) |
+| Database | MongoDB via Motor (async) — the only datastore |
+| Real-time | SSE (`text/event-stream`) |
 | Evals | DeepEval, NVIDIA-judged, online-sampled |
 | Logging | structlog (JSON) |
 | Auth | JWT (python-jose) + bcrypt |
 | Tooling | `uv` (locked via `pyproject.toml` / `uv.lock`), `ruff` |
-| Runtime | Python 3.13 |
+| Runtime | Python 3.13+ |
+
+> A Socket.IO server is still mounted (hence `app.main:socket_app`), but nothing
+> uses it — all real-time traffic is SSE.
 
 ### Frontend
 
@@ -201,10 +239,9 @@ Update formula:      new_elo = clamp(current + 32 × (score − expected), 0, 10
 | Framework | React 18 + TypeScript |
 | Build tool | Vite |
 | State | Zustand + TanStack Query |
-| Real-time | socket.io-client + native `EventSource` (SSE) |
-| Styling | Tailwind CSS + `@tailwindcss/typography` |
-| Motion | framer-motion |
-| Markdown / charts / code | react-markdown + remark-gfm, recharts, Monaco editor |
+| Real-time | `fetch` + `ReadableStream` SSE, abortable |
+| Styling | Tailwind CSS + `@tailwindcss/typography`, CSS custom properties |
+| Markdown / code | react-markdown + remark-gfm, react-syntax-highlighter (`PrismLight`), Monaco (lazy) |
 | Design system | "Atelier, re-rated" — Space Grotesk, terracotta + amber-signal, ink-blue dark |
 
 ---
@@ -219,26 +256,27 @@ ai-tutor/
 │   │   │   ├── handler.py          # AgentHandler singleton — run_chat entry point
 │   │   │   ├── orchestrator.py     # LLM router (RoutePlan) + heuristic fallback
 │   │   │   ├── specialists.py      # SPECIALISTS registry + build_specialist
-│   │   │   ├── model.py            # get_nim_model (NVIDIA NIM, semaphore + RPM bucket)
+│   │   │   ├── model.py            # get_nim_model (NIM, semaphore + RPM bucket + throttle sink)
 │   │   │   ├── tools.py            # @tool adapters over the master tool registry
 │   │   │   ├── skills.py           # SKILL.md loader + load_skill tool
 │   │   │   ├── skills/*/SKILL.md   # progressive-disclosure skill instructions
 │   │   │   ├── hooks.py            # GuardrailHook
-│   │   │   ├── stream_adapter.py   # Strands events → SSE wire contract
-│   │   │   ├── steps.py            # STEP_PLANS for pipeline `step` events
+│   │   │   ├── stream_adapter.py   # Strands events → SSE wire contract + eval grounding
+│   │   │   ├── steps.py            # STEP_PLANS + step_emitter for pipeline `step` events
+│   │   │   ├── interview_agent.py  # interrupt-driven live interview
 │   │   │   ├── session.py          # quiz/interview session state + Bloom mapping
 │   │   │   ├── pipelines/          # course_gen · quiz_gen · interview_review · jd_analyze
-│   │   │   ├── course_planner.py   # interview_scorer.py · skill_gap.py · progress.py
-│   │   ├── routers/                # chat.py (SSE) + auth, quiz, doubts, progress, courses, jobs, evals, …
+│   │   │   └── course_planner.py   # interview_scorer.py · skill_gap.py · progress.py
+│   │   ├── routers/                # chat.py (SSE), health.py + auth, quiz, courses, jobs, evals, …
 │   │   ├── tools/                  # master tool registry + implementations (hf/db/logic)
 │   │   ├── prompts/*.yaml          # externalized LLM prompts (SaaS house style)
 │   │   ├── evals/                  # DeepEval metrics + MongoDB storage
+│   │   ├── db/mongo.py             # all collection accessors
 │   │   ├── guardrails.py           # input/output safety
 │   │   ├── config.py
 │   │   └── main.py                 # FastAPI app + Socket.IO → socket_app
 │   ├── tests/                      # unit / integration / e2e / evals
-│   ├── pyproject.toml              # deps (uv) — requirements.txt is a generated export
-│   └── render.yaml
+│   └── pyproject.toml              # deps (uv) — requirements.txt is a generated export
 ├── frontend/
 │   ├── src/
 │   │   ├── pages/                  # AtelierV2Page (chat), Quiz, Progress, CoursePlanner, Interview, JobTracker, …
@@ -249,8 +287,10 @@ ai-tutor/
 │   │   ├── stores/                 # Zustand stores
 │   │   ├── hooks/
 │   │   └── lib/api.ts
+│   ├── .eslintrc.cjs
 │   └── package.json
 ├── e2e/                            # Playwright harnesses (smoke.py, full.py, api_coverage.py)
+├── render.yaml                     # backend deploy blueprint
 └── README.md
 ```
 
@@ -279,11 +319,14 @@ uv sync --all-groups                 # install (incl. dev tools)
 cp .env.sample .env
 # Fill in NVIDIA_API_KEY, HF_TOKEN, MONGO_URL, SECRET_KEY
 
-uv run alembic upgrade head          # migrate SQLite
-
 # Run the Socket.IO-wrapped ASGI app — NOT app.main:app (that drops Socket.IO)
 uv run uvicorn app.main:socket_app --port 8000 --reload
 ```
+
+There is no migration step. MongoDB collections are created on first write.
+
+`backend/.env.sample` is kept as an exact 1:1 mirror of `app/config.py` — every
+setting, no extras.
 
 ### Frontend
 
@@ -293,8 +336,9 @@ npm install
 npm run dev      # http://localhost:5173
 ```
 
-Default local login: `admin@test.com` / `admin@1234` (the `/login` page
-auto-registers unknown accounts).
+Default local login: `admin@test.com` / `admin@1234`. `POST /auth/login`
+auto-registers an unknown email on first call, so there is no separate signup
+endpoint. Sign-in lives on the landing page (`/`); `/login` just redirects there.
 
 ---
 
@@ -327,37 +371,61 @@ Headers:
 SSE event stream (the wire contract the frontend consumes):
 ```
 data: {"type": "routing", "agent": "doubt", "display_name": "Doubt Solver", "reason": "…"}
-data: {"type": "step", ...}                       # live step timeline
+data: {"type": "step", "id": "work", "label": "…", "status": "active"}
 data: {"type": "reasoning", "content": "Let me break this down…"}
 data: {"type": "token", "content": "Gradient descent"}
 data: {"type": "action", "kind": "quiz_generated", "payload": {...}}
 data: {"type": "done", "steps": 2, "total_ms": 4210}
+data: [DONE]
 ```
 
 Additional event types: `error` (generic client-safe message; full detail stays in
-server logs) and `guardrail` (input blocked before any LLM call).
+server logs) and `guardrail` (input blocked before any LLM call). `tool_call` and
+`tool_result` are **not** part of the contract — the mechanical workflow is never
+sent to the client.
+
+### Operations
+
+| Method | Route | Description |
+|---|---|---|
+| `GET` | `/health` | Liveness — always 200 |
+| `GET` | `/ready` | Readiness for load balancers — 200 or 503 |
+| `GET` | `/health/ready` | Same report, always 200, for debugging |
+| `GET` | `/.well-known/agent-card.json` | Agent card |
+
+Readiness reports booleans only (Mongo reachable, `NVIDIA_API_KEY` set,
+`HF_TOKEN` set) — never the secret values.
 
 ### v1 REST routes (prefixed `/api/v1`)
 
 | Group | Routes |
 |---|---|
-| Auth | `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh` |
-| Learner | `GET/POST /learner/*` |
-| Curriculum / Courses | `GET/POST /curriculum/*`, `GET/POST /courses/*` |
-| Quiz | `POST /quiz/generate`, `POST /quiz/{id}/submit`, `GET /quiz/{id}` |
-| Doubts | `POST /doubts/*` (SSE) |
-| Progress | `GET /progress`, session flows under `/session/*` |
-| Jobs | `GET/POST /jobs/*` (skill-gap / JD analysis) |
-| Content / Feed / Leaderboard / Profile | `/content/*`, `/feed/*`, `/leaderboard/*`, `/profile/*` |
-| Evals (superuser) | `/evals/*` |
-| Admin | `/admin/*` |
+| Auth | `POST /auth/login` (auto-registers), `POST /auth/refresh`, `POST /auth/logout`, `POST /auth/reset-request`, `POST /auth/reset-confirm` |
+| Learner | `GET /learner/roles`, `GET|PUT /learner/profile`, `POST /learner/onboard` |
+| Curriculum | `GET /curriculum`, `POST /curriculum/generate`, `GET /curriculum/graph` |
+| Courses | `GET /courses/`, `GET /courses/{plan_id}`, `POST /courses/plan`, `POST /courses/plan/stream` |
+| Interview | `POST .../interview/start` (SSE), `GET .../interview/{id}`, `POST .../interview/{id}/answer` (SSE), `POST .../interview/{id}/complete[/stream]`, `POST .../interview/{id}/run-code`, `GET /courses/run-code/languages` |
+| Quiz | `POST /quiz/generate`, `GET /quiz/{id}`, `POST /quiz/{id}/submit`, `POST /quiz/{id}/submit/stream`, `POST /quiz/{id}/explain`, `GET /quiz/flashcards` |
+| Doubts | `POST /doubts/stream` (SSE), `POST /doubts/transcribe`, `POST /doubts/caption`, `GET /doubts/sessions[/{id}]` |
+| Progress | `GET /progress`, `GET /progress/due-topics`, `GET /progress/report`, `POST /progress/study-session` |
+| Session | `POST /session/start`, `POST /session/advance` |
+| Jobs | `GET|POST /jobs`, `GET|PATCH|DELETE /jobs/{id}`, `POST /jobs/analyze/stream`, `POST /jobs/{id}/reanalyze/stream` |
+| Content | `GET /content`, `GET /content/{id}`, `POST /content/{id}/regenerate` |
+| Feed | `GET /feed`, `GET /feed/trending`, `GET /feed/scheduled`, `POST /feed/run-discovery`, `POST /feed/{id}/snooze|schedule`, `DELETE /feed/{id}/interaction` |
+| Leaderboard / Profile | `GET /leaderboard`, `GET /profile/activity-logs`, `GET /profile/activity-stats`, `DELETE /profile/activity-logs` |
+| HF | `POST /hf/sentiment`, `GET /hf/status`, `POST /hf/test/{model_key}` |
+| Evals (superuser) | `GET /evals/dashboard|results|summary`, `POST /evals/run`, `POST /evals/batch/quiz` |
+| Admin | `GET /admin/learners`, `GET|PUT /admin/config`, `POST /admin/send-digest` |
+
+**Quiz submit note:** an answer index of `-1` means "never answered" (timer expired,
+or the learner set the question aside). It is graded incorrect, not rejected.
 
 ---
 
 ## Testing
 
 ```bash
-cd backend
+cd backend                                     # run from backend/, not the repo root
 
 uv run pytest                                  # full suite
 uv run pytest tests/test_strands_agents.py     # single file
@@ -368,60 +436,77 @@ uv run pytest --cov=app --cov-report=term-missing
 
 | Suite | Collected | What it covers |
 |---|---|---|
-| `test_strands_agents.py` | 15 | Orchestrator routing, specialists, skills, tool adapters |
-| `test_api.py` | 16 | Core API contract |
-| `test_e2e.py` | 38 | Full HTTP flow — auth through quiz submission |
-| `test_hf.py` | 32 | HF tool implementations |
+| `test_e2e.py` | 40 | Full HTTP flow — auth through quiz submission |
 | `test_evals.py` | 33 | DeepEval metrics + eval record creation |
+| `test_hf.py` | 32 | HF tool implementations |
+| `test_strands_agents.py` | 19 | Orchestrator routing, specialists, skills, tool adapters, eval grounding |
+| `test_api.py` | 16 | Core API contract |
+| `test_steps.py` | 11 | `step` event protocol + pipeline throttle notices |
 | `test_session.py` | 11 | Quiz/interview session state machine |
-| `test_steps.py` | 7 | `step` event timeline protocol |
+| `test_interview_agent.py` | 11 | Live interview agent + resume endpoint |
 | `test_code_runner.py` | 6 | Sandboxed code execution (Piston) |
 | `test_jobs.py` | 5 | Job Tracker / skill-gap flows |
-| **Total** | **~163** | collected across the suite |
+| **Total** | **184** | 184 passed, plus 2 modules skipped (DeepEval not installed) |
+
+### Evals
+
+**DeepEval is intentionally not a project dependency.** Its transitive pins
+(`tenacity<=9.0`, `click<8.4`) conflict with this project's `tenacity>=9.1` and
+`huggingface-hub>=1.20`, which would make `uv sync` unresolvable. So on a default
+install:
+
+- `tests/test_deepeval_judge.py` and `tests/evals/test_quality.py` skip at import.
+- Online eval sampling in `routers/chat.py` is **fire-and-forget and silently
+  no-ops** — including the `FaithfulnessMetric` described above.
+
+To actually run evals:
+
+```bash
+uv pip install "deepeval>=4" "instructor>=1.6"
+RUN_EVALS=1 uv run pytest -m evals
+```
+
+Frontend checks (from `frontend/`):
+
+```bash
+npm run lint     # eslint, --max-warnings 0, zero per-file overrides
+npx tsc --noEmit
+npm run build
+```
 
 ---
 
 ## Environment Variables
 
-Copy `backend/.env.sample` to `backend/.env`:
+`backend/.env.sample` is the authoritative list — it mirrors `app/config.py`
+exactly. Copy it and fill in the secrets:
+
+```bash
+cp backend/.env.sample backend/.env
+```
+
+The ones you must set:
 
 ```ini
-# App
-APP_ENV=development
 SECRET_KEY=<256-bit random string>
-ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=30
-REFRESH_TOKEN_EXPIRE_DAYS=30
-
-# Databases
-DATABASE_URL=sqlite+aiosqlite:///./ai_tutor.db
-DATABASE_SYNC_URL=sqlite:///./ai_tutor.db
 MONGO_URL=mongodb://localhost:27017
-MONGO_DATABASE=ai_tutor
-
-# NVIDIA NIM — Strands agents (orchestrator + specialists)
 NVIDIA_API_KEY=<your_key>
-NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1
+HF_TOKEN=hf_<your_token>
+CORS_ORIGINS=http://localhost:5173
+```
+
+Frequently tuned:
+
+```ini
 NIM_ORCHESTRATOR_MODEL=qwen/qwen3-next-80b-a3b-instruct
 NIM_SPECIALIST_MODEL=qwen/qwen3-next-80b-a3b-instruct
-NIM_RPM_LIMIT=40
+NIM_RPM_LIMIT=40               # NVIDIA free-tier requests/minute
 AGENT_SESSIONS_DIR=            # empty → OS temp dir; point at a volume for durable memory
-CHAT_MEMORY_WINDOW=40
-
-# Hugging Face — heavy generation
-HF_TOKEN=hf_<your_token>
-
-# Evals (DeepEval, NVIDIA-judged)
+CHAT_MEMORY_WINDOW=40          # messages kept per thread
+INTERVIEW_MAX_QUESTIONS=8
 EVAL_JUDGE_MODEL=qwen/qwen3-next-80b-a3b-instruct
 EVALS_ONLINE_SAMPLING=true
-
-# CORS
-CORS_ORIGINS=http://localhost:5173
-
-# Langfuse tracing (optional — leave empty to disable)
-LANGFUSE_PUBLIC_KEY=
-LANGFUSE_SECRET_KEY=
-LANGFUSE_HOST=https://cloud.langfuse.com
+LANGFUSE_PUBLIC_KEY=           # optional tracing; empty disables
 ```
 
 > Never commit `.env`. It is listed in `.gitignore`.
@@ -431,11 +516,13 @@ LANGFUSE_HOST=https://cloud.langfuse.com
 ## Deployment
 
 - **Frontend** → Vercel. Set `VITE_API_BASE_URL` to the backend URL.
-- **Backend** → Render via `render.yaml`. Set `NVIDIA_API_KEY`, `HF_TOKEN`,
-  `MONGO_URL`, `SECRET_KEY`, `CORS_ORIGINS` (and, for durable thread memory,
-  `AGENT_SESSIONS_DIR` on a persistent disk).
+- **Backend** → Render via `render.yaml` (repo root). Set `NVIDIA_API_KEY`,
+  `HF_TOKEN`, `MONGO_URL`, `SECRET_KEY`, `CORS_ORIGINS`.
+
+`AGENT_SESSIONS_DIR` left empty means chat thread memory lives in the OS temp
+directory and resets on every redeploy; durable memory needs a mounted persistent
+disk (a paid Render plan).
 
 ---
 
 *Built with FastAPI, the Strands Agents SDK on NVIDIA NIM, and React.*
-</content>

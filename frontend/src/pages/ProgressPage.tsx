@@ -97,7 +97,6 @@ export default function ProgressPage() {
   const quizAccuracy = progress?.quiz_accuracy ?? 0
   const doubtsResolved = progress?.doubts_resolved ?? 0
   const moodTimeline = progress?.mood_timeline ?? []
-  const history = progress?.history ?? []
 
   const skills = useMemo(() => {
     const entries = Object.entries(proficiency)
@@ -110,7 +109,10 @@ export default function ProgressPage() {
   const masteredCount = skills.filter((s) => s.elo >= MASTERY_THRESHOLD).length
   const masteryPct = skills.length > 0 ? Math.round((masteredCount / skills.length) * 100) : 0
 
-  const heatmap = useMemo(() => buildHeatmap(history, 35), [history])
+  // Keep the `?? []` fallback *inside* the memo: hoisting it would allocate a
+  // fresh array every render and rebuild the heatmap each time. Depend on the
+  // raw field, which react-query keeps referentially stable between fetches.
+  const heatmap = useMemo(() => buildHeatmap(progress?.history ?? [], 35), [progress?.history])
 
   const dueTopics = dueTopicsData?.due_topics ?? []
   const urgentTopics = dueTopics.filter((t) => t.is_due).slice(0, 5)

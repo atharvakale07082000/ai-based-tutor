@@ -5,8 +5,8 @@ import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Icon } from '@/components/ui/Icon'
-import { adminAPI, hfAPI } from '@/lib/api'
-import { useAgentStore } from '@/stores/agentStore'
+import { adminAPI, hfAPI, type HFModelStatusAPI } from '@/lib/api'
+import { useAgentStore, type HFModelStatus } from '@/stores/agentStore'
 import { HF_MODELS } from '@/lib/hf'
 import toast from 'react-hot-toast'
 
@@ -163,6 +163,30 @@ function AdminOverview() {
   )
 }
 
+/*
+ * The model panel merges two differently-shaped sources: the live `/hf/status`
+ * response (`HFModelStatusAPI` — snake_case, ISO timestamp) and the agent
+ * store's cached view (`HFModelStatus` — camelCase, epoch ms). Normalising to
+ * one shape is what removes the `(status as any).last_used` casts, and it also
+ * fixes a latent bug those casts hid: reading the API key off a store value
+ * always yielded `undefined`, so the store's own timings rendered as "—".
+ */
+interface ModelStatusView {
+  status: HFModelStatus['status'] | null
+  lastUsed: string | number | null
+  latencyMs: number | null
+}
+
+function toStatusView(live?: HFModelStatusAPI, stored?: HFModelStatus): ModelStatusView {
+  if (live) {
+    return { status: live.status, lastUsed: live.last_used ?? null, latencyMs: live.latency_ms ?? null }
+  }
+  if (stored) {
+    return { status: stored.status, lastUsed: stored.lastUsed, latencyMs: stored.latencyMs }
+  }
+  return { status: null, lastUsed: null, latencyMs: null }
+}
+
 function HFModelsPanel() {
   const { hfModels, tokenUsage } = useAgentStore()
   const [testResults, setTestResults] = useState<Record<string, unknown>>({})
@@ -200,9 +224,9 @@ function HFModelsPanel() {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
         {Object.entries(HF_MODELS).map(([key, modelId]) => {
-          const status = liveStatus?.[key] ?? hfModels[key]
+          const status = toStatusView(liveStatus?.[key], hfModels[key])
           const tokens = tokenUsage[key] ?? 0
-          const tone = status?.status === 'ok' ? 'pos' : status?.status === 'loading' ? 'warn' : 'neg'
+          const tone = status.status === 'ok' ? 'pos' : status.status === 'loading' ? 'warn' : 'neg'
 
           return (
             <Card key={key} padding="md">
@@ -211,20 +235,20 @@ function HFModelsPanel() {
                   <div className="caps fg-3" style={{ marginBottom: 2 }}>{key.replace(/_/g, ' ')}</div>
                   <div className="t-sm fg-1 mono">{modelId}</div>
                 </div>
-                <Badge tone={tone} size="xs" dot>{status?.status ?? 'unknown'}</Badge>
+                <Badge tone={tone} size="xs" dot>{status.status ?? 'unknown'}</Badge>
               </div>
 
               <div style={{ display: 'flex', gap: 16, marginBottom: 12 }}>
                 <div>
                   <div className="t-xs fg-3">Last used</div>
                   <div className="t-xs fg-1 mono">
-                    {(status as any)?.last_used ? new Date((status as any).last_used).toLocaleTimeString() : '—'}
+                    {status.lastUsed != null ? new Date(status.lastUsed).toLocaleTimeString() : '—'}
                   </div>
                 </div>
                 <div>
                   <div className="t-xs fg-3">Latency</div>
                   <div className="t-xs fg-1 mono">
-                    {(status as any)?.latency_ms != null ? `${(status as any).latency_ms}ms` : '—'}
+                    {status.latencyMs != null ? `${status.latencyMs}ms` : '—'}
                   </div>
                 </div>
                 <div>

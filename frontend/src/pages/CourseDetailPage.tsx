@@ -196,7 +196,7 @@ function ModuleRow({ module, index, planId, isUnlocked }: { module: CourseModule
                 rel="noopener noreferrer"
                 style={{ display: 'flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}
               >
-                <Icon name={TYPE_ICON[r.type] as any ?? 'book'} size={11} style={{ color: 'var(--ink-3)' }} />
+                <Icon name={TYPE_ICON[r.type] ?? 'book'} size={11} style={{ color: 'var(--ink-3)' }} />
                 <span className="t-xs fg-2" style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.title}</span>
                 <span className="t-xs fg-3">{r.type}</span>
               </a>

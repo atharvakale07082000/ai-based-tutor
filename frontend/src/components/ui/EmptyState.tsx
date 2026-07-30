@@ -1,8 +1,12 @@
+import type { ComponentProps } from 'react'
 import { Icon } from './Icon'
 import { Button } from './Button'
 
+/** Whatever `Icon` accepts today — narrowing Icon's union later narrows this too. */
+type IconName = ComponentProps<typeof Icon>['name']
+
 interface EmptyStateProps {
-  icon: string
+  icon: IconName
   title: string
   body?: string
   action?: { label: string; onClick: () => void }
@@ -23,7 +27,7 @@ export function EmptyState({ icon, title, body, action, size = 'md' }: EmptyStat
         display: 'grid',
         placeItems: 'center',
       }}>
-        <Icon name={icon as any} size={iconSize} style={{ color: 'var(--ink-3)' }} />
+        <Icon name={icon} size={iconSize} style={{ color: 'var(--ink-3)' }} />
       </div>
       <div>
         <div className="t-sm fg-1" style={{ fontWeight: 500 }}>{title}</div>

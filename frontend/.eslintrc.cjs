@@ -42,33 +42,7 @@ module.exports = {
     // deliberate pattern here: logout/abort failures must never block navigation.
     'no-empty': ['error', { allowEmptyCatch: true }],
   },
-  overrides: [
-    // ── Legacy exceptions ────────────────────────────────────────────────────
-    // Pre-existing violations in files not touched by the lint bring-up. The rules
-    // stay ON everywhere else (including all new code); burn this list down file by
-    // file rather than growing it.
-    {
-      // `x as any` prop widening (icon names, chart/agent-pill unions).
-      files: [
-        'src/components/agents/AgentStatusBar.tsx',
-        'src/components/ui/EmptyState.tsx',
-        'src/pages/AdminPage.tsx',
-        'src/pages/CourseDetailPage.tsx',
-        'src/pages/DashboardPage.tsx',
-        'src/pages/ModuleInterviewPage.tsx',
-      ],
-      rules: { '@typescript-eslint/no-explicit-any': 'off' },
-    },
-    {
-      // Intentionally narrow effect dep arrays (mount-once effects, refs that must
-      // not re-trigger). Adding the "missing" deps would change runtime behaviour.
-      files: [
-        'src/components/ui/PomodoroTimer.tsx',
-        'src/pages/AtelierV2Page.tsx',
-        'src/pages/ModuleInterviewPage.tsx',
-        'src/pages/ProgressPage.tsx',
-      ],
-      rules: { 'react-hooks/exhaustive-deps': 'off' },
-    },
-  ],
+  // No per-file overrides. The legacy `no-explicit-any` / `exhaustive-deps`
+  // exception list was burned down to zero — keep it that way rather than
+  // re-adding entries; both rules are error-level everywhere.
 }
