@@ -6,7 +6,7 @@ path, status, latency); and the assertion outcome. Destructive controls (Sign ou
 Clear all logs) are intentionally skipped and logged as SKIP.
 
 Usage:
-    E2E_BASE_URL=https://ai-based-tutor.vercel.app E2E_EMAIL=admin@test.com E2E_PASSWORD=admin@1234 \
+    E2E_BASE_URL=https://ai-based-tutor.vercel.app E2E_EMAIL=you@example.com E2E_PASSWORD='<your password>' \
     /Library/Frameworks/Python.framework/Versions/3.12/bin/python3 e2e/full.py
 """
 
@@ -22,8 +22,11 @@ from datetime import datetime
 from playwright.sync_api import Page, sync_playwright
 
 BASE = os.environ.get("E2E_BASE_URL", "https://ai-based-tutor.vercel.app").rstrip("/")
-EMAIL = os.environ.get("E2E_EMAIL", "admin@test.com")
-PASSWORD = os.environ.get("E2E_PASSWORD", "admin@1234")
+EMAIL = os.environ.get("E2E_EMAIL", "")
+# No default: the superuser password is environment-only (see auth.jwt.seed_superuser).
+PASSWORD = os.environ.get("E2E_PASSWORD", "")
+if not (EMAIL and PASSWORD):
+    raise SystemExit("Set E2E_EMAIL and E2E_PASSWORD to the account you want to test with.")
 API_HOST = os.environ.get("E2E_API_HOST", "onrender.com")  # backend host fragment, for tagging network calls
 IGNORE = re.compile(r"favicon|fonts\.googleapis|analytics|sentry|hotjar", re.I)
 

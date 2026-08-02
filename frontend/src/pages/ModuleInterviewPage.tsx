@@ -280,12 +280,32 @@ const CODE_LANGUAGES: { id: string; label: string; monaco: string }[] = [
 ]
 const monacoLang = (id: string) => CODE_LANGUAGES.find((l) => l.id === id)?.monaco ?? (id === 'python3' ? 'python' : id)
 
-// Query languages the code runner can't execute (no Piston runtime). The learner
-// writes them in a normal editor and the AI interviewer evaluates the answer.
+// Query languages have no stdout to predict. The learner writes them in a normal
+// editor and the AI interviewer evaluates the answer when it's submitted.
 const QUERY_LANGS = new Set(['sql'])
 
+// Backend returns mode 'ai-review' (an LLM read the code) or 'executed' (real Piston run).
+type CodeCheck = {
+  stdout: string
+  stderr: string
+  exit_code: number
+  mode?: 'ai-review' | 'executed'
+  review?: {
+    verdict: 'looks_correct' | 'has_issues' | 'will_not_run'
+    predicted_output: string
+    issues: string[]
+    notes: string
+  } | null
+}
+
+const VERDICT_LABEL: Record<string, string> = {
+  looks_correct: 'AI Review · Looks correct',
+  has_issues: 'AI Review · Issues found',
+  will_not_run: 'AI Review · Would not run',
+}
+
 function CodeEnvironment({ planId, moduleId, interviewId, language, value, onChange }: CodeEnvProps) {
-  const [output, setOutput] = useState<{ stdout: string; stderr: string; exit_code: number } | null>(null)
+  const [output, setOutput] = useState<CodeCheck | null>(null)
   const [running, setRunning] = useState(false)
   // Question suggests a language, but the learner can switch.
   const [selectedLang, setSelectedLang] = useState(language === 'python3' ? 'python' : language)
@@ -299,13 +319,18 @@ function CodeEnvironment({ planId, moduleId, interviewId, language, value, onCha
       const { data } = await coursesAPI.runCode(planId, moduleId, interviewId, value, selectedLang)
       setOutput(data)
     } catch {
-      setOutput({ stdout: '', stderr: 'Execution failed — check your code and try again.', exit_code: 1 })
+      setOutput({ stdout: '', stderr: 'Check failed — please try again in a moment.', exit_code: 1 })
     } finally {
       setRunning(false)
     }
   }
 
-  const hasError = output && (output.exit_code !== 0 || output.stderr)
+  const review = output?.review ?? null
+  // Flag issues as well as hard failures, so 'has_issues' doesn't read as a clean pass.
+  const hasError = !!output && (output.exit_code !== 0 || !!output.stderr || review?.verdict === 'has_issues')
+  const panelLabel = review
+    ? VERDICT_LABEL[review.verdict]
+    : hasError ? 'Error' : 'Output'
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -353,8 +378,8 @@ function CodeEnvironment({ planId, moduleId, interviewId, language, value, onCha
               }}
             >
               {running
-                ? <><Icon name="refresh" size={11} style={{ animation: 'spin 1s linear infinite' }} /> Running…</>
-                : <><Icon name="play" size={11} /> Run Code</>
+                ? <><Icon name="refresh" size={11} style={{ animation: 'spin 1s linear infinite' }} /> Checking…</>
+                : <><Icon name="play" size={11} /> Check Code</>
               }
             </button>
           ) : (
@@ -416,9 +441,12 @@ function CodeEnvironment({ planId, moduleId, interviewId, language, value, onCha
             display: 'flex', alignItems: 'center', gap: 6,
           }}>
             <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: hasError ? 'var(--neg)' : 'var(--pos)' }}>
-              {hasError ? 'Error' : 'Output'}
+              {panelLabel}
             </span>
-            <span style={{ fontSize: 10, color: 'var(--ink-4)', fontFamily: 'var(--font-mono)' }}>exit {output.exit_code}</span>
+            {/* An exit code is only meaningful when the code actually ran. */}
+            {!review && (
+              <span style={{ fontSize: 10, color: 'var(--ink-4)', fontFamily: 'var(--font-mono)' }}>exit {output.exit_code}</span>
+            )}
           </div>
           <pre style={{
             margin: 0, padding: '12px 14px',
@@ -428,14 +456,32 @@ function CodeEnvironment({ planId, moduleId, interviewId, language, value, onCha
             maxHeight: 160, overflowY: 'auto',
             lineHeight: 1.6,
           }}>
-            {output.stderr || output.stdout || '(no output)'}
+            {output.stderr || output.stdout || (review ? '(no output predicted)' : '(no output)')}
           </pre>
+
+          {/* Interviewer's findings — only present on the AI-review path. */}
+          {review && (review.issues.length > 0 || review.notes) && (
+            <div style={{ padding: '10px 14px', borderTop: '1px solid var(--line-1)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {review.issues.map((issue, i) => (
+                <div key={i} className="t-xs fg-2" style={{ display: 'flex', gap: 7, alignItems: 'flex-start', lineHeight: 1.5 }}>
+                  <Icon name="info" size={12} style={{ color: 'var(--neg)', flexShrink: 0, marginTop: 2 }} />
+                  <span>{issue}</span>
+                </div>
+              ))}
+              {review.notes && (
+                <div className="t-xs fg-3" style={{ display: 'flex', gap: 7, alignItems: 'flex-start', lineHeight: 1.5 }}>
+                  <Icon name="sparkle" size={12} style={{ color: 'var(--ink-3)', flexShrink: 0, marginTop: 2 }} />
+                  <span>{review.notes}</span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
       {!output && (
         <p style={{ margin: 0, fontSize: 12, color: 'var(--ink-4)', textAlign: 'center' }}>
-          Write your solution above, then click Run to test it.
+          Write your solution above, then click Check to have the interviewer review it.
         </p>
       )}
     </div>

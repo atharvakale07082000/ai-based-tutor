@@ -44,13 +44,16 @@ const NAV_GROUPS: NavGroup[] = [
     group: 'System',
     items: [
       { id: '/profile',   label: 'Profile',    icon: 'user' },
-      { id: '/admin',     label: 'Admin',      icon: 'admin' },
     ],
   },
 ]
 
-// Superuser-only nav item (evals dashboard), appended to the System group when applicable.
-const EVALS_ITEM: NavItem = { id: '/evals', label: 'Agent Evals', icon: 'target' }
+// Superuser-only nav items, appended to the System group when applicable. Both back
+// superuser-gated APIs (/admin exposes every learner's PII), so learners never see them.
+const SUPERUSER_ITEMS: NavItem[] = [
+  { id: '/admin', label: 'Admin',       icon: 'admin' },
+  { id: '/evals', label: 'Agent Evals', icon: 'target' },
+]
 
 const AGENT_KEYS = ['curr', 'quiz', 'prog', 'doubt'] as const
 const AGENT_MAP = { curr: 'curriculum', quiz: 'quiz', prog: 'progress', doubt: 'doubt' } as const
@@ -60,9 +63,9 @@ export function Sidebar() {
   const navigate = useNavigate()
   const { name, xp, streak, reset } = useLearnerStore()
   const role = useLearnerStore((s) => s.role)
-  // Superuser sees an extra "Agent Evals" item in the System group.
+  // Superuser sees "Admin" + "Agent Evals" in the System group; nobody else does.
   const navGroups: NavGroup[] = role === 'superuser'
-    ? NAV_GROUPS.map((g) => (g.group === 'System' ? { ...g, items: [...g.items, EVALS_ITEM] } : g))
+    ? NAV_GROUPS.map((g) => (g.group === 'System' ? { ...g, items: [...g.items, ...SUPERUSER_ITEMS] } : g))
     : NAV_GROUPS
   const agents = useAgentStore((s) => s.agents)
   const { theme, toggleTheme } = useThemeStore()

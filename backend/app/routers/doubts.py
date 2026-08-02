@@ -42,7 +42,9 @@ async def stream_doubt(
 ):
     """Stream an SSE token-by-token answer to a learner's doubt question."""
     learner = await col_learners().find_one({"user_id": user_id}, PROJ)
-    log.info("doubt_stream_start", question=body.question[:80], topic=body.topic_context)
+    log.info(
+        "doubt_stream_start", question=body.question[:80], topic=body.topic_context
+    )
 
     async def event_generator():
         """Yield SSE frames: token* → [DONE]; persist conversation to DB after completion."""
@@ -62,20 +64,25 @@ async def stream_doubt(
             if learner:
                 now = datetime.now(timezone.utc).isoformat()
                 session_id = body.session_id or str(uuid.uuid4())
-                existing = await col_doubts().find_one({"id": session_id}, PROJ)
+                # Scoped to the caller: a session id belonging to someone else must not match,
+                # or this appends the transcript to another learner's session.
+                owned = {"id": session_id, "learner_id": learner["id"]}
+                existing = await col_doubts().find_one(owned, PROJ)
                 new_msgs = [
                     {"role": "user", "content": body.question, "timestamp": now},
                     {"role": "assistant", "content": full_response, "timestamp": now},
                 ]
                 if existing:
                     await col_doubts().update_one(
-                        {"id": session_id},
+                        owned,
                         {"$push": {"messages": {"$each": new_msgs}}},
                     )
                 else:
                     await col_doubts().insert_one(
                         {
-                            "id": session_id if len(session_id) == 36 else str(uuid.uuid4()),
+                            "id": session_id
+                            if len(session_id) == 36
+                            else str(uuid.uuid4()),
                             "learner_id": learner["id"],
                             "topic_context": body.topic_context or None,
                             "messages": new_msgs,
@@ -91,13 +98,18 @@ async def stream_doubt(
                 from app.evals.deepeval_metrics import maybe_eval_chat
 
                 turns = [{"role": m.role, "content": m.content} for m in body.history]
-                turns += [{"role": "user", "content": body.question}, {"role": "assistant", "content": full_response}]
+                turns += [
+                    {"role": "user", "content": body.question},
+                    {"role": "assistant", "content": full_response},
+                ]
                 maybe_eval_chat(
                     "doubt_solver",
                     body.question,
                     full_response,
                     turns,
-                    retrieval_context=[body.topic_context] if body.topic_context else None,
+                    retrieval_context=[body.topic_context]
+                    if body.topic_context
+                    else None,
                     learner_id=(learner or {}).get("id", ""),
                     session_id=body.session_id or "",
                 )
@@ -116,14 +128,23 @@ async def stream_doubt(
     )
 
 
-_AUDIO_TYPES = {"audio/mpeg", "audio/mp4", "audio/wav", "audio/webm", "audio/ogg", "audio/x-m4a"}
+_AUDIO_TYPES = {
+    "audio/mpeg",
+    "audio/mp4",
+    "audio/wav",
+    "audio/webm",
+    "audio/ogg",
+    "audio/x-m4a",
+}
 _IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
 _MAX_AUDIO_BYTES = 10 * 1024 * 1024  # 10 MB
 _MAX_IMAGE_BYTES = 5 * 1024 * 1024  # 5 MB
 
 
 @router.post("/transcribe")
-async def transcribe(audio: UploadFile = File(...), user_id: str = Depends(get_current_user_id)):
+async def transcribe(
+    audio: UploadFile = File(...), user_id: str = Depends(get_current_user_id)
+):
     """Transcribe an uploaded audio file (≤10 MB) to text using the HF speech-to-text model."""
     if audio.content_type not in _AUDIO_TYPES:
         raise HTTPException(
@@ -138,11 +159,14 @@ async def transcribe(audio: UploadFile = File(...), user_id: str = Depends(get_c
 
 
 @router.post("/caption")
-async def caption(image: UploadFile = File(...), user_id: str = Depends(get_current_user_id)):
+async def caption(
+    image: UploadFile = File(...), user_id: str = Depends(get_current_user_id)
+):
     """Generate a natural-language caption for an uploaded image (≤5 MB) via the HF captioner."""
     if image.content_type not in _IMAGE_TYPES:
         raise HTTPException(
-            status_code=415, detail=f"Unsupported image type: {image.content_type}. Allowed: jpeg, png, gif, webp."
+            status_code=415,
+            detail=f"Unsupported image type: {image.content_type}. Allowed: jpeg, png, gif, webp.",
         )
     image_bytes = await image.read()
     if len(image_bytes) > _MAX_IMAGE_BYTES:
@@ -179,8 +203,14 @@ async def get_sessions(user_id: str = Depends(get_current_user_id)):
 
 @router.get("/sessions/{session_id}")
 async def get_session(session_id: str, user_id: str = Depends(get_current_user_id)):
-    """Return a single doubt session with its full message transcript."""
-    session = await col_doubts().find_one({"id": session_id}, PROJ)
+    """Return a single doubt session with its full message transcript (caller's own only)."""
+    learner = await col_learners().find_one({"user_id": user_id}, PROJ)
+    if not learner:
+        return {"messages": []}
+    # Scoped to the caller — without learner_id this reads any learner's private transcript.
+    session = await col_doubts().find_one(
+        {"id": session_id, "learner_id": learner["id"]}, PROJ
+    )
     if not session:
         return {"messages": []}
     return {

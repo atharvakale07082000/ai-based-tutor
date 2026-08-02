@@ -6,12 +6,23 @@ services:
     dockerContext: ./backend
     plan: free
     envVars:
+      # Must be "production": it arms the SECRET_KEY startup assertion and the
+      # Mongo/HF misconfiguration warnings in config.py, which are otherwise inert.
+      - key: APP_ENV
+        value: production
       - key: MONGO_URL
         sync: false
       - key: MONGO_DATABASE
         value: ai_tutor
       - key: SECRET_KEY
         generateValue: true
+      # Evals-dashboard superuser. No source defaults exist — leave these unset and
+      # no privileged account is created. Set both (strong password) in the Render
+      # dashboard; the password is re-synced from here on every boot.
+      - key: SUPERUSER_EMAIL
+        sync: false
+      - key: SUPERUSER_PASSWORD
+        sync: false
       # Strands agents run on NVIDIA NIM — without this key every chat turn,
       # course generation and interview fails. Set it in the Render dashboard.
       - key: NVIDIA_API_KEY

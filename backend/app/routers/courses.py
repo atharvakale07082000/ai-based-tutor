@@ -273,14 +273,19 @@ async def run_code_languages(user_id: str = Depends(get_current_user_id)):
 
 
 @router.post("/{plan_id}/modules/{module_id}/interview/{interview_id}/run-code")
+@limiter.limit("60/hour")
 async def run_code(
+    request: Request,
     plan_id: str,
     module_id: str,
     interview_id: str,
     body: RunCodeRequest,
     user_id: str = Depends(get_current_user_id),
 ):
-    """Execute a code snippet (multi-language via Piston; Python subprocess fallback)."""
+    """Check a code snippet: sandboxed Piston execution when configured, else an LLM review.
+
+    Rate-limited because the default path is a billed LLM call, not local execution.
+    """
     from app.services.code_runner import run_code as _execute
 
     interview = await get_interview(interview_id)

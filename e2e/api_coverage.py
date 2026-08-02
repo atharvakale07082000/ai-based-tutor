@@ -6,6 +6,11 @@ import os
 import httpx
 
 BASE = os.environ.get("E2E_API_BASE", "https://ai-based-tutor.onrender.com/api/v1")
+EMAIL = os.environ.get("E2E_EMAIL", "")
+# No default: the superuser password is environment-only (see auth.jwt.seed_superuser).
+PASSWORD = os.environ.get("E2E_PASSWORD", "")
+if not (EMAIL and PASSWORD):
+    raise SystemExit("Set E2E_EMAIL and E2E_PASSWORD to the account you want to test with.")
 R = []  # (group, call, scenario, status, ok)
 
 
@@ -84,7 +89,7 @@ def main():
             return f"ERR:{type(e).__name__}"
 
     # ---------- AUTH ----------
-    r = post("/auth/login", json={"email": "admin@test.com", "password": "admin@1234"})
+    r = post("/auth/login", json={"email": EMAIL, "password": PASSWORD})
     rec("auth", "POST /auth/login", "valid creds", r.status_code, {200})
     tok = r.json().get("access_token")
     H["Authorization"] = f"Bearer {tok}"
@@ -92,7 +97,7 @@ def main():
         "auth",
         "POST /auth/login",
         "wrong password",
-        post("/auth/login", json={"email": "admin@test.com", "password": "wrongpassword"}).status_code,
+        post("/auth/login", json={"email": EMAIL, "password": "wrongpassword"}).status_code,
         {401},
     )
     rec(
@@ -107,7 +112,7 @@ def main():
         "auth",
         "POST /auth/reset-request",
         "valid email (non-blocking)",
-        post("/auth/reset-request", json={"email": "admin@test.com"}).status_code,
+        post("/auth/reset-request", json={"email": EMAIL}).status_code,
         {200, 202},
     )
     rec(

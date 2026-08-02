@@ -34,7 +34,9 @@ def verify_password(plain: str, hashed: str) -> bool:
 def create_access_token(data: dict[str, Any]) -> str:
     """Create a short-lived JWT access token with the given payload."""
     payload = data.copy()
-    payload["exp"] = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    payload["exp"] = datetime.now(timezone.utc) + timedelta(
+        minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
+    )
     payload["type"] = "access"
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
@@ -42,7 +44,9 @@ def create_access_token(data: dict[str, Any]) -> str:
 def create_refresh_token(data: dict[str, Any]) -> str:
     """Create a long-lived JWT refresh token with the given payload."""
     payload = data.copy()
-    payload["exp"] = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    payload["exp"] = datetime.now(timezone.utc) + timedelta(
+        days=settings.REFRESH_TOKEN_EXPIRE_DAYS
+    )
     payload["type"] = "refresh"
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
@@ -64,7 +68,9 @@ async def get_current_user_id(token: str = Depends(oauth2_scheme)) -> str:
     payload = decode_token(token)
     user_id: str | None = payload.get("sub")
     if not user_id:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token missing subject")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Token missing subject"
+        )
     return user_id
 
 
@@ -74,38 +80,50 @@ async def require_superuser(user_id: str = Depends(get_current_user_id)) -> str:
 
     user = await col_users().find_one({"id": user_id}, {"_id": 0, "role": 1})
     if not user or user.get("role") != "superuser":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Superuser access required")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Superuser access required"
+        )
     return user_id
 
 
 async def seed_superuser() -> None:
     """Idempotently ensure the evals superuser exists (called on startup).
 
-    Security: never auto-seeds in production (no default-credential backdoor), and requires
-    SUPERUSER_PASSWORD from the environment — there is no source default. Existing accounts only
-    have their role corrected, never their password.
+    Security: the environment is the single source of truth. There are no source defaults for
+    SUPERUSER_EMAIL/SUPERUSER_PASSWORD, so an unconfigured deployment seeds nothing and has no
+    default-credential backdoor. When both are set, an existing account has its role AND its
+    password re-synced from the environment on every boot — which is what rotates a credential
+    that has leaked. Consequence: a password changed in-app reverts on the next restart.
     """
     import uuid
     from datetime import datetime, timezone
 
     from app.db.mongo import col_learners, col_users
 
-    if settings.APP_ENV.lower() in ("production", "prod"):
-        log.info("superuser_seed_skipped", reason="auto-seed disabled in production")
-        return
-    if not settings.SUPERUSER_PASSWORD:
-        log.warning(
-            "superuser_seed_skipped", reason="SUPERUSER_PASSWORD unset — set it in .env to enable the evals dashboard"
+    if not (settings.SUPERUSER_EMAIL and settings.SUPERUSER_PASSWORD):
+        log.info(
+            "superuser_seed_skipped",
+            reason="SUPERUSER_EMAIL/SUPERUSER_PASSWORD unset — set both to enable the evals dashboard",
         )
         return
 
     email = settings.SUPERUSER_EMAIL
     now = datetime.now(timezone.utc).isoformat()
 
-    existing = await col_users().find_one({"email": email}, {"_id": 0, "id": 1, "role": 1})
+    existing = await col_users().find_one(
+        {"email": email}, {"_id": 0, "id": 1, "role": 1}
+    )
     if existing:
-        if existing.get("role") != "superuser":
-            await col_users().update_one({"email": email}, {"$set": {"role": "superuser"}})
+        # Re-sync role + password so the env value stays authoritative (credential rotation).
+        await col_users().update_one(
+            {"email": email},
+            {
+                "$set": {
+                    "role": "superuser",
+                    "hashed_password": hash_password(settings.SUPERUSER_PASSWORD),
+                }
+            },
+        )
         return
 
     user_id = str(uuid.uuid4())

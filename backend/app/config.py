@@ -81,15 +81,16 @@ class Settings(BaseSettings):
     EVAL_JUDGE_TIMEOUT_S: float = 30.0
 
     # Evals dashboard superuser — the only account that can view evals.
-    # The dev default lets the dashboard work out-of-the-box with no env changes. Auto-seeding is
-    # DISABLED in production (see auth.jwt.seed_superuser), so this default is never a production
-    # backdoor — set a strong SUPERUSER_PASSWORD in the environment for any non-dev use.
-    SUPERUSER_EMAIL: str = "admin@test.com"
-    SUPERUSER_PASSWORD: str = "admin@1234"
+    # NO source defaults on purpose: a shipped default password is a backdoor in every environment
+    # that forgets to override it. seed_superuser() is a no-op unless BOTH are set in the
+    # environment, and when they are it keeps the account's password in sync with them.
+    SUPERUSER_EMAIL: str = ""
+    SUPERUSER_PASSWORD: str = ""
 
-    # ── Code execution (interview compiler) ──────────────────────────────────
-    # When set, code runs in the sandboxed Piston service (60+ languages). When empty, it falls
-    # back to the local Python-only subprocess (dev convenience; not a real sandbox).
+    # ── Code checking (interview compiler) ───────────────────────────────────
+    # When set, code runs in the sandboxed Piston service (60+ languages). When empty, the
+    # submission is reviewed by an LLM instead — there is deliberately no local-execution
+    # fallback (see services/code_runner).
     PISTON_BASE_URL: str = ""  # e.g. http://piston:2000
     CODE_RUN_TIMEOUT_MS: int = 10000
 

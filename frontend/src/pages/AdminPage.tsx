@@ -1,12 +1,14 @@
 import { useState } from 'react'
-import { Routes, Route, Link, Navigate } from 'react-router-dom'
+import { Routes, Route, Link, Navigate, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { Icon } from '@/components/ui/Icon'
 import { adminAPI, hfAPI, type HFModelStatusAPI } from '@/lib/api'
 import { useAgentStore, type HFModelStatus } from '@/stores/agentStore'
+import { useLearnerStore } from '@/stores/learnerStore'
 import { HF_MODELS } from '@/lib/hf'
 import toast from 'react-hot-toast'
 
@@ -273,6 +275,24 @@ function HFModelsPanel() {
 }
 
 export default function AdminPage() {
+  const navigate = useNavigate()
+  const role = useLearnerStore((s) => s.role)
+
+  // The /admin API is superuser-only (it exposes every learner's PII). Guard here too so
+  // learners get a clean message instead of a wall of 403s. Same pattern as /evals.
+  if (role !== 'superuser') {
+    return (
+      <div style={{ padding: '48px 28px', maxWidth: 600, margin: '0 auto' }}>
+        <EmptyState
+          icon="lock"
+          title="Restricted"
+          body="The admin dashboard is available to the superuser account only."
+          action={{ label: 'Back to dashboard', onClick: () => navigate('/dashboard') }}
+        />
+      </div>
+    )
+  }
+
   return (
     <Routes>
       <Route index element={<AdminOverview />} />

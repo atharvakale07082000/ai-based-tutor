@@ -6,10 +6,10 @@ errors, page errors, and failed (>=400) network requests — then prints a per-r
 Usage:
     pip install playwright httpx && playwright install chromium
     E2E_BASE_URL=https://ai-based-tutor.vercel.app \
-    E2E_EMAIL=admin@test.com E2E_PASSWORD=admin@1234 \
+    E2E_EMAIL=you@example.com E2E_PASSWORD='<your password>' \
     python e2e/smoke.py
 
-All inputs are env-configurable (defaults target the live site + the superuser dev account).
+BASE defaults to the live site; E2E_EMAIL/E2E_PASSWORD are required (no baked-in credentials).
 Exit code is non-zero if any route reports an issue, so it can gate CI.
 """
 
@@ -21,8 +21,11 @@ import time
 from playwright.sync_api import sync_playwright
 
 BASE = os.environ.get("E2E_BASE_URL", "https://ai-based-tutor.vercel.app").rstrip("/")
-EMAIL = os.environ.get("E2E_EMAIL", "admin@test.com")
-PASSWORD = os.environ.get("E2E_PASSWORD", "admin@1234")
+EMAIL = os.environ.get("E2E_EMAIL", "")
+# No default: the superuser password is environment-only (see auth.jwt.seed_superuser).
+PASSWORD = os.environ.get("E2E_PASSWORD", "")
+if not (EMAIL and PASSWORD):
+    raise SystemExit("Set E2E_EMAIL and E2E_PASSWORD to the account you want to test with.")
 
 ROUTES = [
     "/dashboard",
