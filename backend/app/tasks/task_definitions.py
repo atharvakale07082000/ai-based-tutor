@@ -2,12 +2,15 @@ import asyncio
 
 import structlog
 
+from app.agents.progress import MASTERY_ELO
 from app.tasks.celery_app import celery_app
 
 log = structlog.get_logger()
 
 
-@celery_app.task(name="app.tasks.task_definitions.regenerate_curriculum", bind=True, max_retries=3)
+@celery_app.task(
+    name="app.tasks.task_definitions.regenerate_curriculum", bind=True, max_retries=3
+)
 def regenerate_curriculum(self, learner_id: str | None = None):
     log.info("task_regenerate_curriculum_start", learner_id=learner_id)
     try:
@@ -21,7 +24,9 @@ def regenerate_curriculum(self, learner_id: str | None = None):
         self.retry(exc=exc, countdown=60)
 
 
-@celery_app.task(name="app.tasks.task_definitions.process_quiz_results", bind=True, max_retries=3)
+@celery_app.task(
+    name="app.tasks.task_definitions.process_quiz_results", bind=True, max_retries=3
+)
 def process_quiz_results(self, quiz_session_id: str):
     log.info("task_process_quiz_start", quiz_session_id=quiz_session_id)
     try:
@@ -29,13 +34,17 @@ def process_quiz_results(self, quiz_session_id: str):
 
         quiz = col_quizzes().find_one({"id": quiz_session_id}, {"_id": 0})
         if quiz and quiz.get("score") is not None:
-            log.info("quiz_results_processed", quiz_id=quiz_session_id, score=quiz["score"])
+            log.info(
+                "quiz_results_processed", quiz_id=quiz_session_id, score=quiz["score"]
+            )
     except Exception as exc:
         log.error("task_process_quiz_error", error=str(exc))
         self.retry(exc=exc, countdown=30)
 
 
-@celery_app.task(name="app.tasks.task_definitions.send_progress_digest", bind=True, max_retries=3)
+@celery_app.task(
+    name="app.tasks.task_definitions.send_progress_digest", bind=True, max_retries=3
+)
 def send_progress_digest(self, learner_id: str | None = None):
     """
     Weekly Friday digest: email each learner their progress summary,
@@ -61,13 +70,20 @@ def send_progress_digest(self, learner_id: str | None = None):
         from email.mime.multipart import MIMEMultipart
         from email.mime.text import MIMEText
 
-        from app.db.mongo_sync import col_learners, col_quizzes, col_trending_topics, col_users
+        from app.db.mongo_sync import (
+            col_learners,
+            col_quizzes,
+            col_trending_topics,
+            col_users,
+        )
 
         query = {"id": learner_id} if learner_id else {}
         learners = list(col_learners().find(query, {"_id": 0}).limit(500))
 
         # Fetch latest trending topics once
-        latest_trend = col_trending_topics().find_one({}, {"_id": 0, "discovered_at": 1}, sort=[("discovered_at", -1)])
+        latest_trend = col_trending_topics().find_one(
+            {}, {"_id": 0, "discovered_at": 1}, sort=[("discovered_at", -1)]
+        )
         trending = []
         if latest_trend:
             trending = list(
@@ -86,7 +102,9 @@ def send_progress_digest(self, learner_id: str | None = None):
 
             sent = 0
             for learner in learners:
-                user = col_users().find_one({"id": learner.get("user_id", "")}, {"_id": 0, "email": 1})
+                user = col_users().find_one(
+                    {"id": learner.get("user_id", "")}, {"_id": 0, "email": 1}
+                )
                 if not user or not user.get("email"):
                     continue
 
@@ -95,7 +113,7 @@ def send_progress_digest(self, learner_id: str | None = None):
                 xp = learner.get("xp", 0)
                 streak = learner.get("streak", 0)
                 proficiency = learner.get("topic_proficiency_map") or {}
-                mastered = [t for t, e in proficiency.items() if e >= 700]
+                mastered = [t for t, e in proficiency.items() if e >= MASTERY_ELO]
                 quizzes = list(
                     col_quizzes()
                     .find(
@@ -105,7 +123,9 @@ def send_progress_digest(self, learner_id: str | None = None):
                     .sort("completed_at", -1)
                     .limit(5)
                 )
-                avg_score = round(sum(q.get("score", 0) for q in quizzes) / max(len(quizzes), 1) * 100)
+                avg_score = round(
+                    sum(q.get("score", 0) for q in quizzes) / max(len(quizzes), 1) * 100
+                )
 
                 trending_rows = "".join(
                     f"""
@@ -143,7 +163,9 @@ def send_progress_digest(self, learner_id: str | None = None):
                 )
 
                 # Elo progress bar (capped at 1000)
-                top_topics = sorted(proficiency.items(), key=lambda x: x[1], reverse=True)[:4]
+                top_topics = sorted(
+                    proficiency.items(), key=lambda x: x[1], reverse=True
+                )[:4]
                 progress_rows = "".join(
                     f"""
                     <tr><td style="padding:6px 0;">
@@ -151,7 +173,7 @@ def send_progress_digest(self, learner_id: str | None = None):
                         <td style="font-size:12px;color:#444;width:160px;white-space:nowrap;overflow:hidden;">{topic[:22]}</td>
                         <td style="padding:0 10px;">
                           <div style="height:5px;background:#EDE8DF;border-radius:3px;overflow:hidden;">
-                            <div style="width:{min(int(elo / 10), 100)}%;height:100%;background:{"#2C2416" if elo >= 700 else "#A8895A"};border-radius:3px;"></div>
+                            <div style="width:{min(int(elo / 10), 100)}%;height:100%;background:{"#2C2416" if elo >= MASTERY_ELO else "#A8895A"};border-radius:3px;"></div>
                           </div>
                         </td>
                         <td style="font-size:11px;color:#888;text-align:right;white-space:nowrap;">{int(elo)} elo</td>
@@ -273,7 +295,9 @@ def send_progress_digest(self, learner_id: str | None = None):
         self.retry(exc=exc, countdown=120)
 
 
-@celery_app.task(name="app.tasks.task_definitions.discover_trending_topics", bind=True, max_retries=3)
+@celery_app.task(
+    name="app.tasks.task_definitions.discover_trending_topics", bind=True, max_retries=3
+)
 def discover_trending_topics(self):
     """
     Daily task: discover 24 trending tech topics and AI-curated feed items.

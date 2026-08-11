@@ -6,15 +6,19 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from app.auth.jwt import get_current_user_id
-from app.db.mongo import col_learners
-from app.schemas.learner import JOB_ROLES, LearnerProfileSchema, LearnerProfileUpdate, OnboardRequest, OnboardResponse
+from app.db.mongo import PROJ, col_learners
+from app.schemas.learner import (
+    JOB_ROLES,
+    LearnerProfileSchema,
+    LearnerProfileUpdate,
+    OnboardRequest,
+    OnboardResponse,
+)
 
 limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter()
 log = structlog.get_logger()
-
-PROJ = {"_id": 0}
 
 
 def _to_schema(learner: dict) -> LearnerProfileSchema:
@@ -97,14 +101,25 @@ async def onboard(
 ):
     """Save onboarding preferences: name, target role, urgency, experience."""
     difficulty_to_cadence = {
-        "gentle": {"sessions_per_week": max(1, body.hoursPerWeek // 2), "pace": "gentle"},
-        "balanced": {"sessions_per_week": max(2, body.hoursPerWeek // 2), "pace": "balanced"},
-        "aggressive": {"sessions_per_week": max(3, body.hoursPerWeek), "pace": "aggressive"},
+        "gentle": {
+            "sessions_per_week": max(1, body.hoursPerWeek // 2),
+            "pace": "gentle",
+        },
+        "balanced": {
+            "sessions_per_week": max(2, body.hoursPerWeek // 2),
+            "pace": "balanced",
+        },
+        "aggressive": {
+            "sessions_per_week": max(3, body.hoursPerWeek),
+            "pace": "aggressive",
+        },
     }
     updates = {
         "name": body.name.strip(),
         "goal_vector": body.goals,
-        "session_cadence": difficulty_to_cadence.get(body.difficulty, {"pace": "balanced"}),
+        "session_cadence": difficulty_to_cadence.get(
+            body.difficulty, {"pace": "balanced"}
+        ),
         "hours_per_week": body.hoursPerWeek,
         # Job-seeker fields
         "target_role": body.target_role.strip() if body.target_role else "",
@@ -115,6 +130,13 @@ async def onboard(
         "onboarded_at": datetime.now(timezone.utc).isoformat(),
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
-    await col_learners().update_one({"user_id": user_id}, {"$set": updates}, upsert=True)
-    log.info("learner_onboarded", user_id=user_id, name=body.name, target_role=body.target_role)
+    await col_learners().update_one(
+        {"user_id": user_id}, {"$set": updates}, upsert=True
+    )
+    log.info(
+        "learner_onboarded",
+        user_id=user_id,
+        name=body.name,
+        target_role=body.target_role,
+    )
     return OnboardResponse(name=body.name.strip())

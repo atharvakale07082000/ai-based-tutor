@@ -13,14 +13,13 @@ from datetime import datetime, timezone
 import structlog
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
+from app.agents.progress import MASTERY_ELO
 from app.agents.session import build_curriculum
 from app.auth.jwt import get_current_user_id
-from app.db.mongo import col_curricula, col_learners
+from app.db.mongo import PROJ, col_curricula, col_learners
 
 router = APIRouter()
 log = structlog.get_logger()
-
-PROJ = {"_id": 0}
 
 
 @router.get("")
@@ -122,7 +121,8 @@ async def get_curriculum_graph(user_id: str = Depends(get_current_user_id)):
             "id": st,
             "domain": domain,
             "elo": proficiency.get(st),
-            "mastered": proficiency.get(st) is not None and proficiency.get(st) >= 700,
+            "mastered": proficiency.get(st) is not None
+            and proficiency.get(st) >= MASTERY_ELO,
             "started": proficiency.get(st) is not None,
         }
         for domain, subtopics in topic_graph.items()

@@ -6,29 +6,22 @@ learning plan stored in MongoDB. Also handles AI interview evaluation.
 from __future__ import annotations
 
 import asyncio
-import json
-import re
 import time
 import uuid
 from datetime import datetime, timezone
-from typing import Awaitable, Callable, Optional, TypedDict
 
 import structlog
 from ddgs import DDGS
 
 from app.config import settings
-from app.db.mongo import col_course_plans, col_interviews, col_learners
+from app.db.mongo import PROJ, col_course_plans, col_interviews, col_learners
 from app.hf.client import get_hf_client
 from app.hf.models import HF_MODELS
+from app.agents.json_utils import extract_json
+from app.agents.steps import StepEmit
 from app.prompts.loader import render_prompt
 
 log = structlog.get_logger()
-
-PROJ = {"_id": 0}
-
-# Type of the optional step-emit callback forwarded to a workflow run: it receives a step/event
-# dict and forwards it to the SSE stream. None = no live timeline.
-StepEmit = Optional[Callable[[dict], Awaitable[None]]]
 
 
 def _chat(prompt: str, max_tokens: int = 2000, temperature: float = 0.2) -> str:
@@ -91,21 +84,6 @@ async def get_module_interview(
     )
 
 
-# ─── State ────────────────────────────────────────────────────────────────────
-
-
-class PlannerState(TypedDict):
-    goal: str
-    user_id: str
-    search_results: list[dict]
-    plan: Optional[dict]
-    plan_id: Optional[str]
-    error: Optional[str]
-
-
-# ─── Nodes ────────────────────────────────────────────────────────────────────
-
-
 def _search_web(goal: str) -> list[dict]:
     results: list[dict] = []
     queries = [
@@ -136,14 +114,11 @@ async def _generate_plan_json(goal: str, search_results: list[dict]) -> dict:
     raw = await asyncio.wait_for(
         asyncio.to_thread(_chat, prompt, 3000, 0.2), timeout=90.0
     )
-    raw = raw.strip()
-    match = re.search(r"\{[\s\S]*\}", raw)
-    text = match.group(0) if match else raw
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError as e:
-        log.error("course_plan_json_parse_failed", error=str(e), raw_snippet=raw[:300])
-        raise ValueError(f"LLM did not return valid JSON: {e}") from e
+    plan = extract_json(raw)
+    if plan is None:
+        log.error("course_plan_json_parse_failed", raw_snippet=raw[:300])
+        raise ValueError("LLM did not return valid JSON")
+    return plan
 
 
 def _build_plan(goal: str, user_id: str, raw: dict) -> dict:
@@ -359,11 +334,7 @@ async def evaluate_answer(
 
     t0 = time.perf_counter()
     text = await asyncio.to_thread(_chat, prompt, 300, 0.1)
-    text = text.strip()
-    match = re.search(r"\{[\s\S]*\}", text)
-    if match:
-        text = match.group(0)
-    evaluation = json.loads(text)
+    evaluation = extract_json(text) or {}
     evaluation["question_id"] = question_id
     evaluation["answer_text"] = answer_text
 

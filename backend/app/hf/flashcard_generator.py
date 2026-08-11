@@ -7,12 +7,11 @@ optimized for active recall rather than multiple-choice evaluation.
 
 from __future__ import annotations
 
-import json
-import re
 import uuid
 
 import structlog
 
+from app.agents.json_utils import extract_json_array
 from app.hf.client import get_hf_client
 from app.hf.models import HF_MODELS, TOKEN_BUDGETS
 
@@ -43,9 +42,8 @@ async def generate_flashcards(topic: str, count: int = 10) -> list[dict]:
             temperature=0.4,
         )
         text = result.choices[0].message.content.strip()
-        match = re.search(r"\[.*\]", text, re.DOTALL)
-        if match:
-            raw = json.loads(match.group())
+        raw = extract_json_array(text)
+        if raw is not None:
             return [
                 {
                     "id": str(uuid.uuid4()),

@@ -10,8 +10,6 @@ Flow:
 from __future__ import annotations
 
 import asyncio
-import json
-import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import TypedDict
@@ -19,6 +17,7 @@ from typing import TypedDict
 import structlog
 from ddgs import DDGS
 
+from app.agents.json_utils import extract_json_array
 from app.hf.client import get_hf_client
 from app.hf.models import HF_MODELS, TOKEN_BUDGETS
 
@@ -141,10 +140,7 @@ def _llm_distill(raw_items: list[dict]) -> list[dict]:
             temperature=0.3,
         )
         text = resp.choices[0].message.content.strip()
-        # Extract JSON array
-        match = re.search(r"\[.*\]", text, re.DOTALL)
-        if match:
-            return json.loads(match.group())
+        return extract_json_array(text) or []
     except Exception as e:
         log.warning("trend_llm_distill_error", error=str(e))
 

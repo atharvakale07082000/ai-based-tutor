@@ -16,14 +16,14 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from app.agents.progress import MASTERY_ELO
 from app.agents.session import run_session
-from app.auth.jwt import get_current_user_id
-from app.db.mongo import col_curricula, col_learners, col_progress, col_quizzes
+from app.auth.jwt import get_current_learner
+from app.db.mongo import PROJ, col_curricula, col_learners, col_progress, col_quizzes
 
 router = APIRouter()
 log = structlog.get_logger()
 
-PROJ = {"_id": 0}
 
 _DEFAULT_STATE_EXTRAS = {
     "next_action": "",
@@ -31,7 +31,7 @@ _DEFAULT_STATE_EXTRAS = {
     "iteration_count": 0,
     "max_iterations": 10,
     "session_complete": False,
-    "mastery_threshold": 700.0,
+    "mastery_threshold": MASTERY_ELO,
 }
 
 
@@ -61,14 +61,6 @@ class SessionAdvanceResponse(BaseModel):
     iteration_count: int
 
 
-async def _get_learner_or_404(user_id: str) -> dict:
-    """Fetch a learner document by user_id or raise HTTP 404."""
-    learner = await col_learners().find_one({"user_id": user_id}, PROJ)
-    if not learner:
-        raise HTTPException(status_code=404, detail="Learner not found")
-    return learner
-
-
 async def _load_active_curriculum(learner_id: str) -> tuple[list, dict | None]:
     """Return (topics_list, curriculum_doc) for the learner's most recent active curriculum."""
     record = await col_curricula().find_one(
@@ -80,9 +72,8 @@ async def _load_active_curriculum(learner_id: str) -> tuple[list, dict | None]:
 
 
 @router.post("/start", response_model=SessionStartResponse)
-async def start_session(user_id: str = Depends(get_current_user_id)):
+async def start_session(learner: dict = Depends(get_current_learner)):
     """Start a new study session: orchestrator picks the next topic and generates quiz questions."""
-    learner = await _get_learner_or_404(user_id)
     existing_path, _ = await _load_active_curriculum(learner["id"])
 
     state = {
@@ -126,7 +117,7 @@ async def start_session(user_id: str = Depends(get_current_user_id)):
             }
         )
         await col_learners().update_one(
-            {"user_id": user_id},
+            {"user_id": learner["user_id"]},
             {
                 "$set": {
                     "curriculum_version": learner.get("curriculum_version", 1) + 1,
@@ -173,14 +164,13 @@ async def start_session(user_id: str = Depends(get_current_user_id)):
 @router.post("/advance", response_model=SessionAdvanceResponse)
 async def advance_session(
     body: SessionAdvanceRequest,
-    user_id: str = Depends(get_current_user_id),
+    learner: dict = Depends(get_current_learner),
 ):
     """Score quiz answers, update ELO + XP, and have the orchestrator pick the next topic."""
     quiz = await col_quizzes().find_one({"id": body.quiz_id}, PROJ)
     if not quiz:
         raise HTTPException(status_code=404, detail="Quiz not found")
 
-    learner = await _get_learner_or_404(user_id)
     curriculum_path, _ = await _load_active_curriculum(learner["id"])
 
     questions = quiz.get("questions") or []
@@ -218,7 +208,7 @@ async def advance_session(
     now = datetime.now(timezone.utc).isoformat()
 
     await col_learners().update_one(
-        {"user_id": user_id},
+        {"user_id": learner["user_id"]},
         {
             "$set": {
                 "topic_proficiency_map": proficiency,

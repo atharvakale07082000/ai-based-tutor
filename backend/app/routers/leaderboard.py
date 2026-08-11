@@ -9,18 +9,27 @@ from __future__ import annotations
 import structlog
 from fastapi import APIRouter, Depends
 
+from app.agents.progress import MASTERY_ELO
 from app.auth.jwt import get_current_user_id
 from app.db.mongo import col_learners
 
 router = APIRouter()
 log = structlog.get_logger()
 
-PROJ = {"_id": 0, "id": 1, "user_id": 1, "name": 1, "xp": 1, "streak": 1, "topic_proficiency_map": 1}
+PROJ = {
+    "_id": 0,
+    "id": 1,
+    "user_id": 1,
+    "name": 1,
+    "xp": 1,
+    "streak": 1,
+    "topic_proficiency_map": 1,
+}
 
 
 def _topics_mastered(proficiency: dict) -> int:
     """Count topics where the learner's ELO has reached mastery (≥ 700)."""
-    return sum(1 for elo in proficiency.values() if elo >= 700)
+    return sum(1 for elo in proficiency.values() if elo >= MASTERY_ELO)
 
 
 def _anonymize(learner: dict, is_self: bool) -> dict:
@@ -42,16 +51,26 @@ def _anonymize(learner: dict, is_self: bool) -> dict:
 @router.get("")
 async def get_leaderboard(user_id: str = Depends(get_current_user_id)):
     """Return top 10 learners by XP + the caller's rank (even if outside top 10)."""
-    all_learners = await col_learners().find({}, PROJ).sort("xp", -1).to_list(length=None)
+    all_learners = (
+        await col_learners().find({}, PROJ).sort("xp", -1).to_list(length=None)
+    )
 
     top_10 = all_learners[:10]
     caller_rank = next(
-        (i + 1 for i, learner in enumerate(all_learners) if learner.get("user_id") == user_id),
+        (
+            i + 1
+            for i, learner in enumerate(all_learners)
+            if learner.get("user_id") == user_id
+        ),
         None,
     )
-    caller = next((learner for learner in all_learners if learner.get("user_id") == user_id), None)
+    caller = next(
+        (learner for learner in all_learners if learner.get("user_id") == user_id), None
+    )
 
-    board = [_anonymize(learner, learner.get("user_id") == user_id) for learner in top_10]
+    board = [
+        _anonymize(learner, learner.get("user_id") == user_id) for learner in top_10
+    ]
     for i, entry in enumerate(board):
         entry["rank"] = i + 1
 

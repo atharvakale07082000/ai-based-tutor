@@ -74,6 +74,24 @@ async def get_current_user_id(token: str = Depends(oauth2_scheme)) -> str:
     return user_id
 
 
+async def get_current_learner(user_id: str = Depends(get_current_user_id)) -> dict:
+    """FastAPI dependency: the caller's learner profile, or 404 if they have none.
+
+    Most protected routes want the learner document, not the raw ``user_id`` — the id is
+    still available as ``learner["user_id"]``. Resolving it here (rather than re-deriving
+    it per handler) keeps one definition of "who is this request for", so a new route
+    cannot accidentally ship a different lookup or forget the ownership scope.
+    """
+    from app.db.mongo import PROJ, col_learners
+
+    learner = await col_learners().find_one({"user_id": user_id}, PROJ)
+    if not learner:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Learner not found"
+        )
+    return learner
+
+
 async def require_superuser(user_id: str = Depends(get_current_user_id)) -> str:
     """FastAPI dependency: allow only the evals superuser (role == 'superuser'); else 403."""
     from app.db.mongo import col_users

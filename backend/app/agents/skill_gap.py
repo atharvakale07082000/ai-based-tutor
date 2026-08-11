@@ -16,6 +16,7 @@ import re
 import structlog
 
 from app.agents.json_utils import extract_json
+from app.agents.progress import MASTERY_ELO
 from app.hf.client import hf_chat_completion_with_resilience
 from app.hf.models import HF_MODELS, TOKEN_BUDGETS
 from app.prompts.loader import render_prompt
@@ -23,7 +24,7 @@ from app.prompts.loader import render_prompt
 log = structlog.get_logger()
 
 # ELO thresholds (proficiency map is 0-1000; mastery >= 700, matching the platform).
-_HAVE_ELO = 700.0
+_HAVE_ELO = MASTERY_ELO
 _PARTIAL_ELO = 500.0
 
 # Score weights per gap status, averaged into the 0-100 readiness score.

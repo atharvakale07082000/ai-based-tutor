@@ -20,7 +20,7 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from app.auth.jwt import get_current_user_id
-from app.db.mongo import col_doubts, col_learners
+from app.db.mongo import PROJ, col_doubts, col_learners
 from app.hf.doubt_solver import stream_doubt_response
 from app.hf.image_captioner import caption_image
 from app.hf.speech_to_text import transcribe_audio
@@ -29,8 +29,6 @@ from app.schemas.doubts import DoubtStreamRequest
 limiter = Limiter(key_func=get_remote_address)
 router = APIRouter()
 log = structlog.get_logger()
-
-PROJ = {"_id": 0}
 
 
 @router.post("/stream")

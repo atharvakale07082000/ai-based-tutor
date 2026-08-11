@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from app.db.mongo import col_activity_logs
+from app.db.mongo import PROJ, col_activity_logs
 
-PROJ = {"_id": 0}
 
 STATS_WINDOW_DAYS = 30
 
@@ -23,7 +22,13 @@ async def get_user_logs(
 
     col = col_activity_logs()
     total = await col.count_documents(query)
-    logs = await col.find(query, PROJ).sort("timestamp", -1).skip(skip).limit(limit).to_list(length=None)
+    logs = (
+        await col.find(query, PROJ)
+        .sort("timestamp", -1)
+        .skip(skip)
+        .limit(limit)
+        .to_list(length=None)
+    )
     return logs, total
 
 
@@ -36,12 +41,19 @@ async def get_log_stats(user_id: str) -> dict:
         {"$group": {"_id": "$action", "count": {"$sum": 1}}},
         {"$sort": {"count": -1}},
     ]
-    action_rows = await (await col.aggregate(action_counts_pipeline)).to_list(length=None)
+    action_rows = await (await col.aggregate(action_counts_pipeline)).to_list(
+        length=None
+    )
     action_counts = {row["_id"]: row["count"] for row in action_rows}
 
     daily_pipeline = [
         {"$match": {"user_id": user_id, "timestamp": {"$gte": since}}},
-        {"$group": {"_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$timestamp"}}, "count": {"$sum": 1}}},
+        {
+            "$group": {
+                "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$timestamp"}},
+                "count": {"$sum": 1},
+            }
+        },
         {"$sort": {"count": -1}},
         {"$limit": 1},
     ]

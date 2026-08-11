@@ -40,6 +40,11 @@ def get_db() -> AsyncDatabase:
     return get_client()[settings.MONGO_DATABASE]
 
 
+# Standard projection: drop Mongo's ObjectId, which isn't JSON-serialisable and is
+# never part of a document's public shape (every document carries its own ``id``).
+PROJ = {"_id": 0}
+
+
 # ─── Collection shorthands ────────────────────────────────────────────────────
 
 
@@ -133,27 +138,49 @@ async def ensure_indexes() -> None:
     await col_users().create_index("email", unique=True)
     await col_learners().create_index("user_id", unique=True)
     await col_quizzes().create_index([("learner_id", ASCENDING)])
-    await col_progress().create_index([("learner_id", ASCENDING), ("recorded_at", ASCENDING)])
-    await col_curricula().create_index([("learner_id", ASCENDING), ("is_active", ASCENDING)])
+    await col_progress().create_index(
+        [("learner_id", ASCENDING), ("recorded_at", ASCENDING)]
+    )
+    await col_curricula().create_index(
+        [("learner_id", ASCENDING), ("is_active", ASCENDING)]
+    )
     await col_doubts().create_index([("learner_id", ASCENDING)])
     await col_content().create_index("topic")
-    await col_course_plans().create_index([("user_id", ASCENDING), ("created_at", DESCENDING)])
-    await col_interviews().create_index([("plan_id", ASCENDING), ("module_id", ASCENDING)])
+    await col_course_plans().create_index(
+        [("user_id", ASCENDING), ("created_at", DESCENDING)]
+    )
+    await col_interviews().create_index(
+        [("plan_id", ASCENDING), ("module_id", ASCENDING)]
+    )
     await col_trending_topics().create_index([("discovered_at", DESCENDING)])
     await col_trending_topics().create_index([("domain", ASCENDING)])
     await col_feed_items().create_index([("discovered_at", DESCENDING)])
     await col_feed_items().create_index([("expires_at", ASCENDING)])
-    await col_feed_interactions().create_index([("user_id", ASCENDING), ("item_id", ASCENDING)])
-    await col_study_sessions().create_index([("learner_id", ASCENDING), ("recorded_at", DESCENDING)])
-    await col_xp_events().create_index([("user_id", ASCENDING), ("created_at", DESCENDING)])
-    await col_quiz_bank().create_index([("topic", ASCENDING), ("bloom_level", ASCENDING)], unique=True)
+    await col_feed_interactions().create_index(
+        [("user_id", ASCENDING), ("item_id", ASCENDING)]
+    )
+    await col_study_sessions().create_index(
+        [("learner_id", ASCENDING), ("recorded_at", DESCENDING)]
+    )
+    await col_xp_events().create_index(
+        [("user_id", ASCENDING), ("created_at", DESCENDING)]
+    )
+    await col_quiz_bank().create_index(
+        [("topic", ASCENDING), ("bloom_level", ASCENDING)], unique=True
+    )
 
     await col_activity_logs().create_index([("user_id", ASCENDING)])
     await col_activity_logs().create_index([("timestamp", DESCENDING)])
-    await col_activity_logs().create_index([("user_id", ASCENDING), ("timestamp", DESCENDING)])
-    await col_activity_logs().create_index("timestamp", expireAfterSeconds=90 * 24 * 3600)
+    await col_activity_logs().create_index(
+        [("user_id", ASCENDING), ("timestamp", DESCENDING)]
+    )
+    await col_activity_logs().create_index(
+        "timestamp", expireAfterSeconds=90 * 24 * 3600
+    )
     # Reset tokens expire automatically after 1 hour via MongoDB TTL index
     await col_reset_tokens().create_index("created_at", expireAfterSeconds=3600)
     await col_reset_tokens().create_index("token", unique=True)
 
-    await col_job_applications().create_index([("learner_id", ASCENDING), ("updated_at", DESCENDING)])
+    await col_job_applications().create_index(
+        [("learner_id", ASCENDING), ("updated_at", DESCENDING)]
+    )

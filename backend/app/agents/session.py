@@ -14,7 +14,7 @@ from __future__ import annotations
 import structlog
 
 from app.agents.progress import calculate_elo_update
-from app.agents.state import MASTERY_THRESHOLD_DEFAULT
+from app.agents.progress import MASTERY_ELO
 from app.guardrails import sanitize_quiz_batch
 from app.prompts.loader import get_curriculum_config
 from app.tools import tool_registry
@@ -171,7 +171,7 @@ async def run_session(state: dict) -> dict:
     """Run one session step. task_type ∈ {'start', 'progress'}; returns the merged state."""
     task_type = state.get("task_type", "start")
     proficiency = dict(state.get("topic_proficiency", {}))
-    mastery = state.get("mastery_threshold", MASTERY_THRESHOLD_DEFAULT)
+    mastery = state.get("mastery_threshold", MASTERY_ELO)
     iteration = state.get("iteration_count", 0) + 1
 
     result: dict = dict(state)

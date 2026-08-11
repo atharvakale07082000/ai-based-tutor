@@ -1,11 +1,10 @@
 import asyncio
-import json
-import re
 import uuid
 
 import structlog
 from tenacity import retry, stop_after_attempt, wait_exponential
 
+from app.agents.json_utils import extract_json
 from app.config import settings
 from app.hf.client import get_hf_client, record_auth_failure, record_auth_success
 from app.hf.models import HF_MODELS
@@ -16,21 +15,9 @@ log = structlog.get_logger()
 
 def _parse_response(text: str, topic: str, bloom_level: str) -> dict | None:
     """Extract a question dict from LLM output. Returns None if unparseable."""
-    # Strip markdown fences
-    cleaned = re.sub(r"```(?:json)?", "", text).strip().rstrip("`").strip()
-
-    # Try direct JSON parse
-    try:
-        data = json.loads(cleaned)
-    except json.JSONDecodeError:
-        # Try to find first {...} block
-        m = re.search(r"\{.*\}", cleaned, re.DOTALL)
-        if not m:
-            return None
-        try:
-            data = json.loads(m.group())
-        except json.JSONDecodeError:
-            return None
+    data = extract_json(text)
+    if data is None:
+        return None
 
     question = str(data.get("question", "")).strip()
     options = data.get("options", [])

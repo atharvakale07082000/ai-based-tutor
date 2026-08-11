@@ -17,7 +17,7 @@ from app.agents.handler import handler
 from app.agents.steps import StepTimeline
 from app.agents.stream_adapter import TraceState
 from app.auth.jwt import get_current_user_id
-from app.db.mongo import col_learners
+from app.db.mongo import PROJ, col_learners
 from app.guardrails import check_input
 
 router = APIRouter()
@@ -82,7 +82,6 @@ async def v2_chat(
                 yield f"data: {json.dumps({'type': 'guardrail', 'message': 'That request looks like an attempt to override my instructions — I can only help with learning.'})}\n\n"
                 return
 
-            PROJ = {"_id": 0}
             learner = await col_learners().find_one({"user_id": user_id}, PROJ) or {}
             context = {
                 "learner_id": learner.get("id", ""),

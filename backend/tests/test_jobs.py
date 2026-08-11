@@ -45,13 +45,13 @@ def test_analyze_gap_all_have_no_recommendations():
 @pytest.mark.asyncio
 async def test_analysis_stream_emits_steps_then_action(monkeypatch):
     """The reanalyze-style stream (no LLM parse) emits step events then a jd_analyzed action."""
-    from app.routers.jobs import _analysis_stream
+    from app.routers.jobs import _analysis_run
+    from app.sse import sse_response
 
     # required_skills provided → no parse_jd / LLM call.
-    event_stream = _analysis_stream(
-        "", {"Python": 800.0}, required_skills=["Python", "Go"]
-    )
-    frames = [frame async for frame in event_stream()]
+    run = _analysis_run("", {"Python": 800.0}, required_skills=["Python", "Go"])
+    response = sse_response(run)
+    frames = [frame async for frame in response.body_iterator]
 
     # SSE frames: several `data: {...}` lines then a [DONE].
     assert frames[-1].strip() == "data: [DONE]"

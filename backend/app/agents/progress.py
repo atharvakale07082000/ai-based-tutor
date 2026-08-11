@@ -8,6 +8,12 @@ from __future__ import annotations
 
 K_FACTOR = 32.0
 
+# Single source of truth: the Elo (proficiency map is 0-1000) at/above which a topic
+# counts as mastered. Used by quiz grading, the session engine, the curriculum view,
+# the leaderboard, the skill-gap agent, the weekly digest and the evals suite — every
+# one of those hardcoded its own `700` before this constant was hoisted here.
+MASTERY_ELO: float = 700.0
+
 
 def calculate_elo_update(
     current_elo: float, score: float, expected_score: float = 0.5

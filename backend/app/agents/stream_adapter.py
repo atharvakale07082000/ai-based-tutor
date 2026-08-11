@@ -55,29 +55,18 @@ _GROUNDING_MAX_CHARS = 1500
 
 
 @dataclass
-class _ToolCall:
-    name: str
-    input_buffer: str = ""
-    started: float = field(default_factory=time.monotonic)
-    call_seen: bool = False
-
-
-@dataclass
 class TraceState:
     """Mutable per-stream bookkeeping for reasoning/answer splitting."""
 
-    step: int = 0
     started: float = field(default_factory=time.monotonic)
-    tools: dict[str, _ToolCall] = field(default_factory=dict)
+    # toolUseId → tool name. Only the name is needed, to map a completed tool to
+    # its `action` card; the mechanical call detail is deliberately not tracked.
+    tools: dict[str, str] = field(default_factory=dict)
     in_reasoning: bool = False
     carry: str = ""  # held-back tail that might be a partial <reasoning> tag
     # Tool results seen on this stream, server-side only (never emitted): the
     # retrieval context the faithfulness metric grades the answer against.
     grounding: list[str] = field(default_factory=list)
-
-    def next_step(self) -> int:
-        self.step += 1
-        return self.step
 
     def add_grounding(self, payload: Any) -> None:
         """Record one tool result as retrieval context (bounded in count and length)."""
@@ -87,16 +76,6 @@ class TraceState:
         text = text.strip()
         if text:
             self.grounding.append(text[:_GROUNDING_MAX_CHARS])
-
-
-def _parse_args(raw: str) -> dict | None:
-    if not raw:
-        return {}
-    try:
-        parsed = json.loads(raw)
-        return parsed if isinstance(parsed, dict) else {"value": parsed}
-    except json.JSONDecodeError:
-        return None
 
 
 def _tool_result_payload(tool_result: dict) -> Any:
@@ -198,16 +177,8 @@ def translate_event(
         current = event.get("current_tool_use") or {}
         tool_id = current.get("toolUseId", "")
         name = current.get("name", "")
-        if not tool_id or not name:
-            return events
-        call = state.tools.get(tool_id)
-        if call is None:
-            call = _ToolCall(name=name)
-            state.tools[tool_id] = call
-        raw_input = current.get("input", "")
-        call.input_buffer = (
-            raw_input if isinstance(raw_input, str) else json.dumps(raw_input)
-        )
+        if tool_id and name:
+            state.tools.setdefault(tool_id, name)
         return events
 
     # Completed tool execution → keep the payload as grounding (server-side only)
@@ -215,8 +186,7 @@ def translate_event(
     if event.get("type") == "tool_result":
         tool_result = event.get("tool_result") or {}
         tool_id = tool_result.get("toolUseId", "")
-        call = state.tools.get(tool_id)
-        name = call.name if call else "tool"
+        name = state.tools.get(tool_id, "tool")
         payload = _tool_result_payload(tool_result)
         state.add_grounding(payload)
         action = action_for_tool(name, payload)
@@ -252,7 +222,9 @@ def finish_events(state: TraceState) -> list[dict]:
     events.append(
         {
             "type": "done",
-            "steps": max(state.step, 1),
+            # The chat stream is a single agent turn, so the wire's `steps` count
+            # is always 1; the field stays for the frontend's V2Event contract.
+            "steps": 1,
             "total_ms": int((time.monotonic() - state.started) * 1000),
         }
     )

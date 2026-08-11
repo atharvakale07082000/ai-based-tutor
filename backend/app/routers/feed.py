@@ -17,10 +17,12 @@ from datetime import datetime, timedelta, timezone
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pymongo import UpdateOne
 from pydantic import BaseModel, field_validator
 
 from app.auth.jwt import get_current_user_id
 from app.db.mongo import (
+    PROJ,
     col_feed_interactions,
     col_feed_items,
     col_learners,
@@ -29,8 +31,6 @@ from app.db.mongo import (
 
 router = APIRouter()
 log = structlog.get_logger()
-
-PROJ = {"_id": 0}
 
 
 # ── Pydantic models ────────────────────────────────────────────────────────────
@@ -56,11 +56,6 @@ class ScheduleRequest(BaseModel):
 def _now_iso() -> str:
     """Return the current UTC time as an ISO 8601 string."""
     return datetime.now(timezone.utc).isoformat()
-
-
-async def _get_interaction(user_id: str, item_id: str) -> dict | None:
-    """Fetch a single feed interaction record for a user/item pair."""
-    return await col_feed_interactions().find_one({"user_id": user_id, "item_id": item_id}, PROJ)
 
 
 def _is_snoozed(interaction: dict | None) -> bool:
@@ -101,7 +96,10 @@ async def list_feed(
             return []
         docs = await (
             col_feed_interactions()
-            .find({"user_id": user_id, "snoozed_until": {"$gt": now_iso}}, {"item_id": 1, "_id": 0})
+            .find(
+                {"user_id": user_id, "snoozed_until": {"$gt": now_iso}},
+                {"item_id": 1, "_id": 0},
+            )
             .to_list(length=None)
         )
         return [d["item_id"] for d in docs]
@@ -119,7 +117,7 @@ async def list_feed(
         .find(base_query, PROJ)
         .sort("discovered_at", -1)
         .skip(skip)
-        .limit(limit + 1 + len([]))  # small over-fetch to survive post-filter
+        .limit(limit + 1)  # small over-fetch to survive post-filter
         .to_list(length=None),
     )
 
@@ -134,7 +132,9 @@ async def list_feed(
     # Fetch interaction annotations for rendered items.
     item_ids = [i["id"] for i in items]
     interaction_docs = await (
-        col_feed_interactions().find({"user_id": user_id, "item_id": {"$in": item_ids}}, PROJ).to_list(length=None)
+        col_feed_interactions()
+        .find({"user_id": user_id, "item_id": {"$in": item_ids}}, PROJ)
+        .to_list(length=None)
     )
     interactions = {i["item_id"]: i for i in interaction_docs}
 
@@ -166,10 +166,19 @@ async def list_trending(
     )
 
     if not latest:
-        return {"topics": _fallback_trending(), "discovered_at": _now_iso(), "fresh": False}
+        return {
+            "topics": _fallback_trending(),
+            "discovered_at": _now_iso(),
+            "fresh": False,
+        }
 
     batch_time = latest["discovered_at"]
-    topics = await col_trending_topics().find({"discovered_at": batch_time}, PROJ).limit(limit).to_list(length=None)
+    topics = (
+        await col_trending_topics()
+        .find({"discovered_at": batch_time}, PROJ)
+        .limit(limit)
+        .to_list(length=None)
+    )
 
     proficiency = (learner or {}).get("topic_proficiency_map", {})
     for t in topics:
@@ -195,15 +204,21 @@ async def run_discovery(user_id: str = Depends(get_current_user_id)):
         if result["topics"]:
             await col_trending_topics().insert_many(result["topics"])
 
-        # Persist feed items (deduplicate by URL)
-        for item in result["feed_items"]:
-            await col_feed_items().update_one(
-                {"url": item["url"]},
-                {"$setOnInsert": item},
-                upsert=True,
+        # Persist feed items (deduplicate by URL) in one round trip.
+        if result["feed_items"]:
+            await col_feed_items().bulk_write(
+                [
+                    UpdateOne({"url": item["url"]}, {"$setOnInsert": item}, upsert=True)
+                    for item in result["feed_items"]
+                ],
+                ordered=False,
             )
 
-        log.info("feed_discovery_manual", topics=len(result["topics"]), items=len(result["feed_items"]))
+        log.info(
+            "feed_discovery_manual",
+            topics=len(result["topics"]),
+            items=len(result["feed_items"]),
+        )
         return {
             "status": "ok",
             "topics_discovered": len(result["topics"]),
@@ -225,7 +240,9 @@ async def snooze_item(
     user_id: str = Depends(get_current_user_id),
 ):
     """Snooze a feed item for the specified number of hours."""
-    snoozed_until = (datetime.now(timezone.utc) + timedelta(hours=body.hours)).isoformat()
+    snoozed_until = (
+        datetime.now(timezone.utc) + timedelta(hours=body.hours)
+    ).isoformat()
 
     await col_feed_interactions().update_one(
         {"user_id": user_id, "item_id": item_id},
@@ -263,7 +280,9 @@ async def schedule_item(
             dt = dt.replace(tzinfo=timezone.utc)
         scheduled_iso = dt.isoformat()
     except ValueError:
-        raise HTTPException(status_code=422, detail="Invalid datetime format. Use ISO 8601.")
+        raise HTTPException(
+            status_code=422, detail="Invalid datetime format. Use ISO 8601."
+        )
 
     await col_feed_interactions().update_one(
         {"user_id": user_id, "item_id": item_id},
@@ -281,7 +300,12 @@ async def schedule_item(
         upsert=True,
     )
 
-    log.info("feed_item_scheduled", item_id=item_id, scheduled_for=scheduled_iso, user_id=user_id)
+    log.info(
+        "feed_item_scheduled",
+        item_id=item_id,
+        scheduled_for=scheduled_iso,
+        user_id=user_id,
+    )
     return {"status": "scheduled", "item_id": item_id, "scheduled_for": scheduled_iso}
 
 
@@ -308,7 +332,11 @@ async def list_scheduled(user_id: str = Depends(get_current_user_id)):
     interactions = await (
         col_feed_interactions()
         .find(
-            {"user_id": user_id, "action": "schedule", "scheduled_for": {"$gt": now_iso}},
+            {
+                "user_id": user_id,
+                "action": "schedule",
+                "scheduled_for": {"$gt": now_iso},
+            },
             PROJ,
         )
         .sort("scheduled_for", 1)
@@ -317,7 +345,11 @@ async def list_scheduled(user_id: str = Depends(get_current_user_id)):
 
     # Join with feed items
     item_ids = [i["item_id"] for i in interactions]
-    feed_item_docs = await col_feed_items().find({"id": {"$in": item_ids}}, PROJ).to_list(length=None)
+    feed_item_docs = (
+        await col_feed_items()
+        .find({"id": {"$in": item_ids}}, PROJ)
+        .to_list(length=None)
+    )
     items_by_id = {i["id"]: i for i in feed_item_docs}
 
     result = []

@@ -28,7 +28,7 @@ from app.auth.jwt import (
     verify_password,
 )
 from app.config import settings
-from app.db.mongo import col_learners, col_reset_tokens, col_users
+from app.db.mongo import PROJ, col_learners, col_reset_tokens, col_users
 from app.schemas.auth import (
     LoginRequest,
     LoginResponse,
@@ -41,8 +41,6 @@ from app.schemas.auth import (
 router = APIRouter()
 log = structlog.get_logger()
 limiter = Limiter(key_func=get_remote_address)
-
-PROJ = {"_id": 0}
 
 
 @router.post("/login", response_model=LoginResponse)

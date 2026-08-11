@@ -64,6 +64,11 @@ class Settings(BaseSettings):
         4  # ask at least this many before the agent may conclude
     )
 
+    # Seconds the learner gets per quiz question. Served to the client on every quiz
+    # payload (``time_per_question``) so the timer is server-controlled, not hardcoded
+    # in the frontend.
+    QUIZ_SECONDS_PER_QUESTION: int = 60
+
     # ── Quality evals (DeepEval) ─────────────────────────────────────────────
     # The DeepEval judge wraps the NVIDIA NIM client (OpenAI-compatible) — no new creds.
     EVAL_JUDGE_MODEL: str = "qwen/qwen3-next-80b-a3b-instruct"

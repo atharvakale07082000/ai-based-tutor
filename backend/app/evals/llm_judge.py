@@ -8,11 +8,10 @@ Falls back to 0.5 per criterion on any failure so evals never crash a test run.
 from __future__ import annotations
 
 import asyncio
-import json
-import re
 
 import structlog
 
+from app.agents.json_utils import extract_json
 from app.prompts.loader import get_section
 
 log = structlog.get_logger()
@@ -72,8 +71,7 @@ async def score(
 def _parse_scores(raw: str, criteria: list[str]) -> dict[str, float]:
     """Parse JSON from LLM output and normalize each score from [1–5] to [0.0–1.0]."""
     try:
-        cleaned = re.sub(r"```(?:json)?", "", raw).strip().removesuffix("```").strip()
-        data = json.loads(cleaned)
+        data = extract_json(raw) or {}
         result: dict[str, float] = {}
         for c in criteria:
             val = float(data.get(c, 3))  # default to mid-scale if key missing

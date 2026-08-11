@@ -16,12 +16,11 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.auth.jwt import require_superuser
-from app.db.mongo import col_doubts, col_learners
+from app.db.mongo import PROJ, col_doubts, col_learners
 
 router = APIRouter()
 log = structlog.get_logger()
 
-PROJ = {"_id": 0}
 
 _agent_config = {
     "quiz_frequency": 3,

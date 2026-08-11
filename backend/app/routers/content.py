@@ -13,14 +13,13 @@ import structlog
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 
 from app.auth.jwt import get_current_user_id
-from app.db.mongo import col_content, col_learners
+from app.db.mongo import PROJ, col_content, col_learners
 from app.hf.content_generator import generate_content_body
 from app.hf.recommendation_agent import rank_content_for_learner
 
 router = APIRouter()
 log = structlog.get_logger()
 
-PROJ = {"_id": 0}
 
 SEED_CONTENT = [
     {
@@ -149,7 +148,13 @@ async def list_content(
         ]
 
     skip = (page - 1) * limit
-    items = await col_content().find(query, PROJ).skip(skip).limit(limit + 1).to_list(length=None)
+    items = (
+        await col_content()
+        .find(query, PROJ)
+        .skip(skip)
+        .limit(limit + 1)
+        .to_list(length=None)
+    )
     has_more = len(items) > limit
     result_items = items[:limit]
 
@@ -189,7 +194,9 @@ async def get_content(item_id: str, user_id: str = Depends(get_current_user_id))
             content_type=item.get("content_type", "article"),
             difficulty=item.get("difficulty", 0.5),
         )
-        await col_content().update_one({"id": item_id}, {"$set": {"body": generated_body}})
+        await col_content().update_one(
+            {"id": item_id}, {"$set": {"body": generated_body}}
+        )
         item["body"] = generated_body
 
     return item

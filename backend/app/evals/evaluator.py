@@ -18,7 +18,7 @@ import re
 
 import structlog
 
-from app.agents.state import MASTERY_THRESHOLD_DEFAULT
+from app.agents.progress import MASTERY_ELO
 from app.evals import llm_judge
 from app.evals.mongo import insert_eval
 from app.evals.schemas import EvalRecord, EvalType
@@ -69,7 +69,11 @@ def eval_doubt_relevance(input: dict, output: dict) -> tuple[float, bool, dict]:
     overlap = topic_tokens & resp_tokens
     score = len(overlap) / max(len(topic_tokens), 1)
 
-    return score, score > 0.0, {"overlap_tokens": list(overlap), "topic_tokens": list(topic_tokens)}
+    return (
+        score,
+        score > 0.0,
+        {"overlap_tokens": list(overlap), "topic_tokens": list(topic_tokens)},
+    )
 
 
 def eval_curriculum_ordering(input: dict, output: dict) -> tuple[float, bool, dict]:
@@ -108,7 +112,7 @@ def eval_planner_decision(input: dict, output: dict) -> tuple[float, bool, dict]
     """
     curriculum_path = input.get("curriculum_path", [])
     proficiency = input.get("topic_proficiency", {})
-    mastery_threshold = input.get("mastery_threshold", 700.0)
+    mastery_threshold = input.get("mastery_threshold", MASTERY_ELO)
     iteration_count = input.get("iteration_count", 0)
     max_iterations = input.get("max_iterations", 10)
     next_action = output.get("next_action", "")
@@ -117,27 +121,45 @@ def eval_planner_decision(input: dict, output: dict) -> tuple[float, bool, dict]
     if iteration_count + 1 >= max_iterations:
         expected = "end"
         passed = next_action == expected
-        return (1.0 if passed else 0.0), passed, {"rule": "iter_cap", "expected": expected, "got": next_action}
+        return (
+            (1.0 if passed else 0.0),
+            passed,
+            {"rule": "iter_cap", "expected": expected, "got": next_action},
+        )
 
     # Rule: no curriculum
     if not curriculum_path:
         expected = "curriculum"
         passed = next_action == expected
-        return (1.0 if passed else 0.0), passed, {"rule": "no_curriculum", "expected": expected, "got": next_action}
+        return (
+            (1.0 if passed else 0.0),
+            passed,
+            {"rule": "no_curriculum", "expected": expected, "got": next_action},
+        )
 
     # Rule: all mastered
     unmastered = [
-        item for item in curriculum_path if proficiency.get(item.get("subtopic", ""), 500.0) < mastery_threshold
+        item
+        for item in curriculum_path
+        if proficiency.get(item.get("subtopic", ""), 500.0) < mastery_threshold
     ]
     if not unmastered:
         expected = "end"
         passed = next_action == expected
-        return (1.0 if passed else 0.0), passed, {"rule": "all_mastered", "expected": expected, "got": next_action}
+        return (
+            (1.0 if passed else 0.0),
+            passed,
+            {"rule": "all_mastered", "expected": expected, "got": next_action},
+        )
 
     # Rule: default → quiz
     expected = "quiz"
     passed = next_action == expected
-    return (1.0 if passed else 0.0), passed, {"rule": "default_quiz", "expected": expected, "got": next_action}
+    return (
+        (1.0 if passed else 0.0),
+        passed,
+        {"rule": "default_quiz", "expected": expected, "got": next_action},
+    )
 
 
 def eval_guardrail_triggered(input: dict, output: dict) -> tuple[float, bool, dict]:
@@ -159,7 +181,9 @@ def eval_progress_elo(input: dict, output: dict) -> tuple[float, bool, dict]:
     - new_elo stays within the [0, 1000] clamp bounds
     """
     delta = output.get("progress_delta", {})
-    quiz_score = input.get("score") if input.get("score") is not None else delta.get("score")
+    quiz_score = (
+        input.get("score") if input.get("score") is not None else delta.get("score")
+    )
     old_elo = delta.get("old_elo")
     new_elo = delta.get("new_elo")
     elo_processed = delta.get("elo_processed", False)
@@ -185,7 +209,13 @@ def eval_progress_elo(input: dict, output: dict) -> tuple[float, bool, dict]:
         else:
             ok = True  # score exactly 0.5: K*(0.5-0.5)=0, no movement expected
         checks.append(
-            {"check": "direction_correct", "score": quiz_score, "old_elo": old_elo, "new_elo": new_elo, "passed": ok}
+            {
+                "check": "direction_correct",
+                "score": quiz_score,
+                "old_elo": old_elo,
+                "new_elo": new_elo,
+                "passed": ok,
+            }
         )
         if ok:
             passed_count += 1
@@ -224,7 +254,7 @@ def eval_supervisor_routing(input: dict, output: dict) -> tuple[float, bool, dic
     curriculum_path = input.get("curriculum_path", [])
     task_type = input.get("task_type", "")
     proficiency = input.get("topic_proficiency", {})
-    mastery_threshold = input.get("mastery_threshold", MASTERY_THRESHOLD_DEFAULT)
+    mastery_threshold = input.get("mastery_threshold", MASTERY_ELO)
     progress_delta = input.get("progress_delta", {})
     decision = output.get("supervisor_decision", "")
 
@@ -234,10 +264,16 @@ def eval_supervisor_routing(input: dict, output: dict) -> tuple[float, bool, dic
         expected, rule = "quiz", "quiz_requested"
     elif task_type == "doubt":
         expected, rule = "doubt", "doubt_requested"
-    elif progress_delta.get("score") is not None and not progress_delta.get("elo_processed"):
+    elif progress_delta.get("score") is not None and not progress_delta.get(
+        "elo_processed"
+    ):
         expected, rule = "progress", "unprocessed_score"
     else:
-        unmastered = [i for i in curriculum_path if proficiency.get(i["subtopic"], 500.0) < mastery_threshold]
+        unmastered = [
+            i
+            for i in curriculum_path
+            if proficiency.get(i["subtopic"], 500.0) < mastery_threshold
+        ]
         if not unmastered:
             expected, rule = "FINISH", "all_mastered"
         else:
@@ -294,7 +330,9 @@ async def eval_doubt_accuracy(input: dict, output: dict) -> tuple[float, bool, d
 # ── LLM-judge: quiz Bloom-level alignment ────────────────────────────────────
 
 
-async def eval_quiz_bloom_alignment(input: dict, output: dict) -> tuple[float, bool, dict]:
+async def eval_quiz_bloom_alignment(
+    input: dict, output: dict
+) -> tuple[float, bool, dict]:
     """
     LLM-judge eval: do generated questions actually match the claimed Bloom level?
 
@@ -318,17 +356,25 @@ async def eval_quiz_bloom_alignment(input: dict, output: dict) -> tuple[float, b
         opts = q.get("options", [])
         opts_text = "\n".join(f"  {chr(65 + i)}. {opt}" for i, opt in enumerate(opts))
         user_prompt = f"Claimed Bloom taxonomy level: {bloom_level}\n\nQuestion: {q_text}\nOptions:\n{opts_text}"
-        q_scores = await llm_judge.score(user_prompt, ["bloom_alignment", "distractor_quality"])
+        q_scores = await llm_judge.score(
+            user_prompt, ["bloom_alignment", "distractor_quality"]
+        )
         per_question.append({"question": q_text[:80], **q_scores})
 
     avg_alignment = sum(s["bloom_alignment"] for s in per_question) / len(per_question)
-    return avg_alignment, avg_alignment >= 0.6, {"per_question": per_question, "avg_alignment": round(avg_alignment, 3)}
+    return (
+        avg_alignment,
+        avg_alignment >= 0.6,
+        {"per_question": per_question, "avg_alignment": round(avg_alignment, 3)},
+    )
 
 
 # ── LLM-judge: curriculum coherence ─────────────────────────────────────────
 
 
-async def eval_curriculum_coherence(input: dict, output: dict) -> tuple[float, bool, dict]:
+async def eval_curriculum_coherence(
+    input: dict, output: dict
+) -> tuple[float, bool, dict]:
     """
     LLM-judge eval: is the curriculum path pedagogically coherent?
 
@@ -360,7 +406,11 @@ async def eval_curriculum_coherence(input: dict, output: dict) -> tuple[float, b
     criteria = ["ordering_logic", "goal_alignment", "coverage_breadth"]
     scores = await llm_judge.score(user_prompt, criteria)
     avg = sum(scores.values()) / len(scores)
-    return avg, avg >= 0.6, {"criteria_scores": scores, "avg": round(avg, 3), "path_length": len(path)}
+    return (
+        avg,
+        avg >= 0.6,
+        {"criteria_scores": scores, "avg": round(avg, 3), "path_length": len(path)},
+    )
 
 
 # ── Chat orchestrator evals ───────────────────────────────────────────────────

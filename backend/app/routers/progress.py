@@ -18,13 +18,18 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app.auth.jwt import get_current_user_id
-from app.db.mongo import col_doubts, col_learners, col_progress, col_quizzes, col_study_sessions
+from app.db.mongo import (
+    PROJ,
+    col_doubts,
+    col_learners,
+    col_progress,
+    col_quizzes,
+    col_study_sessions,
+)
 from app.hf.spaced_repetition import compute_due_topics
 
 router = APIRouter()
 log = structlog.get_logger()
-
-PROJ = {"_id": 0}
 
 
 class StudySessionRequest(BaseModel):
@@ -46,27 +51,48 @@ async def get_progress(user_id: str = Depends(get_current_user_id)):
 
     # Parallelise all four independent collection reads now that we have learner_id.
     records, quizzes, doubt_sessions, study_sessions = await asyncio.gather(
-        col_progress().find({"learner_id": learner_id}, PROJ).sort("recorded_at", 1).limit(100).to_list(length=None),
-        col_quizzes().find({"learner_id": learner_id, "completed_at": {"$ne": None}}, PROJ).to_list(length=None),
+        col_progress()
+        .find({"learner_id": learner_id}, PROJ)
+        .sort("recorded_at", 1)
+        .limit(100)
+        .to_list(length=None),
+        col_quizzes()
+        .find({"learner_id": learner_id, "completed_at": {"$ne": None}}, PROJ)
+        .to_list(length=None),
         col_doubts().find({"learner_id": learner_id}, PROJ).to_list(length=None),
-        col_study_sessions().find({"learner_id": learner_id}, PROJ).to_list(length=None),
+        col_study_sessions()
+        .find({"learner_id": learner_id}, PROJ)
+        .to_list(length=None),
     )
 
-    quiz_accuracy = sum(q.get("score") or 0 for q in quizzes) / len(quizzes) if quizzes else 0.0
+    quiz_accuracy = (
+        sum(q.get("score") or 0 for q in quizzes) / len(quizzes) if quizzes else 0.0
+    )
 
     mood_timeline = [
-        {"session_id": d["id"], "mood": d["sentiment_mood"], "date": d.get("started_at")}
+        {
+            "session_id": d["id"],
+            "mood": d["sentiment_mood"],
+            "date": d.get("started_at"),
+        }
         for d in doubt_sessions
         if d.get("sentiment_mood")
     ]
 
-    total_study_minutes = sum(s.get("minutes", 0) for s in study_sessions) + len(quizzes) * 15
+    total_study_minutes = (
+        sum(s.get("minutes", 0) for s in study_sessions) + len(quizzes) * 15
+    )
 
     return {
         "learner_id": learner_id,
         "topic_proficiency": learner.get("topic_proficiency_map") or {},
         "history": [
-            {"topic": r["topic"], "elo_score": r["elo_score"], "recorded_at": r.get("recorded_at")} for r in records
+            {
+                "topic": r["topic"],
+                "elo_score": r["elo_score"],
+                "recorded_at": r.get("recorded_at"),
+            }
+            for r in records
         ],
         "total_study_minutes": total_study_minutes,
         "quiz_accuracy": quiz_accuracy,
@@ -110,7 +136,11 @@ async def get_due_topics(user_id: str = Depends(get_current_user_id)):
             last_quiz_dates[topic] = q["completed_at"]
 
     due_topics = compute_due_topics(proficiency, last_quiz_dates)
-    log.info("spaced_repetition_computed", user_id=user_id, due_count=sum(1 for t in due_topics if t["is_due"]))
+    log.info(
+        "spaced_repetition_computed",
+        user_id=user_id,
+        due_count=sum(1 for t in due_topics if t["is_due"]),
+    )
 
     return {"due_topics": due_topics}
 
@@ -145,7 +175,9 @@ async def record_study_session(
         _update_xp_and_streak(user_id, xp_earned, now),
     )
 
-    log.info("study_session_recorded", topic=body.topic, minutes=body.minutes, xp=xp_earned)
+    log.info(
+        "study_session_recorded", topic=body.topic, minutes=body.minutes, xp=xp_earned
+    )
     return {"ok": True, "xp_earned": xp_earned}
 
 

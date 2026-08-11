@@ -1,10 +1,7 @@
 """Course Planning & AI Interview router."""
 
-import json
-
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -19,16 +16,53 @@ from app.agents.course_planner import (
     start_interview,
 )
 from app.agents.interview_agent import stream_answer, stream_start
-from app.agents.steps import sse_step_stream
 from app.auth.jwt import get_current_user_id
 from app.config import settings
 from app.guardrails import check_topic, topic_reject_message
-
-_SSE_HEADERS = {"X-Accel-Buffering": "no", "Cache-Control": "no-cache"}
+from app.sse import SSE_DONE, sse_frame, sse_response, sse_stream_response
 
 router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
 log = structlog.get_logger()
+
+
+async def _owned_plan(plan_id: str, user_id: str) -> dict:
+    """Fetch a plan the caller owns, or raise 404 (same 404 for missing and foreign)."""
+    plan = await get_plan(plan_id)
+    if not plan or plan["user_id"] != user_id:
+        raise HTTPException(404, "Plan not found")
+    return plan
+
+
+async def _owned_interview(interview_id: str, user_id: str) -> dict:
+    """Fetch an interview the caller owns, or raise 404."""
+    interview = await get_interview(interview_id)
+    if not interview or interview["user_id"] != user_id:
+        raise HTTPException(404, "Interview not found")
+    return interview
+
+
+async def _agent_sse(source, error_message: str, **log_ctx):
+    """Frame an agent event stream as SSE, converting any failure to a generic error frame."""
+    try:
+        async for ev in source:
+            yield sse_frame(ev)
+    except Exception as e:  # noqa: BLE001 - generic to client, detail in logs
+        log.error("interview_stream_error", error=str(e)[:300], **log_ctx)
+        yield sse_frame({"type": "error", "message": error_message})
+    yield SSE_DONE
+
+
+def _validated_goal(goal: str, user_id: str, event: str) -> str:
+    """Return the trimmed goal, or raise 400 if it's empty or off-limits."""
+    trimmed = goal.strip()
+    if not trimmed:
+        raise HTTPException(400, "Goal cannot be empty")
+    guard = check_topic(trimmed)
+    if not guard.passed:
+        log.info(event, user_id=user_id, reason=guard.reason, goal=trimmed[:80])
+        raise HTTPException(400, topic_reject_message(guard.reason))
+    return trimmed
 
 
 # ─── Schemas ──────────────────────────────────────────────────────────────────
@@ -58,20 +92,10 @@ async def plan_course(
     request: Request, body: PlanRequest, user_id: str = Depends(get_current_user_id)
 ):
     """Generate an AI course plan from a learning goal and persist it."""
-    if not body.goal.strip():
-        raise HTTPException(400, "Goal cannot be empty")
-    guard = check_topic(body.goal)
-    if not guard.passed:
-        log.info(
-            "course_plan_rejected",
-            user_id=user_id,
-            reason=guard.reason,
-            goal=body.goal[:80],
-        )
-        raise HTTPException(400, topic_reject_message(guard.reason))
-    log.info("course_plan_generate", user_id=user_id, goal=body.goal[:80])
+    goal = _validated_goal(body.goal, user_id, "course_plan_rejected")
+    log.info("course_plan_generate", user_id=user_id, goal=goal[:80])
     try:
-        plan = await create_course_plan(body.goal.strip(), user_id)
+        plan = await create_course_plan(goal, user_id)
         return plan
     except Exception as e:
         raise HTTPException(500, f"Failed to generate plan: {e}")
@@ -87,54 +111,34 @@ async def plan_course_stream(
     Emits `step` events (research → design → finalize), then a `plan_created`
     action carrying the saved plan summary, then `[DONE]`.
     """
-    if not body.goal.strip():
-        raise HTTPException(400, "Goal cannot be empty")
-    guard = check_topic(body.goal)
-    if not guard.passed:
-        log.info(
-            "course_plan_stream_rejected",
-            user_id=user_id,
-            reason=guard.reason,
-            goal=body.goal[:80],
-        )
-        raise HTTPException(400, topic_reject_message(guard.reason))
-    goal = body.goal.strip()
+    goal = _validated_goal(body.goal, user_id, "course_plan_stream_rejected")
     log.info("course_plan_stream", user_id=user_id, goal=goal[:80])
 
-    async def event_stream():
-        """Drive create_course_plan with a live emitter and frame events as SSE."""
+    async def run(emit):
+        plan = await create_course_plan(goal, user_id, emit=emit)
+        await emit(
+            {
+                "type": "action",
+                "kind": "plan_created",
+                "payload": {
+                    "plan_id": plan["plan_id"],
+                    "title": plan["title"],
+                    "module_count": len(plan["modules"]),
+                    "weeks": plan["total_duration_weeks"],
+                    "url": f"/courses/{plan['plan_id']}",
+                },
+            }
+        )
+        # Online eval sampling: does the generated plan correctly address the learner's goal?
+        from app.evals.deepeval_metrics import maybe_eval_single_turn
 
-        async def run(emit):
-            plan = await create_course_plan(goal, user_id, emit=emit)
-            await emit(
-                {
-                    "type": "action",
-                    "kind": "plan_created",
-                    "payload": {
-                        "plan_id": plan["plan_id"],
-                        "title": plan["title"],
-                        "module_count": len(plan["modules"]),
-                        "weeks": plan["total_duration_weeks"],
-                        "url": f"/courses/{plan['plan_id']}",
-                    },
-                }
-            )
-            # Online eval sampling: does the generated plan correctly address the learner's goal?
-            from app.evals.deepeval_metrics import maybe_eval_single_turn
+        summary = (
+            f"{plan['title']}: {plan.get('description', '')}\nModules: "
+            + ", ".join(m.get("title", "") for m in plan["modules"])
+        )
+        maybe_eval_single_turn("course_planner", goal, summary, learner_id=user_id)
 
-            summary = (
-                f"{plan['title']}: {plan.get('description', '')}\nModules: "
-                + ", ".join(m.get("title", "") for m in plan["modules"])
-            )
-            maybe_eval_single_turn("course_planner", goal, summary, learner_id=user_id)
-
-        async for ev in sse_step_stream(run):
-            yield f"data: {json.dumps(ev)}\n\n"
-        yield "data: [DONE]\n\n"
-
-    return StreamingResponse(
-        event_stream(), media_type="text/event-stream", headers=_SSE_HEADERS
-    )
+    return sse_response(run)
 
 
 @router.get("/")
@@ -146,10 +150,7 @@ async def get_my_plans(user_id: str = Depends(get_current_user_id)):
 @router.get("/{plan_id}")
 async def get_course_plan(plan_id: str, user_id: str = Depends(get_current_user_id)):
     """Fetch a single course plan by ID, enforcing ownership."""
-    plan = await get_plan(plan_id)
-    if not plan or plan["user_id"] != user_id:
-        raise HTTPException(404, "Plan not found")
-    return plan
+    return await _owned_plan(plan_id, user_id)
 
 
 # ─── Interview endpoints ──────────────────────────────────────────────────────
@@ -166,9 +167,7 @@ async def start_module_interview(
     Emits `interview_started` (carrying interview_id, module_title and the max-question
     ceiling), live `reasoning` while the agent thinks, a `question` event, then `[DONE]`.
     """
-    plan = await get_plan(plan_id)
-    if not plan or plan["user_id"] != user_id:
-        raise HTTPException(404, "Plan not found")
+    plan = await _owned_plan(plan_id, user_id)
 
     module = next((m for m in plan["modules"] if m["id"] == module_id), None)
     if not module:
@@ -183,28 +182,22 @@ async def start_module_interview(
     )
 
     async def event_stream():
-        started = {
-            "type": "interview_started",
-            "interview_id": interview["interview_id"],
-            "module_title": module["title"],
-            "max_questions": settings.INTERVIEW_MAX_QUESTIONS,
-        }
-        yield f"data: {json.dumps(started)}\n\n"
-        try:
-            async for ev in stream_start(interview):
-                yield f"data: {json.dumps(ev)}\n\n"
-        except Exception as e:  # noqa: BLE001 - generic to client, detail in logs
-            log.error(
-                "interview_start_stream_error",
-                error=str(e)[:300],
-                interview_id=interview["interview_id"],
-            )
-            yield f"data: {json.dumps({'type': 'error', 'message': 'Could not start the interview.'})}\n\n"
-        yield "data: [DONE]\n\n"
+        yield sse_frame(
+            {
+                "type": "interview_started",
+                "interview_id": interview["interview_id"],
+                "module_title": module["title"],
+                "max_questions": settings.INTERVIEW_MAX_QUESTIONS,
+            }
+        )
+        async for frame in _agent_sse(
+            stream_start(interview),
+            "Could not start the interview.",
+            interview_id=interview["interview_id"],
+        ):
+            yield frame
 
-    return StreamingResponse(
-        event_stream(), media_type="text/event-stream", headers=_SSE_HEADERS
-    )
+    return sse_stream_response(event_stream())
 
 
 @router.get("/{plan_id}/modules/{module_id}/interview/{interview_id}")
@@ -221,10 +214,7 @@ async def get_interview_progress(
     telling the client whether to answer, score, or show the final result. See
     `course_planner.interview_state` for the field-by-field contract.
     """
-    interview = await get_interview(interview_id)
-    if not interview or interview["user_id"] != user_id:
-        raise HTTPException(404, "Interview not found")
-    return interview_state(interview)
+    return interview_state(await _owned_interview(interview_id, user_id))
 
 
 @router.post("/{plan_id}/modules/{module_id}/interview/{interview_id}/answer")
@@ -240,27 +230,14 @@ async def submit_answer(
     Emits an `evaluation` event (the tuned per-answer score), live `reasoning`, then either a
     `question` event or a `finished` event, then `[DONE]`.
     """
-    interview = await get_interview(interview_id)
-    if not interview or interview["user_id"] != user_id:
-        raise HTTPException(404, "Interview not found")
+    interview = await _owned_interview(interview_id, user_id)
 
-    async def event_stream():
-        try:
-            async for ev in stream_answer(
-                interview, body.question_id, body.answer_text
-            ):
-                yield f"data: {json.dumps(ev)}\n\n"
-        except Exception as e:  # noqa: BLE001 - generic to client, detail in logs
-            log.error(
-                "interview_answer_stream_error",
-                error=str(e)[:300],
-                interview_id=interview_id,
-            )
-            yield f"data: {json.dumps({'type': 'error', 'message': 'Could not process that answer.'})}\n\n"
-        yield "data: [DONE]\n\n"
-
-    return StreamingResponse(
-        event_stream(), media_type="text/event-stream", headers=_SSE_HEADERS
+    return sse_stream_response(
+        _agent_sse(
+            stream_answer(interview, body.question_id, body.answer_text),
+            "Could not process that answer.",
+            interview_id=interview_id,
+        )
     )
 
 
@@ -288,11 +265,9 @@ async def run_code(
     """
     from app.services.code_runner import run_code as _execute
 
-    interview = await get_interview(interview_id)
-    if not interview or interview["user_id"] != user_id:
-        raise HTTPException(404, "Interview not found")
+    await _owned_interview(interview_id, user_id)
 
-    return await _execute(body.language, body.code, getattr(body, "stdin", "") or "")
+    return await _execute(body.language, body.code, body.stdin)
 
 
 @router.post("/{plan_id}/modules/{module_id}/interview/{interview_id}/complete")
@@ -303,9 +278,7 @@ async def finish_interview(
     user_id: str = Depends(get_current_user_id),
 ):
     """Mark an interview complete and update module progress."""
-    interview = await get_interview(interview_id)
-    if not interview or interview["user_id"] != user_id:
-        raise HTTPException(404, "Interview not found")
+    await _owned_interview(interview_id, user_id)
     try:
         result = await complete_interview(interview_id, plan_id, module_id)
         return result
@@ -325,25 +298,10 @@ async def finish_interview_stream(
     Emits `step` events (evaluate → score → feedback), then an `interview_scored`
     action carrying the full result, then `[DONE]`.
     """
-    interview = await get_interview(interview_id)
-    if not interview or interview["user_id"] != user_id:
-        raise HTTPException(404, "Interview not found")
+    await _owned_interview(interview_id, user_id)
 
-    async def event_stream():
-        """Drive complete_interview with a live emitter and frame events as SSE."""
+    async def run(emit):
+        result = await complete_interview(interview_id, plan_id, module_id, emit=emit)
+        await emit({"type": "action", "kind": "interview_scored", "payload": result})
 
-        async def run(emit):
-            result = await complete_interview(
-                interview_id, plan_id, module_id, emit=emit
-            )
-            await emit(
-                {"type": "action", "kind": "interview_scored", "payload": result}
-            )
-
-        async for ev in sse_step_stream(run):
-            yield f"data: {json.dumps(ev)}\n\n"
-        yield "data: [DONE]\n\n"
-
-    return StreamingResponse(
-        event_stream(), media_type="text/event-stream", headers=_SSE_HEADERS
-    )
+    return sse_response(run)

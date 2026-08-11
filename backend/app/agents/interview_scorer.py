@@ -9,13 +9,13 @@ Pipeline: analyze_answers → build_scoring_matrix → compute_final_score.
 from __future__ import annotations
 
 import json
-import re
 from typing import TypedDict
 
 import structlog
 
 from app.hf.client import get_hf_client
 from app.hf.models import HF_MODELS
+from app.agents.json_utils import extract_json_array
 from app.prompts.loader import render_prompt
 
 log = structlog.get_logger()
@@ -88,8 +88,7 @@ def _node_analyze_answers(state: ScoringState) -> dict:
 
     try:
         text = _chat(prompt, 900, 0.1)
-        match = re.search(r"\[[\s\S]*\]", text)
-        analyses = json.loads(match.group(0)) if match else []
+        analyses = extract_json_array(text) or []
     except Exception as e:
         log.error("scorer_analyze_failed", error=str(e)[:200])
         analyses = []
@@ -130,8 +129,7 @@ def _node_build_scoring_matrix(state: ScoringState) -> dict:
 
     try:
         text = _chat(prompt, 900, 0.1)
-        match = re.search(r"\[[\s\S]*\]", text)
-        matrix = json.loads(match.group(0)) if match else []
+        matrix = extract_json_array(text) or []
     except Exception as e:
         log.error("scorer_matrix_failed", error=str(e)[:200])
         # Degrade gracefully: assign mid-range score for each analysed entry

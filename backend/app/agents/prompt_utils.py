@@ -20,7 +20,9 @@ def truncate_observation(payload: object) -> str:
     return text
 
 
-def history_messages(history: object, max_turns: int = 6, max_chars: int = 600) -> list[dict]:
+def history_messages(
+    history: object, max_turns: int = 6, max_chars: int = 600
+) -> list[dict]:
     """Normalize recent conversation turns into chat-format ``{role, content}`` messages.
 
     Accepts a list of dicts or pydantic-like objects exposing ``role``/``content``.
