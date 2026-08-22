@@ -33,6 +33,11 @@ const INVALIDATION_MAP: Array<{ pattern: RegExp; keys: string[][] }> = [
   { pattern: /\/interview\/.*\/complete/, keys: [['courses'], ['course'], ['progress']] },
   // Interview start → mark module in_progress
   { pattern: /\/interview\/start/, keys: [['course']] },
+  // Loop creation → the tracker card gains a loop link
+  { pattern: /\/loops\/stream/, keys: [['loops'], ['jobs']] },
+  // Round graded / retried → the ladder, and the loop list, both move
+  { pattern: /\/loops\/.*\/rounds\/.*\/(complete|retry|start)/, keys: [['loop'], ['loops']] },
+  { pattern: /\/loops\/.*\/debrief/, keys: [['loop'], ['loops']] },
   // Study session recording (Pomodoro etc.)
   { pattern: /\/progress\/study-session/, keys: [['progress'], ['leaderboard'], ['learner']] },
   // Feed mutations
@@ -465,9 +470,21 @@ export interface AdminLearner {
   topic_proficiency: Record<string, number>
 }
 
+/** One row of the org-wide skill gap, aggregated server-side from real proficiency. */
+export interface OrgSkillGap {
+  name: string
+  /** Share of learners tracking this topic who are below mastery, 0–1. */
+  pct: number
+  learners: number
+  below_mastery: number
+  avg_elo: number
+}
+
 export const adminAPI = {
   getLearners: (search = '', page = 1) =>
     api.get<{ items: AdminLearner[]; total: number }>('/admin/learners', { params: { search, page } }),
+  getSkillGaps: () =>
+    api.get<{ items: OrgSkillGap[]; mastery_elo: number }>('/admin/skill-gaps'),
   updateConfig: (config: { quiz_frequency?: number; difficulty_ceiling?: number; escalation_threshold?: number }) =>
     api.put('/admin/config', config),
 }
@@ -597,6 +614,64 @@ export const coursesAPI = {
     ),
 }
 
+// ─── Interview loops ──────────────────────────────────────────────────────────
+// A saved job application spawns a loop: the rounds that employer probably runs, each
+// graded against a bar calibrated to the JD's seniority (backend agents/bar.py). Rounds
+// are conducted by the same interview machinery as module interviews — see
+// components/interview/endpoints.ts for the per-round URLs.
+
+export type RoundKind = 'screen' | 'coding' | 'system_design' | 'behavioral'
+export type RoundStatus = 'locked' | 'available' | 'in_progress' | 'passed' | 'failed'
+export type LoopStatus = 'in_progress' | 'passed' | 'failed'
+
+export interface InterviewRound {
+  key: string
+  title: string
+  kind: RoundKind
+  order: number
+  focus_skills: string[]
+  /** Score out of 10 this round must reach to pass. */
+  bar: number
+  status: RoundStatus
+  score: number | null
+  attempt: number
+  interview_id: string | null
+  max_questions: number
+}
+
+export interface LoopDebrief {
+  verdict: string
+  strengths: string[]
+  gaps: string[]
+  focus_next: string
+  rounds_cleared: number
+  rounds_total: number
+}
+
+export interface InterviewLoop {
+  loop_id: string
+  job_id: string
+  company: string
+  role: string
+  seniority: string
+  target_skills: string[]
+  /** Vetted prose summary of the company's process; the raw scraped text is never sent. */
+  process_summary: string
+  status: LoopStatus
+  rounds: InterviewRound[]
+  debrief: LoopDebrief | null
+  created_at: string
+  completed_at: string | null
+}
+
+export const loopsAPI = {
+  list: () => api.get<{ loops: InterviewLoop[] }>('/loops'),
+  get: (loopId: string) => api.get<InterviewLoop>(`/loops/${loopId}`),
+  /** Reset a graded round for another attempt; returns the updated loop. */
+  retryRound: (loopId: string, roundKey: string) =>
+    api.post<InterviewLoop>(`/loops/${loopId}/rounds/${roundKey}/retry`),
+}
+
 // ─── Job Tracker ──────────────────────────────────────────────────────────────
 
 export type JobStage = 'saved' | 'applied' | 'interview' | 'offer' | 'rejected'
@@ -629,6 +704,8 @@ export interface JobApplication {
   notes: string
   created_at: string
   updated_at: string
+  /** Set once this application has spawned an interview loop. */
+  loop_id?: string | null
 }
 
 // Payload of the `jd_analyzed` action streamed by /jobs/analyze/stream.

@@ -15,6 +15,7 @@ from ddgs import DDGS
 
 from app.config import settings
 from app.db.mongo import PROJ, col_course_plans, col_interviews, col_learners
+from app.agents.bar import DEFAULT_BAR
 from app.hf.client import get_hf_client
 from app.hf.models import HF_MODELS
 from app.agents.json_utils import extract_json
@@ -183,7 +184,17 @@ async def create_course_plan(goal: str, user_id: str, emit: StepEmit = None) -> 
 
 
 async def start_interview(
-    plan_id: str, module_id: str, user_id: str, module_title: str, topics: list[str]
+    plan_id: str,
+    module_id: str,
+    user_id: str,
+    module_title: str,
+    topics: list[str],
+    *,
+    context: dict | None = None,
+    bar: float | None = None,
+    min_questions: int | None = None,
+    max_questions: int | None = None,
+    prior_questions: list[str] | None = None,
 ) -> dict:
     """Create an empty interview the live agent will drive.
 
@@ -191,6 +202,20 @@ async def start_interview(
     asks them one at a time and appends each to ``questions`` as it goes (see
     ``agents/interview_agent.py``). We snapshot the candidate's proficiency so the
     agent can calibrate difficulty from the first question.
+
+    One doc shape serves both interview flows. ``module_title`` / ``module_topics`` are
+    the generic *interview subject* fields: for a course module they hold the module's
+    title and topics; for a job-loop round they hold the round's title and its focus
+    skills. Keeping the names avoids churning the resume projection, the scorer and the
+    frontend for no behavioural gain — the caller says which flow it is via ``context``:
+
+      ``{"kind": "module"}``  — a course module interview (the default).
+      ``{"kind": "loop", "loop_id", "round_key", "round_kind", "company", "role"}``.
+
+    ``bar`` is the 0-10 pass threshold (``agents/bar.py``); ``min_questions`` /
+    ``max_questions`` override the platform-wide budget for a single round; and
+    ``prior_questions`` carries a previous attempt's questions so a retry does not ask
+    the same things again.
     """
     learner = await col_learners().find_one({"user_id": user_id}, PROJ)
     full_prof = (learner or {}).get("topic_proficiency_map") or {}
@@ -205,6 +230,11 @@ async def start_interview(
         "module_title": module_title,
         "module_topics": topics,
         "candidate_proficiency": proficiency,
+        "context": context or {"kind": "module"},
+        "bar": float(bar) if bar is not None else DEFAULT_BAR,
+        "min_questions": min_questions or settings.INTERVIEW_MIN_QUESTIONS,
+        "max_questions": max_questions or settings.INTERVIEW_MAX_QUESTIONS,
+        "prior_questions": prior_questions or [],
         "questions": [],  # appended by the agent, one per turn
         "answers": [],
         "turn_count": 0,  # questions asked so far (drives the hard cap)
@@ -233,10 +263,11 @@ def interview_state(interview: dict) -> dict:
 
     Used by the ``GET .../interview/{interview_id}`` read endpoint so a reloaded tab (or a
     dropped connection) can rebuild the screen mid-flight instead of starting over. The
-    fields are whitelisted on purpose: the learner sees the outstanding question and the
-    per-answer feedback they were already shown, never the internal calibration state
-    (``candidate_proficiency`` Elo, ``current_interrupt_id``) nor the final grader's
-    per-question rationale (``scoring_matrix``/``summary``, which the complete endpoint owns).
+    fields are whitelisted on purpose: the learner sees the outstanding question, the
+    per-answer feedback they were already shown, and the bar they are being graded
+    against — never the internal calibration state (``candidate_proficiency`` Elo,
+    ``current_interrupt_id``, ``prior_questions``) nor the final grader's per-question
+    rationale (``scoring_matrix``/``summary``, which the complete endpoint owns).
 
     ``status`` tells the client what to do next:
       - ``awaiting_answer`` — the agent is paused on ``current_question``; POST an answer.
@@ -295,12 +326,24 @@ def interview_state(interview: dict) -> dict:
         ],
         "answered_count": len(answers),
         "questions_asked": len(questions),
-        "max_questions": settings.INTERVIEW_MAX_QUESTIONS,
+        "max_questions": interview.get("max_questions")
+        or settings.INTERVIEW_MAX_QUESTIONS,
+        "bar": interview.get("bar", DEFAULT_BAR),
+        "round_key": (interview.get("context") or {}).get("round_key"),
+        "attempt": (interview.get("context") or {}).get("attempt", 1),
         "final_score": interview.get("final_score"),
         "passed": interview.get("passed"),
         "created_at": interview.get("created_at"),
         "completed_at": interview.get("completed_at"),
     }
+
+
+# Round kind → the ``course_planner.yaml`` section that grades it. Kinds not listed
+# here (including every module interview) grade with the default technical rubric.
+_EVAL_SECTIONS = {
+    "behavioral": "evaluate_answer_behavioral",
+    "system_design": "evaluate_answer_system_design",
+}
 
 
 async def evaluate_answer(
@@ -323,9 +366,12 @@ async def evaluate_answer(
         answer_preview=answer_preview,
     )
 
+    # A behavioural or system-design answer graded by the technical rubric scores badly
+    # for the wrong reasons, so the round kind selects the rubric.
+    round_kind = (interview.get("context") or {}).get("round_kind", "")
     prompt = render_prompt(
         "course_planner",
-        "evaluate_answer",
+        _EVAL_SECTIONS.get(round_kind, "evaluate_answer"),
         module_title=interview["module_title"],
         question_text=question["text"],
         expected_depth=question.get("expected_depth", "conceptual"),

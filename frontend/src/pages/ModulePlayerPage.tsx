@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import ReactMarkdown from 'react-markdown'
@@ -9,13 +9,30 @@ import { Icon } from '@/components/ui/Icon'
 import { Card } from '@/components/ui/Card'
 import toast from 'react-hot-toast'
 
-const SECTIONS = [
-  { label: 'Introduction',  id: 'introduction'  },
-  { label: 'Core Concepts', id: 'core-concepts'  },
-  { label: 'Examples',      id: 'examples'       },
-  { label: 'Practice',      id: 'practice'       },
-  { label: 'Summary',       id: 'summary'        },
-]
+/** Heading text → anchor id. Must match the `h2` renderer below or the TOC links go nowhere. */
+const slugify = (s: string) =>
+  s.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+
+/**
+ * Build the table of contents from the lesson's own `##` headings.
+ *
+ * This used to be five fixed entries (Introduction / Core Concepts / Examples / Practice /
+ * Summary) that had nothing to do with the generated body, so most links scrolled nowhere.
+ */
+function tableOfContents(body: string): { label: string; id: string }[] {
+  const out: { label: string; id: string }[] = []
+  const seen = new Set<string>()
+  for (const line of (body || '').split('\n')) {
+    const m = /^##\s+(.+?)\s*$/.exec(line)
+    if (!m) continue
+    const label = m[1].replace(/[*_`]/g, '').trim()
+    const id = slugify(label)
+    if (!label || !id || seen.has(id)) continue
+    seen.add(id)
+    out.push({ label, id })
+  }
+  return out
+}
 
 export default function ModulePlayerPage() {
   const { moduleId } = useParams<{ moduleId: string }>()
@@ -50,6 +67,8 @@ export default function ModulePlayerPage() {
     }
     wasGenerating.current = isGenerating
   }, [module])
+
+  const sections = useMemo(() => tableOfContents(module?.body ?? ''), [module?.body])
 
   const regenerateMutation = useMutation({
     mutationFn: () => contentAPI.regenerate(moduleId!),
@@ -155,7 +174,7 @@ export default function ModulePlayerPage() {
                 <ReactMarkdown
                   components={{
                     h2: ({ children }) => {
-                      const id = String(children).toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+                      const id = slugify(String(children))
                       return <h2 id={id} style={{ fontSize: 20, fontWeight: 600, marginTop: 32, marginBottom: 12, color: 'var(--ink-0)' }}>{children}</h2>
                     },
                     h3: ({ children }) => <h3 style={{ fontSize: 16, fontWeight: 600, marginTop: 20, marginBottom: 8 }}>{children}</h3>,
@@ -237,10 +256,11 @@ export default function ModulePlayerPage() {
           </div>
         </div>
 
-        {/* Table of contents */}
+        {/* Table of contents — real headings only; hidden entirely when the lesson has none. */}
+        {sections.length > 0 && (
         <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--line-1)' }}>
           <div className="caps fg-2" style={{ marginBottom: 8 }}>Contents</div>
-          {SECTIONS.map((s) => (
+          {sections.map((s) => (
             <button
               key={s.id}
               className="t-sm fg-1"
@@ -254,6 +274,7 @@ export default function ModulePlayerPage() {
             >{s.label}</button>
           ))}
         </div>
+        )}
 
         {/* Doubt CTA */}
         <div style={{ padding: 16 }}>

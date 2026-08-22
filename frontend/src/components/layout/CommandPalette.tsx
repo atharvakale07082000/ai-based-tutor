@@ -23,7 +23,7 @@ const CMD_ACTIONS = [
     items: [
       { id: 'ask',       label: 'Ask a doubt…',                  icon: 'chat',      tag: 'Learning Assistant', target: '/doubts' },
       { id: 'plan',      label: 'Plan a new course',             icon: 'plus',      tag: 'Learning Path',      target: '/courses' },
-      { id: 'interview', label: 'Start mock interview',          icon: 'interview', tag: 'Quiz Creator',       target: null },
+      { id: 'interview', label: 'Start mock interview',          icon: 'interview', tag: 'Interview Coach',    target: '/interview' },
       { id: 'progress',  label: 'View skill breakdown',          icon: 'target',    tag: null,           target: '/progress' },
     ],
   },

@@ -7,6 +7,7 @@ mutate global agent config, so authentication alone is not enough. Same gate as 
 
 Endpoints:
   GET  /admin/learners     — paginated learner list with proficiency + mood
+  GET  /admin/skill-gaps   — org-wide skill gap per topic, aggregated from real proficiency
   PUT  /admin/config       — update runtime agent config (quiz frequency, difficulty cap)
   GET  /admin/config       — read current agent config
   POST /admin/send-digest  — manually trigger the weekly progress digest for a user
@@ -15,6 +16,7 @@ Endpoints:
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.agents.progress import MASTERY_ELO
 from app.auth.jwt import require_superuser
 from app.db.mongo import PROJ, col_doubts, col_learners
 
@@ -79,6 +81,56 @@ async def get_learners(
         )
 
     return {"items": items, "total": len(items)}
+
+
+@router.get("/skill-gaps")
+async def get_skill_gaps(
+    limit: int = Query(10, ge=1, le=40),
+    user_id: str = Depends(require_superuser),
+):
+    """Org-wide skill gap per topic, aggregated across every learner's proficiency map.
+
+    "Gap" is the share of learners tracking a topic who have not yet mastered it
+    (Elo < ``MASTERY_ELO``) — so a high percentage means most people studying that topic
+    are still below the bar, which is what an operator wants to act on.
+
+    Aggregated in MongoDB rather than in Python: ``topic_proficiency_map`` is a
+    per-learner object, so ``$objectToArray`` unrolls it into one row per (learner, topic)
+    without pulling every learner document into memory.
+    """
+    pipeline = [
+        {"$match": {"topic_proficiency_map": {"$exists": True, "$ne": {}}}},
+        {"$project": {"kv": {"$objectToArray": "$topic_proficiency_map"}}},
+        {"$unwind": "$kv"},
+        {
+            "$group": {
+                "_id": "$kv.k",
+                "learners": {"$sum": 1},
+                "below": {"$sum": {"$cond": [{"$lt": ["$kv.v", MASTERY_ELO]}, 1, 0]}},
+                "avg_elo": {"$avg": "$kv.v"},
+            }
+        },
+        # A topic one person has touched is noise, not an org signal.
+        {"$match": {"learners": {"$gte": 2}}},
+        {"$sort": {"below": -1, "_id": 1}},
+        {"$limit": limit},
+    ]
+
+    # pymongo's async aggregate() returns a coroutine yielding the cursor — it must be
+    # awaited before the cursor can be drained.
+    cursor = await col_learners().aggregate(pipeline)
+    rows = await cursor.to_list(length=None)
+    items = [
+        {
+            "name": r["_id"],
+            "pct": round(r["below"] / r["learners"], 4),
+            "learners": r["learners"],
+            "below_mastery": r["below"],
+            "avg_elo": round(r["avg_elo"], 1),
+        }
+        for r in rows
+    ]
+    return {"items": items, "mastery_elo": MASTERY_ELO}
 
 
 @router.put("/config")

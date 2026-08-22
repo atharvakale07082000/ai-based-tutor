@@ -28,7 +28,7 @@ async def _get_proficiency(learner_id: str) -> dict:
         log.warning("get_proficiency_not_found", learner_id=learner_id)
         return {"proficiency": {}, "xp": 0, "streak": 0}
     return {
-        "proficiency": doc.get("topic_proficiency", {}),
+        "proficiency": doc.get("topic_proficiency_map", {}),
         "xp": doc.get("xp", 0),
         "streak": doc.get("streak", 0),
     }
@@ -83,7 +83,7 @@ async def _save_progress(
     await col_learners().update_one(
         {"id": learner_id},
         {
-            "$set": {f"topic_proficiency.{topic}": new_elo},
+            "$set": {f"topic_proficiency_map.{topic}": new_elo},
             "$inc": {"xp": xp_delta},
         },
         upsert=False,
@@ -119,7 +119,7 @@ async def _get_due_topics(learner_id: str) -> dict:
     from app.hf.spaced_repetition import compute_due_topics
 
     learner = await col_learners().find_one({"id": learner_id}, {"_id": 0}) or {}
-    topic_proficiency: dict[str, float] = learner.get("topic_proficiency", {})
+    proficiency: dict[str, float] = learner.get("topic_proficiency_map", {})
 
     # Build last_quiz_dates from quiz session records
     quiz_cursor = (
@@ -139,7 +139,7 @@ async def _get_due_topics(learner_id: str) -> dict:
             if topic not in last_quiz_dates or created_at > last_quiz_dates[topic]:
                 last_quiz_dates[topic] = created_at
 
-    due = compute_due_topics(topic_proficiency, last_quiz_dates)
+    due = compute_due_topics(proficiency, last_quiz_dates)
     log.info("get_due_topics_done", learner_id=learner_id, due_count=len(due))
     return {"due_topics": due}
 

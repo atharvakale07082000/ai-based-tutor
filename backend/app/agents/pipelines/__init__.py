@@ -16,11 +16,13 @@ capacity note *while* it stalls instead of a frozen timeline. Headless runs (no
 from app.agents.pipelines.course_gen import run_course_gen
 from app.agents.pipelines.interview_review import run_interview_review
 from app.agents.pipelines.jd_analyze import run_jd_analyze
+from app.agents.pipelines.loop_setup import run_loop_setup
 from app.agents.pipelines.quiz_gen import run_quiz_gen
 
 __all__ = [
     "run_course_gen",
     "run_interview_review",
     "run_jd_analyze",
+    "run_loop_setup",
     "run_quiz_gen",
 ]

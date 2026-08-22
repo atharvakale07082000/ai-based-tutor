@@ -112,13 +112,8 @@ export function TopBar() {
           Ask Atelier
         </Button>
 
-        <button
-          title="Notifications"
-          aria-label="Notifications"
-          style={{ padding: 6, color: 'var(--ink-2)', borderRadius: 'var(--r-1)', lineHeight: 0 }}
-        >
-          <Icon name="bell" size={14} />
-        </button>
+        {/* No notifications bell until there is a notifications surface to open. It had no
+            handler at all, so it read as a working control that silently did nothing. */}
 
         <button
           onClick={handleLogout}

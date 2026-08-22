@@ -36,15 +36,32 @@ class Settings(BaseSettings):
     # The two models are rotated on successive fallbacks.
     NVIDIA_API_KEY: str = ""
     NVIDIA_BASE_URL: str = "https://integrate.api.nvidia.com/v1"
-    NVIDIA_MODEL: str = "qwen/qwen3-next-80b-a3b-instruct"
+    # Also EOL'd 2026-07-27. While it stayed pinned here, every generation call paid a
+    # failed NVIDIA round-trip (410) before falling back to Together — a silent latency tax
+    # on quizzes, explanations and course plans.
+    NVIDIA_MODEL: str = "nvidia/nemotron-3-super-120b-a12b"
     NVIDIA_FALLBACK_MODEL: str = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
 
     # ── Strands agents (NVIDIA NIM via OpenAI-compatible endpoint) ───────────
     # The orchestrator routes/delegates; specialists run the per-domain agent loops.
-    # Both default to the proven NVIDIA_MODEL id (Qwen3 supports native tool-calling);
-    # swap via env without code changes if delegation quality disappoints.
-    NIM_ORCHESTRATOR_MODEL: str = "qwen/qwen3-next-80b-a3b-instruct"
-    NIM_SPECIALIST_MODEL: str = "qwen/qwen3-next-80b-a3b-instruct"
+    # Validated 2026-08-15 against the real orchestrator/specialist/interview loops, after
+    # qwen/qwen3-next-80b-a3b-instruct went end-of-life (410) on 2026-07-27.
+    # A replacement must clear all of these, not just chat well:
+    #   1. drive Strands STRUCTURED OUTPUT for routing. mistral-large-2 and mistral-nemotron
+    #      both fail and silently degrade to the keyword heuristic (reason == "heuristic
+    #      fallback" is the tell — it does not raise).
+    #   2. finish a specialist tool chain inside the token budget. Do NOT pick a chain-of-
+    #      thought model: llama-3.3-nemotron-super-49b-v1.5 treats the <reasoning> block as
+    #      licence to emit ~15k chars of third-person CoT, exhausts max_tokens, and returns
+    #      no answer at all — while streaming that CoT straight to the learner.
+    #   3. raise the interview agent's ask_candidate interrupt.
+    #   4. answer in seconds, not minutes. meta/llama-3.3-70b-instruct and openai/gpt-oss-120b
+    #      both timed out past 90s here.
+    # Known trade-off of the current pick: it will not emit the <reasoning> block once tools
+    # are bound, so the chat "Thinking…" panel stays empty. Correctness and latency were
+    # judged to matter more. Swap via env, but re-run all four checks first.
+    NIM_ORCHESTRATOR_MODEL: str = "nvidia/nemotron-3-super-120b-a12b"
+    NIM_SPECIALIST_MODEL: str = "nvidia/nemotron-3-super-120b-a12b"
 
     # Ask Atelier chat memory — Strands session persistence, keyed per chat thread.
     # AGENT_SESSIONS_DIR empty → OS temp dir (fine for local/single instance; point at a
@@ -71,7 +88,7 @@ class Settings(BaseSettings):
 
     # ── Quality evals (DeepEval) ─────────────────────────────────────────────
     # The DeepEval judge wraps the NVIDIA NIM client (OpenAI-compatible) — no new creds.
-    EVAL_JUDGE_MODEL: str = "qwen/qwen3-next-80b-a3b-instruct"
+    EVAL_JUDGE_MODEL: str = "nvidia/nemotron-3-super-120b-a12b"
     EVAL_THRESHOLD: float = 0.6  # default pass threshold for the DeepEval metrics
     EVALS_ONLINE_SAMPLING: bool = True  # master switch for random online eval sampling
     # Rate-limit safety: cap concurrent judge calls + bound the background eval backlog so online

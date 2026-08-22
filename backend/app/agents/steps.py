@@ -75,6 +75,16 @@ STEP_PLANS: dict[str, list[Step]] = {
         Step("match", "Comparing it against your skills"),
         Step("recommend", "Finding the fastest ways to close the gaps"),
     ],
+    "loop_setup": [
+        Step("research", "Looking into how this company actually interviews"),
+        Step("design", "Laying out the rounds you'll face"),
+        Step("calibrate", "Setting the bar each round is graded against"),
+    ],
+    "loop_debrief": [
+        Step("gather", "Pulling together how each round went"),
+        Step("assess", "Weighing your rounds against the bar for this role"),
+        Step("advise", "Working out what to fix first"),
+    ],
 }
 
 

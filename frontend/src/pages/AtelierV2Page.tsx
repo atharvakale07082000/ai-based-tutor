@@ -612,7 +612,9 @@ export default function AtelierV2Page() {
 
         <div className="eyebrow" style={{ margin: '20px 0 8px' }}>// about atelier</div>
         <div className="t-xs fg-3" style={{ lineHeight: 1.6, padding: '0 4px' }}>
-          Atelier shows its reasoning — how it's thinking through your question — as the answer streams in.
+          Six specialists share one thread, so you can move from a question to a quiz to a plan
+          without repeating yourself. When Atelier works something out before answering, it shows
+          you that thinking too.
         </div>
       </div>
 
@@ -635,7 +637,9 @@ export default function AtelierV2Page() {
           <Icon name="sparkle" size={14} style={{ color: 'var(--accent)' }} />
           <span className="t-md fg-0" style={{ fontWeight: 500 }}>AI Atelier</span>
           <Badge tone="warn" size="xs">Beta</Badge>
-          <Badge tone="pos" size="xs" dot>shows its reasoning</Badge>
+          {/* No "shows its reasoning" badge: the model emits the <reasoning> note on some turns
+              and not others, so an always-on claim promised a guarantee we cannot keep. The
+              panel below appears when there is reasoning and stays silent when there isn't. */}
           <span style={{ flex: 1 }} />
           <Button size="sm" variant="ghost" icon="plus" onClick={startNewChat}>
             New chat
@@ -671,7 +675,7 @@ export default function AtelierV2Page() {
                 What would you like to learn?
               </div>
               <div className="t-md fg-3" style={{ marginTop: 8 }}>
-                Ask me anything — you'll see every step of my reasoning as I work through it.
+                Ask me anything — I can explain a concept, build you a plan, or quiz you on it.
               </div>
             </div>
           )}
@@ -820,10 +824,11 @@ export default function AtelierV2Page() {
                       </div>
                     )}
 
-                    {/* Feedback row */}
+                    {/* Message actions. No "Helpful" button until there is somewhere to send
+                        the rating — it had no handler, so it collected nothing while looking
+                        like it did. */}
                     {!msg.streaming && msg.content && !msg.error && (
                       <div style={{ display: 'flex', gap: 4, marginTop: 12, flexWrap: 'wrap' }}>
-                        <Button size="xs" variant="outline" icon="check">Helpful</Button>
                         <Button
                           size="xs"
                           variant="ghost"

@@ -17,7 +17,6 @@ from app.agents.course_planner import (
 )
 from app.agents.interview_agent import stream_answer, stream_start
 from app.auth.jwt import get_current_user_id
-from app.config import settings
 from app.guardrails import check_topic, topic_reject_message
 from app.sse import SSE_DONE, sse_frame, sse_response, sse_stream_response
 
@@ -187,7 +186,8 @@ async def start_module_interview(
                 "type": "interview_started",
                 "interview_id": interview["interview_id"],
                 "module_title": module["title"],
-                "max_questions": settings.INTERVIEW_MAX_QUESTIONS,
+                "max_questions": interview["max_questions"],
+                "bar": interview["bar"],
             }
         )
         async for frame in _agent_sse(

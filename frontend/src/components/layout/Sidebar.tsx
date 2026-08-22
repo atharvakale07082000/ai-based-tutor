@@ -141,7 +141,12 @@ export function Sidebar() {
             aria-label="Toggle theme"
             onClick={toggleTheme}
             className="lg:hidden xl:inline-flex"
-            style={{ padding: 4, color: 'var(--ink-2)' }}
+            /* 24px minimum hit area (WCAG 2.5.8); the icon stays 14px. */
+            style={{
+              padding: 4, color: 'var(--ink-2)',
+              minWidth: 24, minHeight: 24,
+              alignItems: 'center', justifyContent: 'center',
+            }}
           >
             <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={14} />
           </button>

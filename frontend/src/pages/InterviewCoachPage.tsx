@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Icon } from '@/components/ui/Icon'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { coursesAPI, type CoursePlan, type CourseModule } from '@/lib/api'
+import { coursesAPI, loopsAPI, type CoursePlan, type CourseModule } from '@/lib/api'
 
 const STATUS_TONE: Record<CourseModule['interview_status'], 'pos' | 'warn' | 'neutral' | 'outline'> = {
   passed: 'pos',
@@ -30,6 +30,12 @@ export default function InterviewCoachPage() {
     staleTime: 1000 * 60 * 2,
   })
 
+  const { data: loops } = useQuery({
+    queryKey: ['loops'],
+    queryFn: () => loopsAPI.list().then((r) => r.data.loops),
+    staleTime: 1000 * 60 * 2,
+  })
+
   return (
     <div style={{ padding: '24px 28px', maxWidth: 1100, margin: '0 auto' }}>
       <div style={{ marginBottom: 20 }}>
@@ -37,6 +43,39 @@ export default function InterviewCoachPage() {
         <h1 className="display" style={{ fontSize: 38, fontWeight: 600, margin: 0, letterSpacing: '-0.03em' }}>Interview Coach</h1>
         <p className="t-md fg-2" style={{ marginTop: 6 }}>Practice a voice mock interview for any module in your learning paths — the AI asks questions, reviews your answers, and scores you against a rubric.</p>
       </div>
+
+      {/* Job loops first: practising for a role you actually applied to beats practising a module. */}
+      {loops && loops.length > 0 && (
+        <div style={{ marginBottom: 22 }}>
+          <div className="caps fg-2" style={{ marginBottom: 8, display: 'flex', justifyContent: 'space-between' }}>
+            <span>Job interview loops</span>
+            <button onClick={() => navigate('/tracker')} style={{ fontSize: 11, color: 'var(--accent)', background: 'none', border: 0, cursor: 'pointer', fontFamily: 'inherit' }}>Job Tracker →</button>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
+            {loops.map((loop) => {
+              const cleared = loop.rounds.filter((r) => r.status === 'passed').length
+              const next = loop.rounds.find((r) => r.status === 'available' || r.status === 'in_progress')
+              return (
+                <Card key={loop.loop_id} padding="sm" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6, alignItems: 'flex-start' }}>
+                    <div className="t-sm fg-0" style={{ fontWeight: 500, lineHeight: 1.3 }}>{loop.role || 'Interview'}</div>
+                    <Badge tone={loop.status === 'passed' ? 'pos' : loop.status === 'failed' ? 'warn' : 'outline'} size="xs">
+                      {cleared}/{loop.rounds.length} cleared
+                    </Badge>
+                  </div>
+                  <div className="t-xs fg-3" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <Icon name="briefcase" size={11} /> {loop.company || 'Company'}
+                    {loop.seniority && <span> · {loop.seniority}</span>}
+                  </div>
+                  <Button size="sm" variant={next ? 'signal' : 'outline'} icon="mic" onClick={() => navigate(`/loops/${loop.loop_id}`)}>
+                    {next ? `Continue: ${next.title}` : 'Review loop'}
+                  </Button>
+                </Card>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {isLoading && <p className="t-sm fg-3">Loading your modules…</p>}
 

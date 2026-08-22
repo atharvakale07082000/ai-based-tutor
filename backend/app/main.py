@@ -17,7 +17,7 @@ from starlette.middleware.gzip import GZipMiddleware
 from structlog.contextvars import bind_contextvars, clear_contextvars
 
 from app.config import settings
-from app.db.mongo import ensure_indexes, get_client
+from app.db.mongo import ensure_indexes, get_client, merge_stray_proficiency
 from app.logging_config import configure_logging
 from app.middleware.activity_logger import ActivityLoggingMiddleware
 from app.otel import current_trace_id, get_otel_tracer
@@ -33,6 +33,7 @@ from app.routers import (
     feed,
     health,
     hf,
+    interview_loops,
     jobs,
     leaderboard,
     learner,
@@ -79,6 +80,11 @@ async def lifespan(app: FastAPI):
 
     await ensure_indexes()
     log.info("mongo_indexes_ensured")
+
+    try:
+        await merge_stray_proficiency()
+    except Exception as e:  # noqa: BLE001 - never block startup on a data migration
+        log.warning("stray_proficiency_merge_failed", error=str(e)[:200])
 
     try:
         from app.auth.jwt import seed_superuser
@@ -178,6 +184,9 @@ app.include_router(session.router, prefix="/api/v1/session", tags=["session"])
 app.include_router(evals.router, prefix="/api/v1/evals", tags=["evals"])
 app.include_router(courses.router, prefix="/api/v1/courses", tags=["courses"])
 app.include_router(jobs.router, prefix="/api/v1/jobs", tags=["jobs"])
+app.include_router(
+    interview_loops.router, prefix="/api/v1/loops", tags=["interview-loops"]
+)
 app.include_router(feed.router, prefix="/api/v1/feed", tags=["feed"])
 app.include_router(
     leaderboard.router, prefix="/api/v1/leaderboard", tags=["leaderboard"]

@@ -15,6 +15,7 @@ import structlog
 
 from app.hf.client import get_hf_client
 from app.hf.models import HF_MODELS
+from app.agents.bar import DEFAULT_BAR
 from app.agents.json_utils import extract_json_array
 from app.prompts.loader import render_prompt
 
@@ -53,6 +54,7 @@ class ScoringState(TypedDict):
     module_topics: list[str]
     questions: list[dict]  # [{id, text, expected_depth}]
     transcriptions: list[dict]  # [{question_id, answer_text}]
+    bar: float  # 0-10 pass threshold (see agents/bar.py)
     analyses: list[dict]  # set by analyze_answers node
     scoring_matrix: list[dict]  # set by build_scoring_matrix node
     final_score: float  # 0-10, set by compute_final_score node
@@ -154,6 +156,7 @@ def _node_build_scoring_matrix(state: ScoringState) -> dict:
 def _node_compute_final_score(state: ScoringState) -> dict:
     """Compute final score out of 10 and generate a holistic summary."""
     matrix = state["scoring_matrix"]
+    bar = state["bar"]
     if not matrix:
         return {
             "final_score": 0.0,
@@ -178,9 +181,9 @@ def _node_compute_final_score(state: ScoringState) -> dict:
         log.error("scorer_summary_failed", error=str(e)[:200])
         summary = f"Average score: {avg:.1f}/10. Keep practising the key concepts."
     final_score = round(avg, 1)
-    passed = final_score >= 6.0
+    passed = final_score >= bar
 
-    log.info("scorer_final", score=final_score, passed=passed)
+    log.info("scorer_final", score=final_score, bar=bar, passed=passed)
     return {"final_score": final_score, "summary": summary, "passed": passed}
 
 
@@ -195,10 +198,14 @@ def run_scoring_agent(
     module_topics: list[str],
     questions: list[dict],
     transcriptions: list[dict],
+    bar: float = DEFAULT_BAR,
 ) -> dict:
     """Synchronous entry point — call via asyncio.to_thread in async contexts.
 
     Runs analyze → matrix → final score in sequence, threading a plain state dict.
+
+    ``bar`` is the 0-10 pass threshold: ``DEFAULT_BAR`` for a module interview, or the
+    round's seniority-calibrated bar for a job-loop round (see ``agents/bar.py``).
     """
     import signal
     import threading
@@ -224,6 +231,7 @@ def run_scoring_agent(
         "module_topics": module_topics,
         "questions": questions,
         "transcriptions": transcriptions,
+        "bar": bar,
         "analyses": [],
         "scoring_matrix": [],
         "final_score": 0.0,
@@ -244,4 +252,5 @@ def run_scoring_agent(
         "final_score": state["final_score"],
         "summary": state["summary"],
         "passed": state["passed"],
+        "bar": bar,
     }

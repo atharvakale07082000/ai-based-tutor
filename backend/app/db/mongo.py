@@ -10,9 +10,12 @@ app/db/mongo_sync.py instead.
 
 from __future__ import annotations
 
+import structlog
 from pymongo import ASCENDING, DESCENDING, AsyncMongoClient
 from pymongo.asynchronous.collection import AsyncCollection
 from pymongo.asynchronous.database import AsyncDatabase
+
+log = structlog.get_logger()
 
 _client: AsyncMongoClient | None = None
 
@@ -27,7 +30,7 @@ def get_client() -> AsyncMongoClient:
             serverSelectionTimeoutMS=5000,
             maxPoolSize=50,
             minPoolSize=5,
-            maxIdleTimeMS=30_000,
+            maxIdleTimeMS=30,
             compressors=["zlib"],
             zlibCompressionLevel=3,
         )
@@ -130,6 +133,15 @@ def col_job_applications() -> AsyncCollection:
     return get_db()["job_applications"]
 
 
+def col_interview_loops() -> AsyncCollection:
+    return get_db()["interview_loops"]
+
+
+def col_evidence() -> AsyncCollection:
+    """Append-only ledger of graded events. Never updated, never deleted."""
+    return get_db()["evidence"]
+
+
 # ─── Startup ──────────────────────────────────────────────────────────────────
 
 
@@ -184,3 +196,56 @@ async def ensure_indexes() -> None:
     await col_job_applications().create_index(
         [("learner_id", ASCENDING), ("updated_at", DESCENDING)]
     )
+    await col_interview_loops().create_index(
+        [("learner_id", ASCENDING), ("updated_at", DESCENDING)]
+    )
+    await col_evidence().create_index(
+        [
+            ("learner_id", ASCENDING),
+            ("skill", ASCENDING),
+            ("occurred_at", DESCENDING),
+        ]
+    )
+
+
+async def merge_stray_proficiency() -> None:
+    """Fold the legacy ``topic_proficiency`` field into ``topic_proficiency_map``.
+
+    The agent tools in ``app/tools/implementations/db_tools.py`` wrote Elo updates to
+    ``topic_proficiency`` while every router read ``topic_proficiency_map``, so
+    chat-driven progress silently landed in a field nothing read. The tools are fixed;
+    this recovers the orphaned values. Takes the higher Elo per topic so a fixed-path
+    update is never regressed by a stale stray one, then drops the stray field.
+
+    Idempotent — once merged there are no matching documents, so this is a no-op on
+    every subsequent boot.
+    """
+    cursor = col_learners().find(
+        {"topic_proficiency": {"$exists": True, "$ne": {}}},
+        {"_id": 0, "id": 1, "topic_proficiency": 1, "topic_proficiency_map": 1},
+    )
+    merged = 0
+    async for doc in cursor:
+        stray = doc.get("topic_proficiency") or {}
+        if not isinstance(stray, dict):
+            # Unexpected shape — drop it rather than risk corrupting the real map.
+            await col_learners().update_one(
+                {"id": doc["id"]}, {"$unset": {"topic_proficiency": ""}}
+            )
+            continue
+        canonical = doc.get("topic_proficiency_map") or {}
+        updates = {
+            f"topic_proficiency_map.{topic}": float(elo)
+            for topic, elo in stray.items()
+            if isinstance(elo, (int, float))
+            and float(elo) > float(canonical.get(topic, 0) or 0)
+        }
+        await col_learners().update_one(
+            {"id": doc["id"]},
+            {"$set": updates, "$unset": {"topic_proficiency": ""}}
+            if updates
+            else {"$unset": {"topic_proficiency": ""}},
+        )
+        merged += 1
+    if merged:
+        log.info("stray_proficiency_merged", learners=merged)

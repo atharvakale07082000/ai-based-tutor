@@ -25,6 +25,8 @@ const AdminPage          = lazy(() => import('@/pages/AdminPage'))
 const CoursePlannerPage  = lazy(() => import('@/pages/CoursePlannerPage'))
 const CourseDetailPage   = lazy(() => import('@/pages/CourseDetailPage'))
 const ModuleInterviewPage = lazy(() => import('@/pages/ModuleInterviewPage'))
+const InterviewLoopPage  = lazy(() => import('@/pages/InterviewLoopPage'))
+const LoopRoundPage      = lazy(() => import('@/pages/LoopRoundPage'))
 const AtelierV2Page      = lazy(() => import('@/pages/AtelierV2Page'))
 const FlashcardsPage     = lazy(() => import('@/pages/FlashcardsPage'))
 const ProfilePage        = lazy(() => import('@/pages/ProfilePage'))
@@ -177,6 +179,8 @@ export default function App() {
               <Route path="/profile" element={<PrivateRoute><ErrorBoundary fallbackRoute="/dashboard"><PageWrapper><ProfilePage /></PageWrapper></ErrorBoundary></PrivateRoute>} />
               <Route path="/reset-password" element={<ResetPasswordPage />} />
               <Route path="/tracker" element={<PrivateRoute><ErrorBoundary fallbackRoute="/dashboard"><PageWrapper><JobTrackerPage /></PageWrapper></ErrorBoundary></PrivateRoute>} />
+              <Route path="/loops/:loopId" element={<PrivateRoute><ErrorBoundary fallbackRoute="/tracker"><PageWrapper><InterviewLoopPage /></PageWrapper></ErrorBoundary></PrivateRoute>} />
+              <Route path="/loops/:loopId/rounds/:roundKey" element={<PrivateRoute><ErrorBoundary fallbackRoute="/tracker"><PageWrapper><LoopRoundPage /></PageWrapper></ErrorBoundary></PrivateRoute>} />
               <Route path="/login" element={<Navigate to="/" replace />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

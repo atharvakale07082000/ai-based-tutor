@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
+from app.agents.evidence import record_evidence
 from app.agents.progress import MASTERY_ELO, calculate_elo_update
 from app.agents.steps import StepTimeline
 from app.auth.jwt import get_current_learner, get_current_user_id
@@ -199,6 +200,20 @@ async def _grade_and_persist(
                 }
             },
         ),
+    )
+
+    # Ledger row for the graded topic. A quiz "clears the bar" when it was answered at
+    # mastery level, so the threshold is MASTERY_ELO on the same 0-1 scale as the score.
+    await record_evidence(
+        learner_id=learner["id"],
+        skill=quiz["topic"],
+        kind="quiz",
+        score_0_1=score,
+        bar_0_1=MASTERY_ELO / 1000,
+        source_collection="quiz_sessions",
+        source_id=quiz["id"],
+        context={"bloom_level": quiz.get("bloom_level", "")},
+        occurred_at=now,
     )
 
     log.info("quiz_submitted", quiz_id=quiz["id"], score=score, xp_delta=xp_delta)

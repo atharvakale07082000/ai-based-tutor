@@ -42,6 +42,9 @@ function SkillBar({ name, value }: { name: string; value: number }) {
 }
 
 
+/** Below this many ranked learners, a position on the board carries no information. */
+const MIN_RANKED_LEARNERS = 3
+
 export default function DashboardPage() {
   const navigate = useNavigate()
   const { name, xp, streak, topicProficiency } = useLearnerStore()
@@ -313,8 +316,15 @@ export default function DashboardPage() {
               <div key={t.topic} style={{ padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 10, borderTop: i ? '1px solid var(--line-1)' : 'none' }}>
                 <div className="t-sm fg-0" style={{ fontWeight: 500, flex: 1 }}>{t.topic}</div>
                 <span className="t-xs fg-3 mono">{Math.round(t.elo)} ELO</span>
+                {/* `urgency` measures how overdue the review is, NOT how weak the skill is —
+                    labelling it "Critical gap" put an alarming skill judgement on a scheduling
+                    signal, and every due topic got it. */}
                 <Badge size="xs" tone={t.urgency >= 0.8 ? 'neg' : t.urgency >= 0.5 ? 'warn' : 'outline'}>
-                  {t.days_since_last_quiz === null ? 'New' : t.urgency >= 0.8 ? 'Critical gap' : 'Practice due'}
+                  {t.days_since_last_quiz === null
+                    ? 'New'
+                    : t.urgency >= 0.8
+                      ? 'Overdue'
+                      : 'Due soon'}
                 </Badge>
               </div>
             )) : (
@@ -333,8 +343,17 @@ export default function DashboardPage() {
           <Card padding="none">
             <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--line-1)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <span className="caps" style={{ color: 'var(--ink-2)' }}>Leaderboard</span>
-              {yourRank && <span className="t-xs fg-3">You're #{yourRank}</span>}
+              {/* A rank is only meaningful against other people. With one or two learners on the
+                  board, "You're #1" is technically true and completely hollow. */}
+              {yourRank && board.length >= MIN_RANKED_LEARNERS && (
+                <span className="t-xs fg-3">You're #{yourRank}</span>
+              )}
             </div>
+            {board.length > 0 && board.length < MIN_RANKED_LEARNERS && (
+              <div className="t-xs fg-3" style={{ padding: '8px 14px' }}>
+                Ranking starts once a few more learners are active.
+              </div>
+            )}
             {board.slice(0, 5).map((entry, i) => (
               <div
                 key={entry.rank}

@@ -19,12 +19,17 @@
   --ink-0:  #15120D;
   --ink-1:  #3D372C;
   --ink-2:  #6B6452;
-  --ink-3:  #948B73;
+  /* ink-3 carries real information at 11-12px (nav section labels, XP, metadata), so it has
+     to clear WCAG AA 4.5:1 — the old #948B73 sat at 3.19:1 and failed everywhere it was used. */
+  --ink-3:  #706A5B;
+  /* ink-4 is decorative only (rules, dividers, disabled glyphs). Never put text on it. */
   --ink-4:  #B6AD93;
 
   --accent:       #A8553A;
   --accent-hover: #94472E;
-  --accent-soft:  #F0DACE;
+  /* Lightened from #F0DACE: accent text sat at 3.88:1 on the old tint (the "AI Pick" chips).
+     Adjusting the tint rather than the accent keeps the brand colour itself untouched. */
+  --accent-soft:  #FBF1EC;
   --accent-line:  #D4A992;
   /* On-accent button fill — kept separate from --accent so the decorative accent
      (links, rings, agent-quiz) stays vibrant while the button meets WCAG AA with
@@ -35,12 +40,17 @@
   /* SIGNAL — amber. Reserved for what's *yours*: ratings, live data, and the
      single primary action on a view. Terracotta stays the brand/link accent;
      amber is the thing the eye is meant to land on. */
-  --signal:       #C77D18;   /* text/icon on cream — darkened from #E8A13C for AA */
+  /* Darkened again from #C77D18, which still only reached 3.1:1 on paper-0 and 2.9:1 on a
+     card — short even of the 3:1 large-text bar it was carrying the readiness number at.
+     #A1620C clears 4.5:1 on paper-0/paper-1 so it works at any size. */
+  --signal:       #A1620C;   /* text/icon on cream */
   --signal-hover: #A8660C;
   --signal-soft:  #F7E6C4;
   --signal-line:  #E0B871;
-  --signal-btn:       #B4700E; /* amber button fill, white text clears AA on cream */
-  --signal-btn-hover: #9A5F09;
+  /* White text on the old #B4700E fill measured 3.99:1 — under AA for the 12px button label
+     this carries (the primary CTA on several views). #A1620C takes it to 4.92:1. */
+  --signal-btn:       #A1620C;
+  --signal-btn-hover: #8A5808;
   --on-signal:        #FFFFFF;
 
   /* CODE / EDITOR surface (Monaco + code panels). Light: warm ink slab. */
@@ -50,11 +60,15 @@
   --code-ink:   #EFE7D8;
   --code-faint: #9A8F79;
 
-  --pos:       #4F6F4A;
+  /* Status hues carry badge text on their own -soft fill, so each must clear AA against it.
+     Measured before darkening: warn 2.61, pos 4.38, neg 4.31 — all short of 4.5, with the
+     amber "N due" badge the worst offender. Hues are unchanged; only value moved.
+     (The dark theme's equivalents already pass at 7.9 / 6.8 / 5.8 and are left alone.) */
+  --pos:       #3F5A3B;
   --pos-soft:  #DCE5D5;
-  --warn:      #B5832C;
+  --warn:      #7E5810;
   --warn-soft: #F0E2BD;
-  --neg:       #A8423A;
+  --neg:       #93372F;
   --neg-soft:  #EFD5D2;
   --info:      #4A6B7A;
   --info-soft: #D8E0E5;
@@ -141,7 +155,9 @@
   --ink-0:   #EDE7D8;
   --ink-1:   #D3DAE2;
   --ink-2:   #8CA0B3;
-  --ink-3:   #5B7085;
+  /* Same AA requirement as the light theme — lightened from #5B7085 (3.22:1). */
+  --ink-3:   #8195A9;
+  /* Decorative only. */
   --ink-4:   #3A4A5C;
 
   /* Terracotta warmed toward the ink-blue ground so links/brand stay legible. */
@@ -149,9 +165,11 @@
   --accent-hover: #EC9E77;
   --accent-soft:  #2A1B14;
   --accent-line:  #4A2E22;
-  /* Darker fill so white button text clears AA on the CTA; hover brightens. */
-  --accent-btn:       #C56A44;
-  --accent-btn-hover: #E08A5F;
+  /* Darker fill so white button text clears AA on the CTA; hover brightens.
+     #C56A44 only reached 3.8:1 with white — short of the 4.5 this comment claimed.
+     #B25C38 measures 4.69:1. */
+  --accent-btn:       #B25C38;
+  --accent-btn-hover: #C56A44;
 
   /* SIGNAL — amber reads brilliantly on ink-blue; use full-strength here. */
   --signal:       #E8A13C;

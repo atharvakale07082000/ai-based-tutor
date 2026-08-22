@@ -117,22 +117,84 @@ class InterviewInterruptHook(HookProvider):
         event.cancel_tool = _format_answer(response)
 
 
+# ─── Question budget ──────────────────────────────────────────────────────────
+#
+# A loop round sets its own budget (a system-design round is one deep question; a
+# recruiter screen is several shallow ones). Module interviews carry no override and
+# fall back to the platform-wide settings, which is what they have always used.
+
+
+def _max_questions(interview: dict) -> int:
+    return int(interview.get("max_questions") or settings.INTERVIEW_MAX_QUESTIONS)
+
+
+def _min_questions(interview: dict) -> int:
+    return int(interview.get("min_questions") or settings.INTERVIEW_MIN_QUESTIONS)
+
+
 # ─── Agent builder ────────────────────────────────────────────────────────────
 
 
+# Round kind → the SKILL.md that carries its question-design and grading rubric. A
+# module interview (and any unknown kind) uses the general one.
+_ROUND_RUBRICS = {
+    "screen": "interview-round-screen",
+    "coding": "interview-round-coding",
+    "system_design": "interview-round-system-design",
+    "behavioral": "interview-round-behavioral",
+}
+
+
+def _rubric_text(round_kind: str) -> str:
+    """Load the rubric skill for this round kind, falling back to the general one."""
+    skills = load_all_skills()
+    skill = skills.get(_ROUND_RUBRICS.get(round_kind, "")) or skills.get(
+        "interview-coaching"
+    )
+    return skill.instructions if skill else ""
+
+
 def _system_prompt(interview: dict) -> str:
-    rubric = load_all_skills().get("interview-coaching")
-    rubric_text = rubric.instructions if rubric else ""
+    context = interview.get("context") or {}
+    round_kind = context.get("round_kind", "")
+    rubric_text = _rubric_text(round_kind)
     topics = (
         ", ".join((interview.get("module_topics") or [])[:8]) or "the module topics"
     )
     proficiency = interview.get("candidate_proficiency") or {}
-    max_q = settings.INTERVIEW_MAX_QUESTIONS
-    min_q = settings.INTERVIEW_MIN_QUESTIONS
+    max_q = _max_questions(interview)
+    min_q = _min_questions(interview)
+
+    if context.get("kind") == "loop":
+        company = context.get("company") or "the company"
+        role = context.get("role") or "the role"
+        header = (
+            f'You are conducting the "{interview.get("module_title", "")}" round of a live '
+            f"mock interview loop on Atelier for a {role} position at {company}.\n"
+            f"Focus skills for this round: {topics}."
+        )
+    else:
+        header = (
+            "You are conducting a live, adaptive technical mock interview on Atelier for "
+            f'the module "{interview.get("module_title", "")}".\n'
+            f"Module topics: {topics}."
+        )
+
+    # A retry must not re-ask the previous attempt's questions or the candidate is
+    # rehearsing answers rather than being assessed.
+    prior = [q for q in (interview.get("prior_questions") or []) if q][:12]
+    avoid_block = ""
+    if prior:
+        listed = "\n".join(f"- {q}" for q in prior)
+        avoid_block = (
+            "\n\n## Already asked in a previous attempt — do NOT repeat these\n"
+            f"{listed}\n"
+            "Ask different questions. Probing the same underlying concept from a genuinely "
+            "different angle is fine; re-asking the same question is not."
+        )
+
     return f"""## Role
-You are conducting a live, adaptive technical mock interview on Atelier for the module \
-"{interview.get("module_title", "")}".
-Module topics: {topics}.
+{header}
 Candidate proficiency (per-topic Elo, 0-1000; ~500 is average): {json.dumps(proficiency, default=str)}.
 
 ## How to run the interview
@@ -151,7 +213,7 @@ Candidate proficiency (per-topic Elo, 0-1000; ~500 is average): {json.dumps(prof
   choose and phrase good, discriminating questions and adapt to the candidate.
 
 Before each tool call you MAY include one short first-person `<reasoning>…</reasoning>` note (one sentence)
-on what you're probing for. Never reveal the answer.
+on what you're probing for. Never reveal the answer.{avoid_block}
 
 ## Question-design rubric (context for choosing and calibrating questions)
 {rubric_text}""".strip()
@@ -253,7 +315,7 @@ async def _drive(
         yield {
             "type": "question",
             **question,
-            "max_questions": settings.INTERVIEW_MAX_QUESTIONS,
+            "max_questions": _max_questions(interview),
         }
     else:
         await col_interviews().update_one(
@@ -306,7 +368,7 @@ async def stream_answer(
         "feedback": evaluation.get("feedback", ""),
         "key_points_covered": evaluation.get("key_points_covered", []),
         "answered_count": len(interview["answers"]),
-        "max_questions": settings.INTERVIEW_MAX_QUESTIONS,
+        "max_questions": _max_questions(interview),
     }
 
     # 2) Resume the paused agent with the answer + eval so it picks the next question.
@@ -315,17 +377,19 @@ async def stream_answer(
         yield {"type": "error", "message": "This interview is not awaiting an answer."}
         return
 
+    max_q = _max_questions(interview)
+    min_q = _min_questions(interview)
     turn_count = int(interview.get("turn_count", 1))
-    must_conclude = turn_count >= settings.INTERVIEW_MAX_QUESTIONS
+    must_conclude = turn_count >= max_q
     if must_conclude:
         note = (
-            f"You have asked {turn_count} of {settings.INTERVIEW_MAX_QUESTIONS} questions — "
+            f"You have asked {turn_count} of {max_q} questions — "
             "that was the final question. Call conclude now; do not ask another."
         )
-    elif turn_count < settings.INTERVIEW_MIN_QUESTIONS:
+    elif turn_count < min_q:
         note = (
             f"You have asked {turn_count} question(s); ask at least "
-            f"{settings.INTERVIEW_MIN_QUESTIONS} before you conclude."
+            f"{min_q} before you conclude."
         )
     else:
         note = None

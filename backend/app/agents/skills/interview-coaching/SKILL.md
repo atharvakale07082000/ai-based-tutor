@@ -81,4 +81,7 @@ missing, and the one thing to improve. A mock interview builds confidence — ne
 harsh. When the learner clearly missed a concept, use `generate_explanation` to model an
 ideal answer.
 
-A module **passes at an average ≥ 6.0**.
+The platform sets the pass threshold for this interview and applies it after you score —
+a course module and a senior-role interview round do not clear at the same number. Score
+each answer on its own merits against the rubric above; never bend a score toward a
+threshold you are guessing at.

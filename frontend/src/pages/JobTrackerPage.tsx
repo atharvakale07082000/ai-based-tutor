@@ -42,6 +42,7 @@ export default function JobTrackerPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [adding, setAdding] = useState(false)
+  const [buildingLoopFor, setBuildingLoopFor] = useState<string | null>(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ['jobs'],
@@ -61,6 +62,29 @@ export default function JobTrackerPage() {
   const removeJob = async (job: JobApplication) => {
     try { await jobsAPI.remove(job.id); refresh() }
     catch { toast.error('Could not delete the application') }
+  }
+
+  // Designing the loop researches the company and picks its rounds, so it streams a
+  // timeline rather than blocking on a spinner. We only need the terminal action here.
+  const buildLoop = async (job: JobApplication) => {
+    setBuildingLoopFor(job.id)
+    let loopId: string | null = null
+    try {
+      await streamSSE('/loops/stream', { job_id: job.id }, (event) => {
+        if (event.type === 'action' && event.kind === 'loop_created') {
+          loopId = String((event.payload as { loop_id: string }).loop_id)
+        } else if (event.type === 'error') {
+          toast.error(String(event.message ?? 'Could not design your interview loop'))
+        }
+      })
+      if (!loopId) throw new Error('no loop')
+      refresh()
+      navigate(`/loops/${loopId}`)
+    } catch {
+      toast.error('Could not design your interview loop')
+    } finally {
+      setBuildingLoopFor(null)
+    }
   }
 
   const openRecommendation = async (rec: JobRecommendation) => {
@@ -117,6 +141,9 @@ export default function JobTrackerPage() {
                       onMove={(s) => moveStage(job, s)}
                       onDelete={() => removeJob(job)}
                       onRecommendation={openRecommendation}
+                      onOpenLoop={() => navigate(`/loops/${job.loop_id}`)}
+                      onBuildLoop={() => buildLoop(job)}
+                      buildingLoop={buildingLoopFor === job.id}
                     />
                   ))}
                 </div>
@@ -130,12 +157,15 @@ export default function JobTrackerPage() {
 }
 
 function JobCard({
-  job, onMove, onDelete, onRecommendation,
+  job, onMove, onDelete, onRecommendation, onOpenLoop, onBuildLoop, buildingLoop,
 }: {
   job: JobApplication
   onMove: (stage: JobStage) => void
   onDelete: () => void
   onRecommendation: (rec: JobRecommendation) => void
+  onOpenLoop: () => void
+  onBuildLoop: () => void
+  buildingLoop: boolean
 }) {
   const [open, setOpen] = useState(false)
   const topGaps = job.skill_gaps.filter((g) => g.status !== 'have').slice(0, 3)
@@ -177,6 +207,18 @@ function JobCard({
           <Button size="xs" variant="ghost" onClick={() => setOpen((o) => !o)}>{open ? 'Hide' : 'Gaps'}</Button>
         )}
       </div>
+
+      {/* Practising the rounds this employer actually runs is the point of saving a job —
+          so it's a first-class action on the card, not buried in the gaps expander. */}
+      {job.loop_id ? (
+        <Button size="xs" variant="outline" icon="mic" full onClick={onOpenLoop}>
+          Interview loop
+        </Button>
+      ) : (
+        <Button size="xs" variant="signal" icon="mic" full onClick={onBuildLoop} disabled={buildingLoop}>
+          {buildingLoop ? 'Designing rounds…' : 'Practise interview'}
+        </Button>
+      )}
 
       {open && (
         <div style={{ borderTop: '1px solid var(--line-1)', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>

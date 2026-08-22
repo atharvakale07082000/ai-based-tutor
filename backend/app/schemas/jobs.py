@@ -65,3 +65,5 @@ class JobApplication(JobCreate):
     learner_id: str
     created_at: str
     updated_at: str
+    # Set once this application has spawned an interview loop (see agents/loops.py).
+    loop_id: str | None = None

@@ -14,17 +14,6 @@ import toast from 'react-hot-toast'
 
 const MOOD_EMOJI: Record<string, string> = { POSITIVE: '😊', NEGATIVE: '😟', NEUTRAL: '😐' }
 
-const TOPIC_GAPS = [
-  { name: 'Python',          pct: 0.42 },
-  { name: 'Machine Learning',pct: 0.35 },
-  { name: 'Statistics',      pct: 0.28 },
-  { name: 'Deep Learning',   pct: 0.22 },
-  { name: 'NLP',             pct: 0.18 },
-  { name: 'Data Viz',        pct: 0.15 },
-  { name: 'SQL',             pct: 0.12 },
-  { name: 'Cloud',           pct: 0.09 },
-]
-
 function AdminOverview() {
   const [search, setSearch] = useState('')
   const [config, setConfig] = useState({ quiz_frequency: 3, difficulty_ceiling: 80, escalation_threshold: 3 })
@@ -34,6 +23,14 @@ function AdminOverview() {
     queryFn: () => adminAPI.getLearners(search, 1).then((r) => r.data),
     staleTime: 1000 * 60,       // learner list: 1 min
     gcTime: 1000 * 60 * 5,
+  })
+
+  // Real org-wide gaps, aggregated server-side. This panel used to render eight
+  // hardcoded percentages as if they were live analytics.
+  const { data: gaps, isLoading: gapsLoading } = useQuery({
+    queryKey: ['admin', 'skillGaps'],
+    queryFn: () => adminAPI.getSkillGaps().then((r) => r.data),
+    staleTime: 1000 * 60 * 5,
   })
 
   const configMutation = useMutation({
@@ -56,15 +53,30 @@ function AdminOverview() {
 
       {/* Skill gap heatmap (simplified bar chart — no recharts dependency) */}
       <Card padding="md">
-        <div className="caps fg-2" style={{ marginBottom: 12 }}>Org Skill Gap Heatmap · learner count with gaps</div>
+        <div className="caps fg-2" style={{ marginBottom: 4 }}>Org Skill Gap · share of learners below mastery</div>
+        <div className="t-xs fg-3" style={{ marginBottom: 12 }}>
+          Topics tracked by 2+ learners, ranked by how many are still under {gaps?.mastery_elo ?? 700} Elo.
+        </div>
+
+        {gapsLoading && <span className="t-sm fg-3">Aggregating proficiency…</span>}
+
+        {!gapsLoading && (!gaps || gaps.items.length === 0) && (
+          <span className="t-sm fg-3">
+            Not enough data yet — gaps appear once at least two learners share a topic.
+          </span>
+        )}
+
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {TOPIC_GAPS.map((t) => (
-            <div key={t.name} style={{ display: 'grid', gridTemplateColumns: '140px 1fr 48px', gap: 10, alignItems: 'center' }}>
+          {gaps?.items.map((t) => (
+            <div key={t.name} style={{ display: 'grid', gridTemplateColumns: '140px 1fr 96px', gap: 10, alignItems: 'center' }}>
               <span className="t-sm fg-1" style={{ fontWeight: 500 }}>{t.name}</span>
               <div style={{ height: 8, background: 'var(--paper-3)', borderRadius: 'var(--r-pill)', overflow: 'hidden' }}>
                 <div style={{ width: `${t.pct * 100}%`, height: '100%', background: 'var(--ink-0)', borderRadius: 'var(--r-pill)' }} />
               </div>
-              <span className="t-xs fg-3 mono" style={{ textAlign: 'right' }}>{Math.round(t.pct * 100)}%</span>
+              {/* The raw counts matter: 100% of 2 learners is a very different signal from 100% of 40. */}
+              <span className="t-xs fg-3 mono" style={{ textAlign: 'right' }}>
+                {Math.round(t.pct * 100)}% · {t.below_mastery}/{t.learners}
+              </span>
             </div>
           ))}
         </div>

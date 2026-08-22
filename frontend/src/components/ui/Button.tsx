@@ -25,7 +25,9 @@ const buttonVariants = cva(
         danger: 'bg-neg-soft text-neg border-transparent hover:bg-neg-soft',
       },
       size: {
-        xs: 'h-[22px] px-2 text-[11px] gap-1',
+        // 24px is the WCAG 2.1 AA (2.5.8) minimum target size; xs sat at 22px and failed it
+        // everywhere it was used (message actions, Voice, round actions).
+        xs: 'h-6 px-2 text-[11px] gap-1',
         sm: 'h-[26px] px-2.5 text-[12px] gap-[5px]',
         md: 'h-[30px] px-3 text-[13px] gap-1.5',
         lg: 'h-[38px] px-4 text-[14px] gap-2',

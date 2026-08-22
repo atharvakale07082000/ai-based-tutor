@@ -122,7 +122,10 @@ def get_nim_model(role: str = "specialist") -> NIMModel:
         model_id=model_id,
         params={
             "temperature": 0.2,
-            "max_tokens": 1200,
+            # The default specialist model is a reasoning model: it spends tokens deliberating
+            # before the visible answer. At the old 1200 cap it hit MaxTokensReached mid-turn
+            # and failed the whole request, so the budget covers thinking + answer.
+            "max_tokens": 3000,
             # NIM-specific: disable chat-template "thinking" so answers stream directly
             # (mirrors ResilientGenerationClient._nvidia_extra_body).
             "extra_body": {"chat_template_kwargs": {"enable_thinking": False}},
