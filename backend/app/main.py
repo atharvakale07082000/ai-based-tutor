@@ -89,8 +89,11 @@ async def lifespan(app: FastAPI):
     try:
         from app.auth.jwt import seed_superuser
 
+        # seed_superuser() logs its own outcome (seeded / re-synced / skipped when the env
+        # vars are unset). Don't claim success here — it did that unconditionally, so a boot
+        # with no SUPERUSER_EMAIL logged "superuser_seed_skipped" and "superuser_seeded"
+        # back to back and the skip was invisible.
         await seed_superuser()
-        log.info("superuser_seeded")
     except Exception as e:  # noqa: BLE001 - never block startup on seeding
         log.warning("superuser_seed_failed", error=str(e)[:200])
 

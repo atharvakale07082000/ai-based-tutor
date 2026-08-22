@@ -125,11 +125,18 @@ class InterviewInterruptHook(HookProvider):
 
 
 def _max_questions(interview: dict) -> int:
-    return int(interview.get("max_questions") or settings.INTERVIEW_MAX_QUESTIONS)
+    # Floored at 1: a non-positive cap makes `turn_count >= max_q` true on the first turn,
+    # which force-concludes the round before it has asked anything.
+    return max(
+        1, int(interview.get("max_questions") or settings.INTERVIEW_MAX_QUESTIONS)
+    )
 
 
 def _min_questions(interview: dict) -> int:
-    return int(interview.get("min_questions") or settings.INTERVIEW_MIN_QUESTIONS)
+    # Clamped to the cap: a round configured with min > max would otherwise be told to
+    # "ask at least 5 and at most 2", which no model can satisfy.
+    floor = int(interview.get("min_questions") or settings.INTERVIEW_MIN_QUESTIONS)
+    return max(1, min(floor, _max_questions(interview)))
 
 
 # ─── Agent builder ────────────────────────────────────────────────────────────
@@ -284,10 +291,25 @@ async def _drive(
 
     if interrupts and not force_finish:
         payload = interrupts[0].reason or {}
+        question_text = str(payload.get("question", "") or "").strip()
+        if not question_text:
+            # The model paused on ask_candidate without supplying a question. Persisting the
+            # interrupt here would leave the interview "awaiting an answer" to a blank card
+            # the learner can never answer. Leave it untouched so the client can restart.
+            log.error(
+                "interview_blank_question",
+                interview_id=interview_id,
+                payload_keys=sorted(payload.keys()) if payload else [],
+            )
+            yield {
+                "type": "error",
+                "message": "The interviewer didn't send a question — please try again.",
+            }
+            return
         next_id = int(interview.get("turn_count", 0)) + 1
         question = {
             "id": next_id,
-            "text": str(payload.get("question", "")).strip(),
+            "text": question_text,
             "is_coding_question": bool(payload.get("is_coding")),
             "language": (payload.get("language") or None),
             "expected_depth": payload.get("expected_depth") or "conceptual",
@@ -318,6 +340,20 @@ async def _drive(
             "max_questions": _max_questions(interview),
         }
     else:
+        if not (interview.get("answers") or []):
+            # Concluded without a single scored answer. run_interview_review raises
+            # "No answers submitted", so arming awaiting_final here would hand the learner
+            # a "get your score" button that can only fail. Keep it restartable instead.
+            log.error(
+                "interview_concluded_empty",
+                interview_id=interview_id,
+                turns=interview.get("turn_count"),
+            )
+            yield {
+                "type": "error",
+                "message": "The interviewer ended before asking anything — please try again.",
+            }
+            return
         await col_interviews().update_one(
             {"interview_id": interview_id},
             {"$set": {"current_interrupt_id": None, "status": "awaiting_final"}},

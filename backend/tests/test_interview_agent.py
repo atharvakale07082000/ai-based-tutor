@@ -179,8 +179,13 @@ async def test_stream_start_asks_first_question(monkeypatch):
     assert update["$push"]["questions"]["is_coding_question"] is True
 
 
-async def test_stream_start_concludes_when_no_interrupt(monkeypatch):
-    """If the agent returns no interrupt, the turn finishes instead of emitting a question."""
+async def test_stream_start_reports_error_when_agent_never_asks(monkeypatch):
+    """No interrupt at start = nothing was asked, so the turn errors rather than "finishing".
+
+    A start turn has zero answers by construction, so marking it ``awaiting_final`` here
+    would offer a grade that ``run_interview_review`` can only reject ("No answers
+    submitted"). The client is told to retry instead.
+    """
     col = _mock_col(monkeypatch)
     events = [{"result": _FakeResult(interrupts=None, stop_reason="end_turn")}]
     monkeypatch.setattr(
@@ -188,8 +193,8 @@ async def test_stream_start_concludes_when_no_interrupt(monkeypatch):
     )
 
     out = [ev async for ev in ia.stream_start(_interview())]
-    assert [e["type"] for e in out][-1] == "finished"
-    assert col.update_one.call_args[0][1]["$set"]["status"] == "awaiting_final"
+    assert [e["type"] for e in out][-1] == "error"
+    assert col.update_one.await_count == 0
 
 
 # ── stream_answer ─────────────────────────────────────────────────────────────
@@ -411,3 +416,97 @@ async def test_get_interview_404_for_unknown_id(client, as_learner, monkeypatch)
     r = await client.get(_url("nope"))
     assert r.status_code == 404
     assert r.json()["detail"] == "Interview not found"
+
+
+# ── Edge cases: a misbehaving model must not strand the interview ─────────────
+#
+# The agent is an LLM, so `ask_candidate` can arrive malformed and `conclude` can fire
+# before a single question. Neither may leave a doc the UI offers to grade — the review
+# pipeline raises "No answers submitted", so an armed-but-empty interview is a dead end.
+
+
+@pytest.mark.parametrize(
+    "reason,label",
+    [
+        ({"question": "   ", "is_coding": False}, "whitespace-only question"),
+        ({"is_coding": True, "language": "python"}, "no question key at all"),
+        (None, "tool called with no input"),
+    ],
+)
+async def test_blank_question_is_rejected_not_streamed(monkeypatch, reason, label):
+    """A blank `ask_candidate` must not be persisted or shown as a question."""
+    col = _mock_col(monkeypatch)
+    interview = _interview()
+    agent = _FakeAgent([{"result": _FakeResult([_FakeInterrupt("int-1", reason)])}])
+
+    out = [w async for w in ia._drive(agent, "go", interview)]
+    kinds = [w["type"] for w in out]
+
+    assert "question" not in kinds, (
+        f"{label}: streamed an empty question to the learner"
+    )
+    assert "error" in kinds, f"{label}: failed silently instead of reporting"
+    assert col.update_one.await_count == 0, f"{label}: persisted a blank question"
+    # Nothing was asked, so nothing may claim to be awaiting an answer.
+    assert interview.get("current_interrupt_id") is None
+    assert interview.get("turn_count") == 0
+
+
+async def test_conclude_with_no_answers_does_not_arm_final_grading(monkeypatch):
+    """Concluding before any answer must leave the interview restartable, not gradeable."""
+    col = _mock_col(monkeypatch)
+    interview = _interview(answers=[])
+    agent = _FakeAgent([{"result": _FakeResult(None)}])
+
+    out = [w async for w in ia._drive(agent, "go", interview)]
+
+    assert "finished" not in [w["type"] for w in out], (
+        "told the client the interview finished when nothing was ever asked"
+    )
+    assert "error" in [w["type"] for w in out]
+    sets = [c.args[1].get("$set", {}) for c in col.update_one.await_args_list]
+    assert not any(s.get("status") == "awaiting_final" for s in sets), (
+        "armed final grading on an empty interview — run_interview_review raises there"
+    )
+
+
+async def test_conclude_with_answers_still_arms_final_grading(monkeypatch):
+    """Regression guard: the normal conclusion path is unchanged."""
+    col = _mock_col(monkeypatch)
+    interview = _interview(turn_count=3, answers=[{"question_id": 1, "score": 7}])
+    agent = _FakeAgent([{"result": _FakeResult(None)}])
+
+    out = [w async for w in ia._drive(agent, "go", interview)]
+
+    assert "finished" in [w["type"] for w in out]
+    sets = [c.args[1].get("$set", {}) for c in col.update_one.await_args_list]
+    assert any(s.get("status") == "awaiting_final" for s in sets)
+
+
+@pytest.mark.parametrize(
+    "over,expect_min,expect_max",
+    [
+        ({"min_questions": 5, "max_questions": 2}, 2, 2),  # misconfigured round
+        ({"max_questions": -3}, 1, 1),  # negative budget
+        ({"max_questions": 1, "min_questions": 1}, 1, 1),  # single-question round
+    ],
+)
+def test_question_budget_is_coerced_to_a_sane_range(over, expect_min, expect_max):
+    """A round's budget must never ask for more questions than it allows."""
+    interview = _interview(**over)
+    max_q = ia._max_questions(interview)
+    min_q = ia._min_questions(interview)
+
+    assert max_q >= 1, "a budget of zero or fewer questions can never ask anything"
+    assert min_q <= max_q, f"asked for at least {min_q} but capped at {max_q}"
+    assert (min_q, max_q) == (expect_min, expect_max)
+
+
+def test_system_prompt_never_states_a_contradictory_budget():
+    """The prompt must not tell the model 'at least 5 and at most 2'."""
+    prompt = ia._system_prompt(_interview(min_questions=5, max_questions=2))
+    import re
+
+    m = re.search(r"at least (\d+) and at most (\d+)", prompt)
+    assert m, "budget sentence not found — update this test if the wording moved"
+    assert int(m.group(1)) <= int(m.group(2)), f"contradictory budget: {m.group(0)}"

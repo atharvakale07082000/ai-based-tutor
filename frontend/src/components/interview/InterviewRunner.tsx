@@ -570,6 +570,10 @@ export default function InterviewRunner({
   const [restoredResult,     setRestoredResult]     = useState(false)
   // Mid-interview failure: the server still has everything, so we offer a real retry.
   const [recovery,           setRecovery]           = useState<{ message: string; action: 'resync' | 'complete' | 'restart' } | null>(null)
+  // True while an answer turn's SSE stream is still open. The score arrives before the
+  // agent has composed the next question, so without this the UI would treat that gap as
+  // "no more questions" and offer final scoring mid-interview.
+  const [turnStreaming,      setTurnStreaming]      = useState(false)
 
   const mediaRef       = useRef<MediaRecorder | null>(null)
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null)
@@ -787,6 +791,7 @@ export default function InterviewRunner({
     const qid = currentQuestion.id
     const coding = isCoding
     let gotEval = false
+    setTurnStreaming(true)
     try {
       // One turn: the answer is scored (evaluation event), then the agent resumes and streams the
       // NEXT question (appended) or a `finished` event — all before the stream resolves at [DONE].
@@ -835,6 +840,8 @@ export default function InterviewRunner({
         setRecovery({ message: 'We lost the connection while your answer was being scored. Your interview is saved on our side.', action: 'resync' })
         setPhase('error')
       }
+    } finally {
+      setTurnStreaming(false)
     }
   }
 
@@ -909,7 +916,12 @@ export default function InterviewRunner({
   }
 
   // The agent tells us when it's done (finished) or hands us a next question to advance to.
-  const isLastQuestion = finished || currentQIdx + 1 >= questions.length
+  // While the turn is still streaming, the next question may yet arrive, so "no question after
+  // this one" is not yet knowable — treating it as the end there would end an 8-question
+  // interview at question 1.
+  const nextReady = currentQIdx + 1 < questions.length
+  const awaitingNext = !finished && !nextReady && turnStreaming
+  const isLastQuestion = finished || (!nextReady && !turnStreaming)
 
   const handleNext = () => {
     window.speechSynthesis?.cancel()
@@ -1443,8 +1455,10 @@ export default function InterviewRunner({
                 )}
               </div>
 
-              <Button variant="primary" full iconRight="arrow" onClick={handleNext}>
-                {isLastQuestion ? 'Submit for Final Scoring' : 'Next Question'}
+              <Button variant="primary" full iconRight="arrow" onClick={handleNext} disabled={awaitingNext}>
+                {awaitingNext
+                  ? 'Preparing next question…'
+                  : isLastQuestion ? 'Submit for Final Scoring' : 'Next Question'}
               </Button>
             </div>
           )}

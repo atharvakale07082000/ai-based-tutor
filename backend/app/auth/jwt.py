@@ -142,6 +142,7 @@ async def seed_superuser() -> None:
                 }
             },
         )
+        log.info("superuser_resynced", email=email)
         return
 
     user_id = str(uuid.uuid4())
@@ -172,3 +173,4 @@ async def seed_superuser() -> None:
             "updated_at": now,
         }
     )
+    log.info("superuser_created", email=email)
