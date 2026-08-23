@@ -9,6 +9,11 @@ const buttonVariants = cva(
     'active:scale-[0.965] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer',
   {
     variants: {
+      // Emphasis rule — three filled variants exist because they are three different
+      // decisions, not three shades of one: `primary` is the page's single main action
+      // (ink), `signal` is the one amber "do this now" (ratings, key CTAs), `accent` is the
+      // brand-terracotta CTA reserved for Ask-Atelier-style entry points. Everything else
+      // is quieter: secondary > outline > ghost. `danger` is destructive only.
       variant: {
         primary: 'bg-ink-0 text-paper-0 border-ink-0 hover:bg-accent hover:border-accent',
         accent:
@@ -26,11 +31,13 @@ const buttonVariants = cva(
       },
       size: {
         // 24px is the WCAG 2.1 AA (2.5.8) minimum target size; xs sat at 22px and failed it
-        // everywhere it was used (message actions, Voice, round actions).
-        xs: 'h-6 px-2 text-[11px] gap-1',
-        sm: 'h-[26px] px-2.5 text-[12px] gap-[5px]',
-        md: 'h-[30px] px-3 text-[13px] gap-1.5',
-        lg: 'h-[38px] px-4 text-[14px] gap-2',
+        // everywhere it was used (message actions, Voice, round actions). Keep xs for dense
+        // table/message rows only — 111 callsites reached past the md default for xs/sm, which
+        // is why the interface read as uniformly tiny. Sizes track the 2026-08-23 type lift.
+        xs: 'h-6 px-2 text-[12px] gap-1',
+        sm: 'h-[28px] px-3 text-[13px] gap-[5px]',
+        md: 'h-[34px] px-3.5 text-[14px] gap-1.5',
+        lg: 'h-[40px] px-5 text-[15px] gap-2',
       },
       full: {
         true: 'w-full',

@@ -10,15 +10,14 @@ import { Button } from '@/components/ui/Button'
 import { Icon } from '@/components/ui/Icon'
 import { Skeleton } from '@/components/ui/Skeleton'
 
-const MASTERY_THRESHOLD = 700
 const MOOD_TONE: Record<string, 'pos' | 'neg' | 'neutral'> = { POSITIVE: 'pos', NEGATIVE: 'neg', NEUTRAL: 'neutral' }
 
 function eloToPercent(elo: number) {
   return Math.min(100, Math.max(0, elo / 10))
 }
 
-function eloBadge(elo: number): { label: string; tone: 'pos' | 'neutral' | 'warn' } {
-  if (elo >= MASTERY_THRESHOLD) return { label: 'mastered', tone: 'pos' }
+function eloBadge(elo: number, masteryElo: number): { label: string; tone: 'pos' | 'neutral' | 'warn' } {
+  if (elo >= masteryElo) return { label: 'mastered', tone: 'pos' }
   if (elo >= 500) return { label: 'mid', tone: 'neutral' }
   return { label: 'needs work', tone: 'warn' }
 }
@@ -92,6 +91,7 @@ export default function ProgressPage() {
   // Use API data when available, fall back to local store
   const proficiency = progress?.topic_proficiency ?? storedProficiency
   const xp = progress?.xp ?? storedXp
+  const masteryElo = progress?.mastery_elo ?? 700
   const streak = progress?.streak ?? storedStreak
   const totalMinutes = progress?.total_study_minutes ?? 0
   const quizAccuracy = progress?.quiz_accuracy ?? 0
@@ -106,7 +106,7 @@ export default function ProgressPage() {
       .sort((a, b) => b.elo - a.elo)
   }, [proficiency])
 
-  const masteredCount = skills.filter((s) => s.elo >= MASTERY_THRESHOLD).length
+  const masteredCount = skills.filter((s) => s.elo >= masteryElo).length
   const masteryPct = skills.length > 0 ? Math.round((masteredCount / skills.length) * 100) : 0
 
   // Keep the `?? []` fallback *inside* the memo: hoisting it would allocate a
@@ -134,8 +134,8 @@ export default function ProgressPage() {
     <div style={{ padding: '24px 28px', maxWidth: 1240, margin: '0 auto' }}>
       <div style={{ marginBottom: 18, display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
         <div>
-          <div className="eyebrow">Live readiness · updated now</div>
-          <h1 className="display" style={{ fontSize: 38, fontWeight: 600, margin: '4px 0 0', letterSpacing: '-0.03em' }}>Readiness</h1>
+          <div className="eyebrow">Live · updated now</div>
+          <h1 className="display" style={{ fontSize: 38, fontWeight: 600, margin: '4px 0 0', letterSpacing: '-0.03em' }}>Progress</h1>
         </div>
         <Button
           size="sm"
@@ -162,7 +162,7 @@ export default function ProgressPage() {
       </div>
 
       {/* Stat strip */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', border: '1px solid var(--line-1)', borderRadius: 'var(--r-3)', overflow: 'hidden', background: 'var(--paper-1)', marginBottom: 16 }}>
+      <div className="stat-row" style={{ border: '1px solid var(--line-1)', borderRadius: 'var(--r-3)', overflow: 'hidden', background: 'var(--paper-1)', marginBottom: 16, gap: 0 }}>
         {[
           { l: 'XP earned',    v: statsLoading ? null : xp.toLocaleString(),                      s: 'lifetime' },
           { l: 'Skills',       v: statsLoading ? null : String(skills.length),                    s: `${masteredCount} mastered` },
@@ -182,7 +182,7 @@ export default function ProgressPage() {
         ))}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 14 }}>
+      <div className="page-grid">
         {/* Skill mastery */}
         <Card padding="md">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
@@ -212,7 +212,7 @@ export default function ProgressPage() {
 
           {!loadingProgress && skills.map((s, i) => {
             const pct = eloToPercent(s.elo)
-            const badge = eloBadge(s.elo)
+            const badge = eloBadge(s.elo, masteryElo)
             return (
               <div
                 key={s.topic}
@@ -233,13 +233,13 @@ export default function ProgressPage() {
                     style={{
                       width: `${pct}%`,
                       height: '100%',
-                      background: s.elo >= MASTERY_THRESHOLD ? 'var(--pos)' : 'linear-gradient(90deg, var(--accent), var(--signal))',
+                      background: s.elo >= masteryElo ? 'var(--pos)' : 'linear-gradient(90deg, var(--accent), var(--signal))',
                       borderRadius: 'var(--r-pill)',
                       transition: 'width 0.6s var(--ease-out)',
                     }}
                   />
                 </div>
-                <span className="t-sm fg-0 mono tnum" style={{ textAlign: 'right' }}>{Math.round(s.elo)}</span>
+                <span className="t-sm fg-2" style={{ textAlign: 'right' }}>{Math.round((s.elo / masteryElo) * 100)}% of mastery</span>
                 <Badge size="xs" tone={badge.tone}>{badge.label}</Badge>
               </div>
             )
@@ -254,12 +254,18 @@ export default function ProgressPage() {
               <span className="caps fg-2">Activity · last 35 days</span>
               {loadingProgress && <Skeleton style={{ height: 14, width: 80 }} />}
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
-              {heatmap.map((d) => <HeatmapCell key={d.date} count={d.count} />)}
-            </div>
-            <div className="t-xs fg-3" style={{ marginTop: 8 }}>
-              {streak > 0 ? `${streak}-day streak` : 'Start a session to build your streak'}
-            </div>
+            {heatmap.some((d) => d.count > 0) ? (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
+                  {heatmap.map((d) => <HeatmapCell key={d.date} count={d.count} />)}
+                </div>
+                <div className="t-xs fg-3" style={{ marginTop: 8 }}>
+                  {streak > 0 ? `${streak}-day streak` : 'Start a session to build your streak'}
+                </div>
+              </>
+            ) : (
+              <div className="t-sm fg-3">No activity in the last 35 days yet — finish a quiz or a lesson and it will show up here.</div>
+            )}
           </Card>
 
           {/* Due topics (spaced repetition) */}
@@ -292,7 +298,7 @@ export default function ProgressPage() {
                 <span className="t-sm fg-1" style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {t.topic}
                 </span>
-                <span className="t-xs fg-3 mono">{Math.round(t.elo)}</span>
+                <span className="t-xs fg-3">{eloBadge(t.elo, masteryElo).label}</span>
                 <Button
                   size="xs"
                   variant="ghost"

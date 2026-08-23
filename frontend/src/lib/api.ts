@@ -374,6 +374,10 @@ export interface ProgressData {
   streak: number
   xp: number
   mood_timeline: Array<{ session_id: string; mood: string; date: string }>
+  /** 0-100 from graded evidence only; null when nothing has been graded yet. */
+  job_readiness: number | null
+  /** The Elo at/above which a topic counts as mastered — served so clients never hardcode it. */
+  mastery_elo: number
 }
 
 export interface DueTopic {

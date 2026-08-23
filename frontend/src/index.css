@@ -88,12 +88,15 @@
   --font-mono:    'Geist Mono', ui-monospace, 'JetBrains Mono', Menlo, monospace;
 
   /* type scale */
-  --t-xs:   11px; --t-xs-lh:   16px;
-  --t-sm:   12px; --t-sm-lh:   17px;
-  --t-base: 13px; --t-base-lh: 20px;
-  --t-md:   14px; --t-md-lh:   21px;
-  --t-lg:   16px; --t-lg-lh:   24px;
-  --t-xl:   19px; --t-xl-lh:   26px;
+  /* Scale lifted 2026-08-23: ~90% of the app's text sat at 11-12px, and the largest size in
+     use (16px) was what body copy should be. The floor moves up; the display sizes are
+     unchanged, so headings keep their proportion to the raised body. */
+  --t-xs:   12px; --t-xs-lh:   17px;
+  --t-sm:   14px; --t-sm-lh:   20px;
+  --t-base: 15px; --t-base-lh: 22px;
+  --t-md:   16px; --t-md-lh:   24px;
+  --t-lg:   18px; --t-lg-lh:   26px;
+  --t-xl:   21px; --t-xl-lh:   28px;
   --t-2xl:  24px; --t-2xl-lh:  30px;
   --t-3xl:  32px; --t-3xl-lh:  38px;
   --t-4xl:  44px; --t-4xl-lh:  48px;
@@ -208,18 +211,86 @@
   --ring-focus: 0 0 0 2px var(--paper-0), 0 0 0 4px var(--signal);
 }
 
+/* The same palette for viewers who never touch the toggle. The default "system"
+   setting stamps no data-theme at all, so without this block a dark-OS visitor got the
+   cream theme until they found the moon icon. Guarded so an explicit light choice wins. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+  --paper-0: #0E1620;
+  --paper-1: #14202D;
+  --paper-2: #182838;
+  --paper-3: #1E2E3E;
+  --line-1:  #1C2C3C;
+  --line-2:  #24374A;
+  --ink-0:   #EDE7D8;
+  --ink-1:   #D3DAE2;
+  --ink-2:   #8CA0B3;
+  /* Same AA requirement as the light theme — lightened from #5B7085 (3.22:1). */
+  --ink-3:   #8195A9;
+  /* Decorative only. */
+  --ink-4:   #3A4A5C;
+
+  /* Terracotta warmed toward the ink-blue ground so links/brand stay legible. */
+  --accent:       #E08A5F;
+  --accent-hover: #EC9E77;
+  --accent-soft:  #2A1B14;
+  --accent-line:  #4A2E22;
+  /* Darker fill so white button text clears AA on the CTA; hover brightens.
+     #C56A44 only reached 3.8:1 with white — short of the 4.5 this comment claimed.
+     #B25C38 measures 4.69:1. */
+  --accent-btn:       #B25C38;
+  --accent-btn-hover: #C56A44;
+
+  /* SIGNAL — amber reads brilliantly on ink-blue; use full-strength here. */
+  --signal:       #E8A13C;
+  --signal-hover: #F2B252;
+  --signal-soft:  #2A2214;
+  --signal-line:  #4A3A1E;
+  --signal-btn:       #E8A13C;
+  --signal-btn-hover: #F2B252;
+  --on-signal:        #201607;
+
+  --code-bg:    #0B1219;
+  --code-panel: #101B26;
+  --code-line:  #1E2E3E;
+  --code-ink:   #EDE7D8;
+  --code-faint: #5B7085;
+
+  --pos:       #7FB79A;
+  --pos-soft:  #16271F;
+  --warn:      #E0B457;
+  --warn-soft: #2B2413;
+  --neg:       #E07C72;
+  --neg-soft:  #2C1A18;
+  --info:      #6FB0C4;
+  --info-soft: #14252C;
+
+  --agent-curr:  #9E8FD6;
+  --agent-quiz:  #E8A13C;
+  --agent-prog:  #7FB79A;
+  --agent-doubt: #5FD0C4;
+
+  --shadow-0: 0 0 0 1px var(--line-1);
+  --shadow-1: 0 1px 2px rgba(0,0,0,0.4), 0 0 0 1px var(--line-1);
+  --shadow-2: 0 1px 2px rgba(0,0,0,0.5), 0 4px 12px rgba(0,0,0,0.4), 0 0 0 1px var(--line-1);
+  --shadow-3: 0 2px 4px rgba(0,0,0,0.5), 0 8px 24px rgba(0,0,0,0.5), 0 0 0 1px var(--line-1);
+  --shadow-4: 0 4px 8px rgba(0,0,0,0.6), 0 16px 48px rgba(0,0,0,0.6), 0 0 0 1px var(--line-2);
+  --ring-focus: 0 0 0 2px var(--paper-0), 0 0 0 4px var(--signal);
+}
+}
+
 /* DENSITY */
 :root[data-density="compact"] {
   --pad-row: 6px; --pad-card: 12px; --pad-section: 16px;
   --gap-tight: 6px; --gap-default: 10px; --gap-loose: 14px;
   --row-h: 24px; --row-h-md: 28px; --row-h-lg: 36px;
-  --t-base: 12px; --t-base-lh: 18px; --t-md: 13px; --t-md-lh: 19px;
+  --t-base: 14px; --t-base-lh: 20px; --t-md: 15px; --t-md-lh: 22px;
 }
 :root[data-density="spacious"] {
   --pad-row: 12px; --pad-card: 24px; --pad-section: 36px;
   --gap-tight: 12px; --gap-default: 16px; --gap-loose: 24px;
   --row-h: 36px; --row-h-md: 40px; --row-h-lg: 48px;
-  --t-base: 14px; --t-base-lh: 22px; --t-md: 15px; --t-md-lh: 23px;
+  --t-base: 16px; --t-base-lh: 24px; --t-md: 17px; --t-md-lh: 26px;
 }
 
 /* BASE RESET */
@@ -228,7 +299,11 @@ html, body, #root { height: 100%; margin: 0; }
 body {
   font-family: var(--font-sans);
   font-size: var(--t-base);
-  line-height: var(--t-base-lh);
+  /* Unitless on purpose. This was an absolute px value, which every descendant inherited
+     verbatim — so a 38px heading inherited a 22px line-height and its lines overlapped the
+     moment it wrapped. The .t-* classes still pair an explicit px line-height with their own
+     font-size, which is safe; only the inherited default has to scale. */
+  line-height: 1.5;
   color: var(--ink-1);
   background: var(--paper-0);
   -webkit-font-smoothing: antialiased;
@@ -265,21 +340,21 @@ input, textarea { font: inherit; color: inherit; }
 /* .serif is retained as the historical display hook — now Space Grotesk.
    .display is the preferred name going forward; both resolve to the same face. */
 .serif,
-.display { font-family: var(--font-display); letter-spacing: -0.02em; font-weight: 500; }
+.display { font-family: var(--font-display); letter-spacing: -0.02em; font-weight: 500; line-height: 1.12; text-wrap: balance; }
 .mono   { font-family: var(--font-mono); }
 .italic { font-style: italic; }
-.caps   { text-transform: uppercase; letter-spacing: var(--tracking-caps); font-size: 11px; font-weight: 500; color: var(--ink-2); }
+.caps   { text-transform: uppercase; letter-spacing: var(--tracking-caps); font-size: 12px; font-weight: 500; color: var(--ink-2); }
 
 /* Mono section marker — "// like this". Structural device carried in from the
    landing; encodes "this is a labelled channel", not decoration. */
 .eyebrow {
-  font-family: var(--font-mono); font-size: 11px; font-weight: 500;
+  font-family: var(--font-mono); font-size: 12px; font-weight: 500;
   letter-spacing: 0.06em; color: var(--ink-3);
 }
 /* Agent duty-code chip. */
 .callsign {
   display: inline-flex; align-items: center;
-  font-family: var(--font-mono); font-size: 10px; font-weight: 500;
+  font-family: var(--font-mono); font-size: 11px; font-weight: 500;
   letter-spacing: 0.1em; text-transform: uppercase;
   padding: 2px 7px; border-radius: var(--r-1);
   border: 1px solid var(--line-2); color: var(--ink-2);
@@ -287,7 +362,7 @@ input, textarea { font: inherit; color: inherit; }
 /* Tabular figures — ratings, counts, timers stay column-aligned. */
 .tnum { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum' 1; }
 /* Instrument-readout stat: a big display number under a mono label. */
-.readout-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); }
+.readout-label { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); }
 .readout-value { font-family: var(--font-display); font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--ink-0); line-height: 1; }
 
 .fg-0 { color: var(--ink-0); }
@@ -616,3 +691,39 @@ kbd, .kbd {
   color: var(--ink-1);
 }
 .prose-atelier tr:last-child td { border-bottom: none; }
+
+
+/* ============================================================
+   RESPONSIVE
+   The app shipped with exactly one media query (prefers-reduced-motion), so every
+   layout was desktop-only: two-column grids never collapsed, stat strips ran off the
+   edge, and the right-hand rail was simply cut off. Layout containers opt in via these
+   classes because the pages style inline.
+   ============================================================ */
+
+/* A row of metric tiles: wraps rather than overflowing, scrolls only as a last resort. */
+.stat-row { display: flex; gap: 10px; flex-wrap: wrap; }
+.stat-row > * { flex: 1 1 150px; min-width: 0; }
+
+/* The main content/rail split. */
+/* align-items:start so a short column sizes to its content instead of stretching to match
+   the tallest one — that stretch is why a one-row panel rendered ~600px tall. */
+.page-grid { display: grid; gap: 16px; align-items: start; }
+
+@media (min-width: 900px) {
+  .page-grid { grid-template-columns: var(--page-grid-cols, 1.6fr 1fr); }
+}
+
+@media (max-width: 899px) {
+  .page-grid { grid-template-columns: 1fr; }
+  .hide-narrow { display: none !important; }
+}
+
+@media (max-width: 640px) {
+  .page-pad { padding-left: 16px !important; padding-right: 16px !important; }
+  /* Two tiles per row rather than five crammed ones — a 5-up strip at 390px truncates
+     every label ("COACHING SESSION…") and leaves the numbers unreadable. */
+  .stat-row > * { flex: 1 1 calc(50% - 5px); }
+  /* Kanban-style column sets scroll as a unit instead of squeezing to nothing. */
+  .col-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+}

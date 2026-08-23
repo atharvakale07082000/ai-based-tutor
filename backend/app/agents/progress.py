@@ -25,3 +25,61 @@ def calculate_elo_update(
     """
     new_elo = current_elo + K_FACTOR * (score - expected_score)
     return max(0.0, min(1000.0, new_elo))
+
+
+def job_readiness(
+    topic_proficiency: dict[str, float] | None,
+    interviews: list[dict] | None,
+) -> float | None:
+    """How ready this learner is for their target role, 0-100, or None if unknowable.
+
+    Pure like the rest of this module: the caller supplies the evidence, so this stays
+    testable and free of Mongo. It reads only things the platform has actually *graded* —
+    topic mastery and finished interviews — never activity (topics added, sessions opened),
+    because activity is not achievement. The dashboard tile hid behind an invented
+    ``topics_tracked / 10`` figure before this existed; returning ``None`` is what lets the
+    UI show nothing rather than a 0% that reads as a verdict on a brand-new account.
+
+    Two components, blended when both exist:
+      * mastery  — share of tracked topics at/above ``MASTERY_ELO``
+      * interviews — mean of ``final_score / bar``, each round judged against the bar it was
+        actually set (a staff round and an intern round do not clear at the same number)
+
+    Interviews carry the larger weight: answering live under questioning is stronger evidence
+    than a proficiency score accumulated from quizzes.
+    """
+    from app.agents.bar import DEFAULT_BAR
+
+    prof = topic_proficiency or {}
+    mastery: float | None = None
+    if prof:
+        mastered = sum(1 for elo in prof.values() if (elo or 0) >= MASTERY_ELO)
+        mastery = mastered / len(prof)
+
+    graded = [
+        iv
+        for iv in (interviews or [])
+        if isinstance(iv, dict) and iv.get("final_score") is not None
+    ]
+    interview: float | None = None
+    if graded:
+        ratios = []
+        for iv in graded:
+            bar = iv.get("bar")
+            # A missing or nonsense bar means "the platform default", never a divide-by-zero.
+            bar = (
+                float(bar) if isinstance(bar, (int, float)) and bar > 0 else DEFAULT_BAR
+            )
+            ratios.append(min(1.0, max(0.0, float(iv["final_score"]) / bar)))
+        interview = sum(ratios) / len(ratios)
+
+    if mastery is None and interview is None:
+        return None
+    if mastery is None:
+        score = interview
+    elif interview is None:
+        score = mastery
+    else:
+        score = 0.4 * mastery + 0.6 * interview
+
+    return round(max(0.0, min(1.0, float(score))) * 100.0, 1)

@@ -105,7 +105,7 @@ export default function InterviewLoopPage() {
         {loop.role || 'Interview'} · {loop.company || 'Company'}
       </h1>
       <p className="t-md fg-2" style={{ marginTop: 6 }}>
-        {loop.process_summary || 'Practise the rounds this role is likely to put you through.'}
+        {loop.process_summary || 'Practice the rounds this role is likely to put you through.'}
       </p>
 
       <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap', alignItems: 'center' }}>

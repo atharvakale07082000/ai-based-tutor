@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
+import { Select } from '@/components/ui/Select'
 import { Icon } from '@/components/ui/Icon'
 import { ReasoningStream } from '@/components/agents/ReasoningStream'
 import { useAgentTimeline } from '@/hooks/useAgentTimeline'
@@ -124,13 +125,25 @@ export default function JobTrackerPage() {
           <Button variant="signal" icon="plus" onClick={() => setAdding(true)}>Add your first job</Button>
         </Card>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${STAGES.length}, minmax(0, 1fr))`, gap: 12, alignItems: 'start' }}>
+        <div
+          className="col-scroll"
+          style={{
+            display: 'grid',
+            // Empty stages keep a readable rail but stop claiming an equal share of the
+            // board — with four of five stages empty they used to occupy most of the screen.
+            gridTemplateColumns: STAGES
+              .map((c) => (jobs.some((j) => j.stage === c.id) ? 'minmax(200px, 1fr)' : 'minmax(104px, 0.45fr)'))
+              .join(' '),
+            gap: 12,
+            alignItems: 'start',
+          }}
+        >
           {STAGES.map((col) => {
             const colJobs = jobs.filter((j) => j.stage === col.id)
             return (
               <div key={col.id}>
-                <div className="caps fg-2" style={{ padding: '0 4px 8px', display: 'flex', justifyContent: 'space-between' }}>
-                  <span>{col.label}</span>
+                <div className="caps fg-2" style={{ padding: '0 4px 8px', display: 'flex', justifyContent: 'space-between', gap: 6 }}>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{col.label}</span>
                   <span className="fg-3">{colJobs.length}</span>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -195,14 +208,15 @@ function JobCard({
       )}
 
       <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-        <select
+        <Select
           value={job.stage}
           onChange={(e) => onMove(e.target.value as JobStage)}
           aria-label="Move stage"
-          style={{ flex: 1, fontSize: 12, padding: '3px 6px', borderRadius: 'var(--r-1)', background: 'var(--paper-2)', border: '1px solid var(--line-1)', color: 'var(--ink-1)', fontFamily: 'inherit' }}
+          size="xs"
+          style={{ flex: 1 }}
         >
           {STAGES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
-        </select>
+        </Select>
         {(job.recommendations.length > 0 || job.skill_gaps.length > 0) && (
           <Button size="xs" variant="ghost" onClick={() => setOpen((o) => !o)}>{open ? 'Hide' : 'Gaps'}</Button>
         )}
@@ -216,7 +230,7 @@ function JobCard({
         </Button>
       ) : (
         <Button size="xs" variant="signal" icon="mic" full onClick={onBuildLoop} disabled={buildingLoop}>
-          {buildingLoop ? 'Designing rounds…' : 'Practise interview'}
+          {buildingLoop ? 'Designing rounds…' : 'Practice interview'}
         </Button>
       )}
 

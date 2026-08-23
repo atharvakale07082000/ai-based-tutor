@@ -17,10 +17,12 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from app.agents.progress import MASTERY_ELO, job_readiness
 from app.auth.jwt import get_current_user_id
 from app.db.mongo import (
     PROJ,
     col_doubts,
+    col_interviews,
     col_learners,
     col_progress,
     col_quizzes,
@@ -49,8 +51,8 @@ async def get_progress(user_id: str = Depends(get_current_user_id)):
 
     learner_id = learner["id"]
 
-    # Parallelise all four independent collection reads now that we have learner_id.
-    records, quizzes, doubt_sessions, study_sessions = await asyncio.gather(
+    # Parallelise all five independent collection reads now that we have learner_id.
+    records, quizzes, doubt_sessions, study_sessions, interviews = await asyncio.gather(
         col_progress()
         .find({"learner_id": learner_id}, PROJ)
         .sort("recorded_at", 1)
@@ -62,6 +64,13 @@ async def get_progress(user_id: str = Depends(get_current_user_id)):
         col_doubts().find({"learner_id": learner_id}, PROJ).to_list(length=None),
         col_study_sessions()
         .find({"learner_id": learner_id}, PROJ)
+        .to_list(length=None),
+        # Interviews key on user_id, not learner_id (see the Evidence Ledger note in CLAUDE.md).
+        col_interviews()
+        .find(
+            {"user_id": user_id, "final_score": {"$ne": None}},
+            {"_id": 0, "final_score": 1, "bar": 1},
+        )
         .to_list(length=None),
     )
 
@@ -100,6 +109,13 @@ async def get_progress(user_id: str = Depends(get_current_user_id)):
         "streak": learner.get("streak", 0),
         "xp": learner.get("xp", 0),
         "mood_timeline": mood_timeline,
+        # Computed from graded evidence only, and None when there is none — the client shows
+        # nothing rather than a 0% that reads as a verdict on a new account.
+        "job_readiness": job_readiness(
+            learner.get("topic_proficiency_map") or {}, interviews
+        ),
+        # Served so the client never hardcodes 700 to decide what "mastered" means.
+        "mastery_elo": MASTERY_ELO,
     }
 
 

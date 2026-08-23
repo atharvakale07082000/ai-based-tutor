@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/Button'
+import { Select } from '@/components/ui/Select'
 import { Badge } from '@/components/ui/Badge'
 import { Icon } from '@/components/ui/Icon'
 import { ReasoningStream } from '@/components/agents/ReasoningStream'
@@ -347,18 +348,15 @@ function CodeEnvironment({ runCodeUrl, language, value, onChange }: CodeEnvProps
           borderBottom: '1px solid var(--code-line)',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <select
+            <Select
               value={selectedLang}
               onChange={(e) => setSelectedLang(e.target.value)}
               aria-label="Language"
-              style={{
-                fontSize: 11, fontFamily: 'var(--font-mono)', letterSpacing: '0.04em',
-                background: 'var(--code-bg)', color: 'var(--code-ink)', border: '1px solid var(--code-line)',
-                borderRadius: 4, padding: '2px 6px', cursor: 'pointer',
-              }}
+              tone="code"
+              size="xs"
             >
               {CODE_LANGUAGES.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
-            </select>
+            </Select>
           </div>
           {isRunnable ? (
             <button

@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { contentAPI, doubtsAPI, quizAPI, progressAPI, leaderboardAPI, learnerAPI } from '@/lib/api'
 import { useLearnerStore } from '@/stores/learnerStore'
@@ -16,7 +16,9 @@ import { EmptyState } from '@/components/ui/EmptyState'
 function Stat({ label, value, sub, signal }: { label: string; value: string; sub?: string; signal?: boolean }) {
   return (
     <div style={{
-      flex: 1, padding: '13px 15px 14px',
+      /* No inline `flex` — the .stat-row rule owns how these size, and an inline value
+         would beat the stylesheet and keep five tiles crammed onto a 390px screen. */
+      padding: '13px 15px 14px', minWidth: 0,
       background: 'var(--paper-1)', border: '1px solid var(--line-1)', borderRadius: 'var(--r-3)',
       borderTop: `2px solid ${signal ? 'var(--signal)' : 'var(--line-2)'}`,
     }}>
@@ -36,7 +38,7 @@ function SkillBar({ name, value }: { name: string; value: number }) {
       <div style={{ flex: 1, height: 6, background: 'var(--paper-3)', borderRadius: 3, overflow: 'hidden' }}>
         <div style={{ width: `${pct}%`, height: '100%', background: 'linear-gradient(90deg, var(--accent), var(--signal))', borderRadius: 3 }} />
       </div>
-      <span className="mono tnum t-xs fg-2" style={{ width: 34, textAlign: 'right' }}>{Math.round(value * 1000)}</span>
+      <span className="t-xs fg-2" style={{ width: 52, textAlign: 'right' }}>{Math.round(pct)}%</span>
     </div>
   )
 }
@@ -47,7 +49,7 @@ const MIN_RANKED_LEARNERS = 3
 
 export default function DashboardPage() {
   const navigate = useNavigate()
-  const { name, xp, streak, topicProficiency } = useLearnerStore()
+  const { name, xp: storedXp, streak: storedStreak, topicProficiency: storedProficiency } = useLearnerStore()
   const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false)
   const [loadingModuleId, setLoadingModuleId] = useState<string | null>(null)
 
@@ -64,6 +66,25 @@ export default function DashboardPage() {
     staleTime: 1000 * 30,        // doubt sessions: 30 s
     gcTime: 1000 * 60 * 5,
   })
+
+  // The dashboard used to read xp/streak/proficiency straight from the client store, which
+  // nothing hydrates from the server — so it showed 0s while /progress reported real values
+  // and the leaderboard below ranked the same user with XP the tile denied. One source now.
+  const { data: progress } = useQuery({
+    queryKey: ['progress'],
+    queryFn: () => progressAPI.get().then((r) => r.data),
+    staleTime: 1000 * 60,
+  })
+
+  const setLearner = useLearnerStore((st) => st.setLearner)
+  useEffect(() => {
+    if (!progress) return
+    setLearner({
+      xp: progress.xp,
+      streak: progress.streak,
+      topicProficiency: progress.topic_proficiency,
+    })
+  }, [progress, setLearner])
 
   const { data: dueTopicsData } = useQuery({
     queryKey: ['progress', 'due-topics'],
@@ -102,13 +123,21 @@ export default function DashboardPage() {
   const items = contentData?.items ?? []
   const sessions = sessionsData ?? []
   const dueTopics = (dueTopicsData?.due_topics ?? []).filter((t) => t.is_due).slice(0, 5)
+
+  // Server value wins; the store is only a pre-hydration placeholder.
+  const xp = progress?.xp ?? storedXp
+  const streak = progress?.streak ?? storedStreak
+  const topicProficiency = progress?.topic_proficiency ?? storedProficiency
+  const masteryElo = progress?.mastery_elo ?? 700
+  // null = nothing graded yet. Render nothing rather than a 0% that reads as a verdict.
+  const readiness = progress?.job_readiness ?? null
   const board = leaderboardData?.board ?? []
   const yourRank = leaderboardData?.your_rank
 
   return (
-    <div style={{ padding: '24px 28px', maxWidth: 1240, margin: '0 auto' }}>
+    <div className="page-pad" style={{ padding: '24px 28px', maxWidth: 1240, margin: '0 auto' }}>
       {/* Greeting */}
-      <div style={{ marginBottom: 20, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+      <div style={{ marginBottom: 20, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
         <div>
           <div className="eyebrow" style={{ marginBottom: 6 }}>
             {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
@@ -119,8 +148,10 @@ export default function DashboardPage() {
           </h1>
           <p className="t-md fg-2" style={{ marginTop: 4 }}>
             {learnerProfile?.target_role
-              ? <>Targeting <strong>{learnerProfile.target_role}</strong> · {streak}-day streak.</>
-              : <>You're on a {streak}-day streak. Keep building your readiness.</>}
+              ? <>Targeting <strong>{learnerProfile.target_role}</strong>{streak > 0 ? <> · {streak}-day streak.</> : '.'}</>
+              : streak > 0
+                ? <>You're on a {streak}-day streak. Keep it going.</>
+                : <>Answer a quiz or finish a lesson to start your streak.</>}
           </p>
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
@@ -130,13 +161,15 @@ export default function DashboardPage() {
       </div>
 
       {/* Stat row */}
-      <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
-        <Stat
-          label="Job Readiness"
-          value={learnerProfile?.job_readiness_score != null ? `${Math.round(learnerProfile.job_readiness_score)}%` : `${Math.min(Math.round((Object.keys(topicProficiency).length / 10) * 100), 100)}%`}
-          sub="toward your target role"
-          signal
-        />
+      <div className="stat-row" style={{ marginBottom: 16 }}>
+        {readiness != null && (
+          <Stat
+            label="Job Readiness"
+            value={`${Math.round(readiness)}%`}
+            sub="from graded work"
+            signal
+          />
+        )}
         <Stat label="Streak" value={String(streak)} sub="days · keep going!" />
         <Stat label="XP" value={xp.toLocaleString()} sub="lifetime" />
         <Stat label="Coaching sessions" value={String(sessions.length || 0)} sub="total" />
@@ -144,7 +177,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Main grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 16 }}>
+      <div className="page-grid">
         {/* Column 1 */}
         <div>
           {/* Career next-step card */}
@@ -269,7 +302,7 @@ export default function DashboardPage() {
           {/* Skill map */}
           <Card padding="md">
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <span className="caps" style={{ color: 'var(--ink-2)' }}>Role readiness by skill</span>
+              <span className="caps" style={{ color: 'var(--ink-2)' }}>Skill mastery</span>
               <span className="t-xs fg-3 mono">{Object.keys(topicProficiency).length} tracked</span>
             </div>
             {Object.entries(topicProficiency).slice(0, 6).map(([k, v]) => (
@@ -277,33 +310,13 @@ export default function DashboardPage() {
             ))}
             {Object.keys(topicProficiency).length === 0 && (
               <div className="t-xs fg-3" style={{ textAlign: 'center', padding: 8 }}>
-                {learnerProfile?.target_role ? `Complete interviews to build your ${learnerProfile.target_role} readiness map.` : 'Tracking your skills…'}
+                {learnerProfile?.target_role ? `Complete interviews to build your ${learnerProfile.target_role} readiness map.` : 'Take a quiz or an interview and your skills will appear here.'}
               </div>
             )}
             <div className="t-xs fg-3" style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid var(--line-1)', display: 'flex', alignItems: 'center', gap: 6 }}>
               <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--agent-prog)', display: 'inline-block' }} />
-              Updated after each interview · <a style={{ color: 'var(--accent)', cursor: 'pointer' }} onClick={() => navigate('/progress')}>View full readiness →</a>
+              Updated after each interview · <a style={{ color: 'var(--accent)', cursor: 'pointer' }} onClick={() => navigate('/progress')}>View full progress →</a>
             </div>
-          </Card>
-
-          {/* Streak & activity */}
-          <Card padding="md">
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-              <span className="caps" style={{ color: 'var(--ink-2)' }}>Your streak</span>
-              <a className="t-xs fg-2" style={{ cursor: 'pointer' }} onClick={() => navigate('/progress')}>Full activity →</a>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 6 }}>
-              <span className="display tnum" style={{ fontSize: 42, fontWeight: 600, letterSpacing: '-0.03em', color: streak > 0 ? 'var(--ink-0)' : 'var(--ink-3)' }}>{streak}</span>
-              <span className="t-sm fg-2">day{streak !== 1 ? 's' : ''} in a row</span>
-            </div>
-            {streak > 0 ? (
-              <div className="t-xs fg-2" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <Icon name="flame" size={11} style={{ color: 'var(--accent)' }} />
-                Keep it going — consistency beats intensity.
-              </div>
-            ) : (
-              <div className="t-xs fg-3">Complete a quiz or study session to start your streak.</div>
-            )}
           </Card>
 
           {/* Due for review */}
@@ -315,7 +328,7 @@ export default function DashboardPage() {
             {dueTopics.length > 0 ? dueTopics.map((t, i) => (
               <div key={t.topic} style={{ padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 10, borderTop: i ? '1px solid var(--line-1)' : 'none' }}>
                 <div className="t-sm fg-0" style={{ fontWeight: 500, flex: 1 }}>{t.topic}</div>
-                <span className="t-xs fg-3 mono">{Math.round(t.elo)} ELO</span>
+                <span className="t-xs fg-3">{t.elo >= masteryElo ? 'mastered' : t.elo >= 500 ? 'mid' : 'needs work'}</span>
                 {/* `urgency` measures how overdue the review is, NOT how weak the skill is —
                     labelling it "Critical gap" put an alarming skill judgement on a scheduling
                     signal, and every due topic got it. */}

@@ -6,7 +6,7 @@ import { AgentPill } from '@/components/ui/AgentPill'
 import { Avatar } from '@/components/ui/Avatar'
 import { useLearnerStore } from '@/stores/learnerStore'
 import { useAgentStore } from '@/stores/agentStore'
-import { useThemeStore } from '@/stores/themeStore'
+import { resolveTheme, useThemeStore } from '@/stores/themeStore'
 import { useCmdkStore } from '@/stores/cmdkStore'
 import { useUiStore } from '@/stores/uiStore'
 import { authAPI, setAccessToken } from '@/lib/api'
@@ -36,7 +36,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     group: 'Insights',
     items: [
-      { id: '/progress',   label: 'Readiness',  icon: 'progress' },
+      { id: '/progress',   label: 'Progress',   icon: 'progress' },
       { id: '/flashcards', label: 'Flashcards', icon: 'cards' },
     ],
   },
@@ -69,6 +69,7 @@ export function Sidebar() {
     : NAV_GROUPS
   const agents = useAgentStore((s) => s.agents)
   const { theme, toggleTheme } = useThemeStore()
+  const shownTheme = resolveTheme(theme)
   const openCmdk = useCmdkStore((s) => s.setOpen)
   const sidebarOpen = useUiStore((s) => s.sidebarOpen)
   const setSidebarOpen = useUiStore((s) => s.setSidebarOpen)
@@ -148,7 +149,7 @@ export function Sidebar() {
               alignItems: 'center', justifyContent: 'center',
             }}
           >
-            <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={14} />
+            <Icon name={shownTheme === 'dark' ? 'sun' : 'moon'} size={14} />
           </button>
         </div>
 

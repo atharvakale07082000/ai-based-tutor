@@ -184,7 +184,7 @@ export default function OnboardingPage() {
           {([
             { kind: 'curr',  label: 'Career Planner',    desc: 'Mapping role requirements' },
             { kind: 'quiz',  label: 'Interview Coach',   desc: 'Loading question banks' },
-            { kind: 'prog',  label: 'Readiness Tracker', desc: 'Setting skill baseline' },
+            { kind: 'prog',  label: 'Progress Tracker', desc: 'Setting skill baseline' },
             { kind: 'doubt', label: 'Career Assistant',  desc: 'Preparing coaching context' },
           ] as const).map((a, i) => (
             <div key={a.kind} style={{ textAlign: 'center', animation: `blink 1.6s ease-in-out ${i * 0.2}s infinite`, padding: '12px 16px', background: 'var(--paper-1)', border: '1px solid var(--line-1)', borderRadius: 'var(--r-3)', minWidth: 160 }}>
