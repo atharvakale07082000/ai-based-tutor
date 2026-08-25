@@ -7,6 +7,7 @@ import asyncio
 import structlog
 
 from app.agents.steps import StepEmit, StepTimeline, step_emitter
+from app.observability import traced_pipeline
 
 log = structlog.get_logger()
 
@@ -23,7 +24,15 @@ async def run_course_gen(goal: str, user_id: str, emit: StepEmit = None) -> dict
 
     tl = StepTimeline("course_plan")
 
-    async with step_emitter(emit) as _e:
+    async with (
+        traced_pipeline(
+            "generate-course-plan",
+            input={"goal": goal},
+            user_id=user_id,
+            tags=["course-gen"],
+        ) as root,
+        step_emitter(emit) as _e,
+    ):
         await _e(tl.start("research"))
         research = await asyncio.to_thread(_search_web, goal)
         await _e(tl.done("research"))
@@ -45,4 +54,11 @@ async def run_course_gen(goal: str, user_id: str, emit: StepEmit = None) -> dict
             )
         )
         await _e(tl.done("finalize"))
+        root.update(
+            output={
+                "plan_id": plan["plan_id"],
+                "title": plan.get("title"),
+                "modules": [m.get("title") for m in plan.get("modules") or []],
+            }
+        )
         return plan

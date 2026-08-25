@@ -347,3 +347,41 @@ def test_guardrail_hook_allows_normal_args():
     event = _FakeToolEvent({"question": "what is a python list comprehension"})
     hook._screen_tool_args(event)
     assert event.cancel_tool is False
+
+
+def test_grounding_collected_from_tool_result_message_event():
+    """Grounding must come from the event `stream_async` actually yields.
+
+    Regression: Strands marks `ToolResultEvent.is_callback_event = False`, so the
+    `{"type": "tool_result"}` shape never leaves the event loop — only
+    `ToolResultMessageEvent` (`{"message": {...}}`) does. The adapter only handled the
+    former, so `TraceState.grounding` was silently always empty in production and the
+    online faithfulness eval had nothing to grade against. The other tests in this file
+    feed the synthetic `tool_result` dict directly and therefore could not catch it.
+    """
+    from app.agents.stream_adapter import TraceState, translate_event
+
+    state = TraceState()
+    state.tools["tu_1"] = "get_proficiency"
+    wire = translate_event(
+        {
+            "message": {
+                "role": "user",
+                "content": [
+                    {
+                        "toolResult": {
+                            "toolUseId": "tu_1",
+                            "status": "success",
+                            "content": [{"json": {"python": 812}}],
+                        }
+                    }
+                ],
+            }
+        },
+        state,
+    )
+
+    assert state.grounding, "tool payload must be captured as grounding"
+    assert "812" in state.grounding[0]
+    # The mechanical tool workflow still never reaches the learner.
+    assert all(e.get("type") != "tool_result" for e in wire)

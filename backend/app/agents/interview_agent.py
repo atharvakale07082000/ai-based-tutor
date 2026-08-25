@@ -33,6 +33,12 @@ from strands.session.file_session_manager import FileSessionManager
 
 from app.agents.hooks import GuardrailHook
 from app.agents.model import get_nim_model
+from app.observability import (
+    observation,
+    score_current_trace,
+    trace_attributes,
+    traced_pipeline,
+)
 from app.agents.skills import load_all_skills
 from app.agents.stream_adapter import TraceState, translate_event
 from app.config import settings
@@ -367,14 +373,45 @@ async def _drive(
         yield {"type": "finished"}
 
 
+def _interview_trace_attrs(interview: dict) -> dict:
+    """Shared Langfuse attributes for one interview's turns.
+
+    The interview id is the session: every turn is its own trace, and the session view
+    replays the whole interview in order. Round/company live in metadata so a loop
+    round can be told apart from a module interview when filtering.
+    """
+    context = interview.get("context") or {}
+    return {
+        "session_id": interview["interview_id"],
+        "user_id": interview.get("user_id"),
+        "tags": ["interview", context.get("kind") or "module"],
+        "metadata": {
+            "subject": interview.get("module_title"),
+            "round_kind": context.get("round_key"),
+            "company": context.get("company"),
+            "bar": interview.get("bar"),
+        },
+    }
+
+
 async def stream_start(interview: dict) -> AsyncIterator[dict]:
     """Open an interview: stream the agent to its first question."""
-    agent = build_interview_agent(interview)
-    prompt = (
-        "Begin the interview. Ask your first question now by calling ask_candidate."
-    )
-    async for wire in _drive(agent, prompt, interview):
-        yield wire
+    attrs = _interview_trace_attrs(interview)
+    async with traced_pipeline(
+        "interview-open",
+        input={"subject": interview.get("module_title")},
+        **attrs,
+    ) as root:
+        agent = build_interview_agent(interview)
+        prompt = (
+            "Begin the interview. Ask your first question now by calling ask_candidate."
+        )
+        asked = ""
+        async for wire in _drive(agent, prompt, interview):
+            if wire.get("type") == "question":
+                asked = wire.get("question", "")
+            yield wire
+        root.update(output={"question": asked})
 
 
 async def stream_answer(
@@ -383,6 +420,28 @@ async def stream_answer(
     """Score the submitted answer (tuned rubric), then resume the agent for the next question."""
     from app.agents.course_planner import evaluate_answer
 
+    attrs = _interview_trace_attrs(interview)
+    with (
+        observation(
+            "interview-turn",
+            input={"question_id": question_id, "answer": answer_text},
+        ) as root,
+        trace_attributes(trace_name="interview-turn", **attrs),
+    ):
+        async for wire in _answer_turn(
+            interview, question_id, answer_text, root, evaluate_answer
+        ):
+            yield wire
+
+
+async def _answer_turn(
+    interview: dict,
+    question_id: int,
+    answer_text: str,
+    root,
+    evaluate_answer,
+) -> AsyncIterator[dict]:
+    """Body of one answer turn, wrapped by ``stream_answer``'s trace."""
     interview_id = interview["interview_id"]
 
     # 1) Calibrated per-answer score (unchanged pipeline; persists into answers[]).
@@ -406,6 +465,15 @@ async def stream_answer(
         "answered_count": len(interview["answers"]),
         "max_questions": _max_questions(interview),
     }
+    # The per-answer grade is this trace's quality signal — a score, because it is
+    # only known after the turn and is what you chart answer quality by.
+    score_current_trace("answer-score", evaluation.get("score"))
+    root.update(
+        output={
+            "score": evaluation.get("score"),
+            "feedback": evaluation.get("feedback", ""),
+        }
+    )
 
     # 2) Resume the paused agent with the answer + eval so it picks the next question.
     cur_id = interview.get("current_interrupt_id")

@@ -194,6 +194,29 @@ def translate_event(
             events.append(action)
         return events
 
+    # Tool results as a conversation message — this is what `stream_async` actually
+    # yields. The `tool_result` branch above is NOT reachable from a live agent stream:
+    # Strands marks `ToolResultEvent.is_callback_event = False`, so it never leaves the
+    # event loop, while `ToolResultMessageEvent` (`{"message": ...}`) does. The branch
+    # above is kept because direct `translate_event` callers still feed that shape.
+    # Without this, `state.grounding` was always empty in production and the faithfulness
+    # eval had nothing to grade against.
+    message = event.get("message")
+    if isinstance(message, dict):
+        for block in message.get("content") or []:
+            tool_result = block.get("toolResult") if isinstance(block, dict) else None
+            if not isinstance(tool_result, dict):
+                continue
+            tool_id = tool_result.get("toolUseId", "")
+            name = state.tools.get(tool_id, "tool")
+            payload = _tool_result_payload(tool_result)
+            state.add_grounding(payload)
+            action = action_for_tool(name, payload)
+            if action:
+                events.append(action)
+        if events:
+            return events
+
     # Model text chunk → split into reasoning vs answer tokens.
     if "data" in event and event.get("data"):
         events.extend(_route_text(state, str(event["data"]), forward_tokens))

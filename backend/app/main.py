@@ -20,6 +20,7 @@ from app.config import settings
 from app.db.mongo import ensure_indexes, get_client, merge_stray_proficiency
 from app.logging_config import configure_logging
 from app.middleware.activity_logger import ActivityLoggingMiddleware
+from app.observability import init_observability, shutdown_observability
 from app.otel import current_trace_id, get_otel_tracer
 from app.routers import (
     admin,
@@ -70,6 +71,10 @@ async def _mongo_keepalive():
 async def lifespan(app: FastAPI):
     # Initialise OpenTelemetry (no-op if OTEL_EXPORTER_OTLP_ENDPOINT is unset)
     get_otel_tracer()
+    # Langfuse attaches its span processor to whatever tracer provider is global, so it
+    # must come *after* get_otel_tracer() installs one, and before the first agent call
+    # (Strands caches the provider on its module-level tracer at first use).
+    init_observability()
 
     loop = asyncio.get_event_loop()
     executor = concurrent.futures.ThreadPoolExecutor(
@@ -100,6 +105,9 @@ async def lifespan(app: FastAPI):
     task = asyncio.create_task(_mongo_keepalive())
     yield
     task.cancel()
+    # Spans are buffered in the background; without this, everything from the last
+    # flush interval is lost on redeploy.
+    shutdown_observability()
     executor.shutdown(wait=False)
 
 

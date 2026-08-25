@@ -166,7 +166,13 @@ class Settings(BaseSettings):
     # Langfuse — leave empty to disable tracing
     LANGFUSE_PUBLIC_KEY: str = ""
     LANGFUSE_SECRET_KEY: str = ""
-    LANGFUSE_HOST: str = "https://cloud.langfuse.com"
+    # The Langfuse SDK's own env var is LANGFUSE_BASE_URL; LANGFUSE_HOST is the older
+    # alias. Both are read here because honouring only one silently sends every trace to
+    # the default EU region when the deployment set the other (which is what happened).
+    LANGFUSE_BASE_URL: str = ""
+    LANGFUSE_HOST: str = ""
+    # Fraction of traces exported (1.0 = all). Lower it if trace volume gets expensive.
+    LANGFUSE_SAMPLE_RATE: float = 1.0
 
     # OpenTelemetry — leave empty to disable OTLP export
     OTEL_EXPORTER_OTLP_ENDPOINT: str = ""
@@ -184,6 +190,17 @@ class Settings(BaseSettings):
     @property
     def langfuse_enabled(self) -> bool:
         return bool(self.LANGFUSE_PUBLIC_KEY and self.LANGFUSE_SECRET_KEY)
+
+    @property
+    def langfuse_host(self) -> str:
+        """Resolved Langfuse ingestion host.
+
+        Region matters: keys issued for US cloud fail against the EU default. Prefer the
+        SDK's own LANGFUSE_BASE_URL, fall back to the LANGFUSE_HOST alias, then EU cloud.
+        """
+        return (
+            self.LANGFUSE_BASE_URL or self.LANGFUSE_HOST or "https://cloud.langfuse.com"
+        )
 
     @property
     def is_production(self) -> bool:

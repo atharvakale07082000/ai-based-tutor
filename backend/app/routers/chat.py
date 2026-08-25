@@ -19,6 +19,7 @@ from app.agents.stream_adapter import TraceState
 from app.auth.jwt import get_current_user_id
 from app.db.mongo import PROJ, col_learners
 from app.guardrails import check_input
+from app.observability import observation, trace_attributes
 
 router = APIRouter()
 log = structlog.get_logger()
@@ -68,116 +69,163 @@ async def v2_chat(
         start = time.perf_counter()
         had_error = False
         agent_name = "assistant"
+        answer_text = ""
 
-        try:
-            # Input guardrail: block prompt-injection attempts before any LLM call.
-            # (v1 and v3 already guard; this closes the gap on the v2 path.)
-            guard = check_input(stripped, context="v2_chat")
-            if not guard.passed and guard.reason.startswith("blocked_pattern"):
-                log.warning(
-                    "v2_chat_guardrail_blocked",
-                    reason=guard.reason,
-                    session_id=session_id,
-                )
-                yield f"data: {json.dumps({'type': 'guardrail', 'message': 'That request looks like an attempt to override my instructions — I can only help with learning.'})}\n\n"
-                return
-
-            learner = await col_learners().find_one({"user_id": user_id}, PROJ) or {}
-            context = {
-                "learner_id": learner.get("id", ""),
-                "current_topic": body.context.get("current_topic", ""),
-                "proficiency": learner.get("topic_proficiency_map") or {},
-                "history": [m.model_dump() for m in body.history[-6:]],
-                **body.context,
-                # Stable chat-thread id (client sends its thread id as X-Session-Id) enables
-                # persistent per-thread memory; absent → stateless turn. Header wins over body.
-                "thread_id": request.headers.get("X-Session-Id", ""),
-            }
-
-            # Live step timeline: routing done → working → composing answer.
-            tl = StepTimeline("chat")
-            answered = False
-            answer_text = ""  # accumulated for online eval sampling
-            # The handler's TraceState collects tool results as `grounding` while it
-            # translates the stream. Those never reach the wire (the mechanical tool
-            # workflow stays hidden); they're the retrieval context the faithfulness
-            # metric grades the answer against below.
-            trace = TraceState()
-
-            # The handler performs the always-on LLM routing decision itself and
-            # emits it as the first `routing` event; we frame the StepTimeline around
-            # the events it yields (routing → reasoning/token/action → done).
-            async for event in handler.run_chat(stripped, context, trace=trace):
-                etype = event.get("type")
-                if etype == "routing":
-                    agent_name = event.get("agent", "assistant")
-                    log.info(
-                        "chat_routed",
-                        agent=agent_name,
-                        reason=event.get("reason"),
+        # One trace per chat turn, tied into a conversation by session_id — the per-turn
+        # scope Langfuse recommends, because a conversation has no known end. The root
+        # input is the learner's message alone: the handler's context blob (profile,
+        # proficiency map, history) would bury it in the trace list, and it is already
+        # captured on the child agent spans.
+        with (
+            observation(
+                "chat-turn",
+                input=stripped,
+                metadata={"correlation_id": correlation_id},
+            ) as root,
+            trace_attributes(
+                user_id=user_id,
+                session_id=session_id,
+                tags=["chat"],
+                trace_name="chat-turn",
+            ),
+        ):
+            try:
+                # Input guardrail: block prompt-injection attempts before any LLM call.
+                # (v1 and v3 already guard; this closes the gap on the v2 path.)
+                guard = check_input(stripped, context="v2_chat")
+                if not guard.passed and guard.reason.startswith("blocked_pattern"):
+                    log.warning(
+                        "v2_chat_guardrail_blocked",
+                        reason=guard.reason,
                         session_id=session_id,
                     )
-                    yield f"data: {json.dumps(event)}\n\n"
-                    yield f"data: {json.dumps(tl.done('route'))}\n\n"
-                    yield f"data: {json.dumps(tl.start('work'))}\n\n"
-                    continue
-                if etype == "token":
-                    answer_text += str(event.get("content", ""))
-                    if not answered:
-                        answered = True
-                        yield f"data: {json.dumps(tl.done('work'))}\n\n"
-                        yield f"data: {json.dumps(tl.start('answer'))}\n\n"
-                elif etype == "done":
-                    # Close the final step *before* forwarding 'done' so the terminal
-                    # event of the stream stays 'done' (clients rely on this).
-                    yield f"data: {json.dumps(tl.done('answer' if answered else 'work'))}\n\n"
-                yield f"data: {json.dumps(event)}\n\n"
+                    yield f"data: {json.dumps({'type': 'guardrail', 'message': 'That request looks like an attempt to override my instructions — I can only help with learning.'})}\n\n"
+                    return
 
-            # Online eval sampling (random gate, fire-and-forget — never blocks the response).
-            try:
-                from app.evals.deepeval_metrics import maybe_eval_chat
-
-                turns = [
-                    {"role": m.get("role"), "content": m.get("content")}
-                    for m in context.get("history", [])
-                    if isinstance(m, dict)
-                ]
-                turns.append({"role": "user", "content": stripped})
-                turns.append({"role": "assistant", "content": answer_text})
-                maybe_eval_chat(
-                    agent_name,
-                    stripped,
-                    answer_text,
-                    turns,
-                    retrieval_context=trace.grounding or None,
-                    learner_id=context.get("learner_id", ""),
-                    session_id=session_id,
+                learner = (
+                    await col_learners().find_one({"user_id": user_id}, PROJ) or {}
                 )
-            except Exception as e:  # noqa: BLE001 - sampling must never affect the response
-                log.warning("v2_eval_sample_failed", error=str(e)[:200])
+                context = {
+                    "learner_id": learner.get("id", ""),
+                    "current_topic": body.context.get("current_topic", ""),
+                    "proficiency": learner.get("topic_proficiency_map") or {},
+                    "history": [m.model_dump() for m in body.history[-6:]],
+                    **body.context,
+                    # Stable chat-thread id (client sends its thread id as X-Session-Id) enables
+                    # persistent per-thread memory; absent → stateless turn. Header wins over body.
+                    "thread_id": request.headers.get("X-Session-Id", ""),
+                }
 
-        except Exception as e:
-            had_error = True
-            # Log full details server-side; send a generic message to the client.
-            log.error(
-                "v2_chat_error",
-                error=str(e)[:500],
-                agent=agent_name,
-                session_id=session_id,
-                user_id=user_id,
-            )
-            yield f"data: {json.dumps({'type': 'error', 'message': 'Something went wrong on my end — send your question again and I will be right back.'})}\n\n"
+                # Live step timeline: routing done → working → composing answer.
+                tl = StepTimeline("chat")
+                answered = False
+                # The handler's TraceState collects tool results as `grounding` while it
+                # translates the stream. Those never reach the wire (the mechanical tool
+                # workflow stays hidden); they're the retrieval context the faithfulness
+                # metric grades the answer against below.
+                trace = TraceState()
 
-        finally:
-            latency_ms = round((time.perf_counter() - start) * 1000)
-            log.info(
-                "v2_chat_done",
-                agent=agent_name,
-                session_id=session_id,
-                latency_ms=latency_ms,
-                had_error=had_error,
-            )
-            yield "data: [DONE]\n\n"
+                # The handler performs the always-on LLM routing decision itself and
+                # emits it as the first `routing` event; we frame the StepTimeline around
+                # the events it yields (routing → reasoning/token/action → done).
+                async for event in handler.run_chat(stripped, context, trace=trace):
+                    etype = event.get("type")
+                    if etype == "routing":
+                        agent_name = event.get("agent", "assistant")
+                        log.info(
+                            "chat_routed",
+                            agent=agent_name,
+                            reason=event.get("reason"),
+                            session_id=session_id,
+                        )
+                        # Which specialist handled the turn is the main dimension you
+                        # filter a chat dashboard by, and it is only known after routing
+                        # — so metadata, not a tag (tags are fixed at creation time).
+                        root.update(
+                            metadata={
+                                "routed_agent": agent_name,
+                                "routing_reason": event.get("reason"),
+                            }
+                        )
+                        yield f"data: {json.dumps(event)}\n\n"
+                        yield f"data: {json.dumps(tl.done('route'))}\n\n"
+                        yield f"data: {json.dumps(tl.start('work'))}\n\n"
+                        continue
+                    if etype == "token":
+                        answer_text += str(event.get("content", ""))
+                        if not answered:
+                            answered = True
+                            yield f"data: {json.dumps(tl.done('work'))}\n\n"
+                            yield f"data: {json.dumps(tl.start('answer'))}\n\n"
+                    elif etype == "done":
+                        # Close the final step *before* forwarding 'done' so the terminal
+                        # event of the stream stays 'done' (clients rely on this).
+                        yield f"data: {json.dumps(tl.done('answer' if answered else 'work'))}\n\n"
+                    yield f"data: {json.dumps(event)}\n\n"
+
+                # The assistant reply is the trace output — what a reviewer reads first
+                # in the trace list and what trace-level evaluators grade.
+                #
+                # `grounding` (the tool payloads the answer was built from) rides along in
+                # metadata because Langfuse observation-level evaluators see ONLY the
+                # observation they match — they do not load child spans. Without it here,
+                # a faithfulness judge on `chat-turn` would have nothing to check the
+                # answer against. It still never reaches the wire.
+                root.update(
+                    output=answer_text,
+                    metadata={"grounding": trace.grounding or None},
+                )
+
+                # Online eval sampling (random gate, fire-and-forget — never blocks the response).
+                try:
+                    from app.evals.deepeval_metrics import maybe_eval_chat
+
+                    turns = [
+                        {"role": m.get("role"), "content": m.get("content")}
+                        for m in context.get("history", [])
+                        if isinstance(m, dict)
+                    ]
+                    turns.append({"role": "user", "content": stripped})
+                    turns.append({"role": "assistant", "content": answer_text})
+                    maybe_eval_chat(
+                        agent_name,
+                        stripped,
+                        answer_text,
+                        turns,
+                        retrieval_context=trace.grounding or None,
+                        learner_id=context.get("learner_id", ""),
+                        session_id=session_id,
+                    )
+                except Exception as e:  # noqa: BLE001 - sampling must never affect the response
+                    log.warning("v2_eval_sample_failed", error=str(e)[:200])
+
+            except Exception as e:
+                had_error = True
+                # Log full details server-side; send a generic message to the client.
+                log.error(
+                    "v2_chat_error",
+                    error=str(e)[:500],
+                    agent=agent_name,
+                    session_id=session_id,
+                    user_id=user_id,
+                )
+                root.update(
+                    level="ERROR",
+                    status_message=str(e)[:500],
+                    output=answer_text or None,
+                )
+                yield f"data: {json.dumps({'type': 'error', 'message': 'Something went wrong on my end — send your question again and I will be right back.'})}\n\n"
+
+            finally:
+                latency_ms = round((time.perf_counter() - start) * 1000)
+                log.info(
+                    "v2_chat_done",
+                    agent=agent_name,
+                    session_id=session_id,
+                    latency_ms=latency_ms,
+                    had_error=had_error,
+                )
+                yield "data: [DONE]\n\n"
 
     return StreamingResponse(
         event_stream(),

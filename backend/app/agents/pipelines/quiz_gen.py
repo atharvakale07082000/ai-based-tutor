@@ -10,6 +10,7 @@ import uuid
 from datetime import datetime, timezone
 
 from app.agents.steps import StepEmit, step_emitter
+from app.observability import traced_pipeline
 
 _BLOOM_ORDER = ["remember", "understand", "apply", "analyze", "evaluate", "create"]
 
@@ -44,7 +45,19 @@ async def run_quiz_gen(request: dict, emit: StepEmit = None) -> dict:
     from app.db.mongo import col_quizzes
     from app.hf.quiz_questions import get_or_generate_quiz_questions
 
-    async with step_emitter(emit):
+    async with (
+        traced_pipeline(
+            "generate-quiz",
+            input={
+                "topic": request.get("topic"),
+                "bloom_level": request.get("bloom_level"),
+                "elo": request.get("elo"),
+            },
+            user_id=request.get("learner_id"),
+            tags=["quiz-gen"],
+        ) as root,
+        step_emitter(emit),
+    ):
         bloom = await _resolve_bloom(request)
         questions = await get_or_generate_quiz_questions(
             request["topic"], bloom, count=5
@@ -66,4 +79,13 @@ async def run_quiz_gen(request: dict, emit: StepEmit = None) -> dict:
                 "completed_at": None,
             }
         )
-        return {"quiz_id": quiz_id, "bloom_level": bloom, "questions": questions}
+        result = {"quiz_id": quiz_id, "bloom_level": bloom, "questions": questions}
+        root.update(
+            output={
+                "quiz_id": quiz_id,
+                "bloom_level": bloom,
+                "question_count": len(questions),
+                "questions": [q.get("question") for q in questions],
+            }
+        )
+        return result

@@ -14,11 +14,35 @@ from typing import Iterator
 
 import structlog
 from huggingface_hub import InferenceClient
+
+# Plain OpenAI client, deliberately NOT `langfuse.openai`. Importing that wrapper
+# patches the openai module process-wide, which also instruments the client Strands
+# builds internally — so every agent LLM call was recorded twice: once by Strands and
+# again by the wrapper, as parent and child with identical token counts. Strands traces
+# its own calls, so this path is instrumented by hand instead (below).
 from openai import OpenAI
 
 from app.config import settings
+from app.observability import observation
 
 log = structlog.get_logger()
+
+
+def _record_completion(gen, result) -> None:
+    """Copy an OpenAI-shaped completion's output + token usage onto its observation."""
+    try:
+        usage = getattr(result, "usage", None)
+        gen.update(
+            output=result.choices[0].message.content,
+            usage_details={
+                "input": getattr(usage, "prompt_tokens", None),
+                "output": getattr(usage, "completion_tokens", None),
+            }
+            if usage
+            else None,
+        )
+    except Exception:  # noqa: BLE001 - never fail a generation over tracing
+        pass
 
 
 class ResilientGenerationClient:
@@ -74,7 +98,20 @@ class ResilientGenerationClient:
                 )
                 if response_format is not None:
                     kwargs["response_format"] = response_format
-                return self._nvidia.chat.completions.create(**kwargs)
+                with observation(
+                    "generate-completion",
+                    as_type="generation",
+                    input=messages,
+                    model=nvidia_model,
+                    metadata={"provider": "nvidia-nim"},
+                    model_parameters={
+                        "max_tokens": max_tokens,
+                        "temperature": temperature,
+                    },
+                ) as gen:
+                    result = self._nvidia.chat.completions.create(**kwargs)
+                    _record_completion(gen, result)
+                    return result
             except Exception as e:
                 log.warning(
                     "nvidia_generation_failed",
@@ -82,14 +119,70 @@ class ResilientGenerationClient:
                     fallback="hf_together",
                     model=model,
                 )
-                return self._hf.chat_completion(
-                    model=model,
-                    messages=messages,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
+                return self._hf_fallback_completion(
+                    model, messages, max_tokens, temperature
                 )
 
         return self._stream_with_fallback(model, messages, max_tokens, temperature)
+
+    # ── HF "together" fallback ────────────────────────────────────────────────
+    # The langfuse.openai wrapper only instruments the NVIDIA (OpenAI-SDK) path. Without
+    # these, a NIM outage would make every generation vanish from Langfuse exactly when
+    # the traces matter most, so the fallback is traced by hand.
+
+    def _hf_fallback_completion(
+        self, model: str, messages: list[dict], max_tokens: int, temperature: float
+    ):
+        """Non-streaming HF fallback, recorded as a `generation` observation."""
+        with observation(
+            "generate-completion-fallback",
+            as_type="generation",
+            input=messages,
+            model=model,
+            metadata={"provider": "hf-together", "reason": "nvidia_failed"},
+            model_parameters={"max_tokens": max_tokens, "temperature": temperature},
+        ) as gen:
+            result = self._hf.chat_completion(
+                model=model,
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
+            _record_completion(gen, result)
+            return result
+
+    def _hf_fallback_stream(
+        self, model: str, messages: list[dict], max_tokens: int, temperature: float
+    ) -> Iterator:
+        """Streaming HF fallback; accumulates chunks so the observation has an output."""
+        with observation(
+            "generate-completion-fallback",
+            as_type="generation",
+            input=messages,
+            model=model,
+            metadata={
+                "provider": "hf-together",
+                "reason": "nvidia_failed",
+                "stream": True,
+            },
+            model_parameters={"max_tokens": max_tokens, "temperature": temperature},
+        ) as gen:
+            chunks: list[str] = []
+            for chunk in self._hf.chat_completion(
+                model=model,
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                stream=True,
+            ):
+                try:
+                    delta = chunk.choices[0].delta.content
+                    if delta:
+                        chunks.append(delta)
+                except Exception:  # noqa: BLE001
+                    pass
+                yield chunk
+            gen.update(output="".join(chunks))
 
     def _stream_with_fallback(
         self, model: str, messages: list[dict], max_tokens: int, temperature: float
@@ -113,18 +206,31 @@ class ResilientGenerationClient:
                 fallback="hf_together",
                 model=model,
             )
-            return self._hf.chat_completion(
-                model=model,
-                messages=messages,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                stream=True,
-            )
+            return self._hf_fallback_stream(model, messages, max_tokens, temperature)
 
         def _resume():
             """Re-yield the already-consumed first chunk then continue the NVIDIA stream."""
-            yield first_chunk
-            yield from nvidia_stream
+            with observation(
+                "generate-completion",
+                as_type="generation",
+                input=messages,
+                model=nvidia_model,
+                metadata={"provider": "nvidia-nim", "stream": True},
+                model_parameters={
+                    "max_tokens": max_tokens,
+                    "temperature": temperature,
+                },
+            ) as gen:
+                chunks: list[str] = []
+                for chunk in (first_chunk, *nvidia_stream):
+                    try:
+                        delta = chunk.choices[0].delta.content
+                        if delta:
+                            chunks.append(delta)
+                    except Exception:  # noqa: BLE001
+                        pass
+                    yield chunk
+                gen.update(output="".join(chunks))
 
         return _resume()
 

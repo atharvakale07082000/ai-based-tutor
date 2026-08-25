@@ -16,6 +16,7 @@ import asyncio
 import structlog
 
 from app.agents.steps import StepEmit, StepTimeline, step_emitter
+from app.observability import traced_pipeline
 
 log = structlog.get_logger()
 
@@ -71,7 +72,15 @@ async def run_loop_setup(job: dict, learner_id: str, emit: StepEmit = None) -> d
 
     tl = StepTimeline("loop_setup")
 
-    async with step_emitter(emit) as _e:
+    async with (
+        traced_pipeline(
+            "design-interview-loop",
+            input={"company": company, "role": role, "seniority": seniority},
+            user_id=learner_id,
+            tags=["interview-loop", "setup"],
+        ) as root,
+        step_emitter(emit) as _e,
+    ):
         # research — what does this company's process actually look like?
         await _e(tl.start("research"))
         try:
@@ -145,5 +154,12 @@ async def run_loop_setup(job: dict, learner_id: str, emit: StepEmit = None) -> d
             company=company[:60],
             rounds=[r["kind"] for r in rounds],
             sources=len(results),
+        )
+        root.update(
+            output={
+                "loop_id": loop["loop_id"],
+                "company": company,
+                "rounds": [r["kind"] for r in rounds],
+            }
         )
         return loop

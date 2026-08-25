@@ -9,6 +9,7 @@ import structlog
 
 from app.agents.bar import DEFAULT_BAR
 from app.agents.steps import StepEmit, StepTimeline, step_emitter
+from app.observability import score_current_trace, traced_pipeline
 
 log = structlog.get_logger()
 
@@ -23,7 +24,16 @@ async def run_interview_review(
 
     tl = StepTimeline("interview_review")
 
-    async with step_emitter(emit) as _e:
+    async with (
+        traced_pipeline(
+            "score-interview",
+            input={"module_id": module_id, "plan_id": plan_id},
+            session_id=interview_id,
+            tags=["interview", "scoring"],
+            metadata={"interview_id": interview_id},
+        ) as root,
+        step_emitter(emit) as _e,
+    ):
         # evaluate — load interview + answers
         await _e(tl.start("evaluate"))
         interview = await col_interviews().find_one({"interview_id": interview_id})
@@ -83,6 +93,24 @@ async def run_interview_review(
 
         await _record_interview_evidence(interview, final_score, bar, completed_at)
         await _e(tl.done("feedback"))
+
+        # The grade is the quality signal for this trace. Scores (not tags) are the
+        # right home for it: it is only known after the run, and it is what you filter
+        # and chart interview quality by.
+        root.update(
+            output={
+                "final_score": final_score,
+                "passed": passed,
+                "bar": bar,
+                "summary": scoring["summary"],
+            }
+        )
+        score_current_trace(
+            "interview-score",
+            final_score,
+            comment=f"bar={bar}; {'passed' if passed else 'failed'}",
+        )
+        score_current_trace("interview-passed", 1 if passed else 0)
 
         return {
             "interview_id": interview_id,

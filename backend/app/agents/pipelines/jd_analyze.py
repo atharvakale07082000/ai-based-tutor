@@ -8,6 +8,7 @@ re-analyze path), skipping the LLM JD parse. Returns the gap-analysis result
 from __future__ import annotations
 
 from app.agents.steps import StepEmit, StepTimeline, step_emitter
+from app.observability import traced_pipeline
 
 
 async def run_jd_analyze(request: dict, emit: StepEmit = None) -> dict:
@@ -16,7 +17,17 @@ async def run_jd_analyze(request: dict, emit: StepEmit = None) -> dict:
 
     tl = StepTimeline("jd_analyze")
 
-    async with step_emitter(emit) as _e:
+    async with (
+        traced_pipeline(
+            "analyze-job-description",
+            # The pipeline is handed the raw JD text, not company/role — those are what
+            # it *parses out*, and they land on the output. Truncated because a full JD
+            # is pages long and the trace list only needs enough to identify the run.
+            input={"jd_text": (request.get("jd_text") or "")[:2000]},
+            tags=["jd-analyze"],
+        ) as root,
+        step_emitter(emit) as _e,
+    ):
         await _e(tl.start("parse"))
         if request.get("required_skills") is not None:
             parsed = {
@@ -39,4 +50,5 @@ async def run_jd_analyze(request: dict, emit: StepEmit = None) -> dict:
         # Recommendations are produced inside analyze_gap; this is the closing step.
         await _e(tl.done("recommend"))
 
+        root.update(output={"parsed": parsed, "gap": gap})
         return {"parsed": parsed, "gap": gap}
