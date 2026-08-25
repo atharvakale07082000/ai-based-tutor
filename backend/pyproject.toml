@@ -10,8 +10,11 @@ dependencies = [
     "redis",
     "celery",
     "flower",
-    "strands-agents>=1.0",
+    # >=1.42 is the floor for strands-agents-evals; the offline trajectory eval suite
+    # (tests/evals/test_trajectory.py) needs it.
+    "strands-agents>=1.42",
     "strands-agents-tools>=0.2",
+    "strands-agents-evals>=1.2",
     "ddgs",
     "huggingface-hub>=1.20",
     "openai>=2.43",
