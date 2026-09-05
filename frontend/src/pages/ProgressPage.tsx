@@ -70,7 +70,7 @@ export default function ProgressPage() {
       toast.success('Quiz ready — good luck!', { duration: 2000 })
       navigate(`/quiz/${data.quiz_id}`)
     } catch {
-      toast.error('Could not generate quiz')
+      toast.error('Could not generate quiz — try again')
     } finally {
       setGeneratingQuiz(false)
     }

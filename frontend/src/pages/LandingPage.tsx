@@ -91,7 +91,7 @@ function AuthOverlay({ onClose, initialMode = 'signin' }: { onClose: () => void;
     e.preventDefault()
 
     if (mode === 'forgot') {
-      if (!email.trim()) { toast.error('Email is required.'); return }
+      if (!email.trim()) { toast.error('Email is required'); return }
       setLoading(true)
       try {
         await authAPI.resetRequest(email.trim().toLowerCase())
@@ -103,10 +103,10 @@ function AuthOverlay({ onClose, initialMode = 'signin' }: { onClose: () => void;
       return
     }
 
-    if (!email.trim()) { toast.error('Email is required.'); return }
-    if (password.length < 6) { toast.error('Password must be at least 6 characters.'); return }
-    if (password.length > 128) { toast.error('Password must be under 128 characters.'); return }
-    if (mode === 'signup' && name.trim().length > 50) { toast.error('Name must be under 50 characters.'); return }
+    if (!email.trim()) { toast.error('Email is required'); return }
+    if (password.length < 6) { toast.error('Password must be at least 6 characters'); return }
+    if (password.length > 128) { toast.error('Password must be under 128 characters'); return }
+    if (mode === 'signup' && name.trim().length > 50) { toast.error('Name must be under 50 characters'); return }
     setLoading(true)
     try {
       const { data } = await authAPI.login(email.trim().toLowerCase(), password)

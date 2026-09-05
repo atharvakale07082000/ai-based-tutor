@@ -83,7 +83,7 @@ export function ActivityLogSection() {
       qc.invalidateQueries({ queryKey: ['activity-logs'] })
       qc.invalidateQueries({ queryKey: ['activity-stats'] })
     },
-    onError: () => toast.error('Failed to clear activity logs.'),
+    onError: () => toast.error('Could not clear activity logs'),
   })
 
   const logs = data?.pages.flatMap((p) => p.logs) ?? []

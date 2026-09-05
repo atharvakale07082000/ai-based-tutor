@@ -85,16 +85,16 @@ export default function OnboardingPage() {
   const toggleCompany = (c: string) =>
     setPreferredCompanies((prev) => {
       if (prev.includes(c)) return prev.filter((x) => x !== c)
-      if (prev.length >= 5) { toast.error('Maximum 5 companies.'); return prev }
+      if (prev.length >= 5) { toast.error('Maximum 5 companies'); return prev }
       return [...prev, c]
     })
 
   // ── Step 0: Auth ─────────────────────────────────────────────────────────────
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!authEmail.trim()) { toast.error('Email is required.'); return }
-    if (authPass.length < 6) { toast.error('Password must be at least 6 characters.'); return }
-    if (authPass.length > 128) { toast.error('Password must be under 128 characters.'); return }
+    if (!authEmail.trim()) { toast.error('Email is required'); return }
+    if (authPass.length < 6) { toast.error('Password must be at least 6 characters'); return }
+    if (authPass.length > 128) { toast.error('Password must be under 128 characters'); return }
     setAuthLoading(true)
     try {
       const { data } = await authAPI.login(authEmail.trim().toLowerCase(), authPass)
@@ -128,10 +128,10 @@ export default function OnboardingPage() {
   const handleContinue = () => {
     if (step === 1) {
       const trimmed = name.trim()
-      if (trimmed.length < 2) { toast.error('Name must be at least 2 characters.'); return }
+      if (trimmed.length < 2) { toast.error('Name must be at least 2 characters'); return }
     }
     if (step === 2 && !targetRole.trim()) {
-      toast.error('Enter your target job role to continue.')
+      toast.error('Enter your target job role to continue')
       return
     }
     if (step < TOTAL_STEPS) setStep((s) => s + 1)
@@ -140,7 +140,7 @@ export default function OnboardingPage() {
 
   // ── Final: save profile & launch career path ─────────────────────────────────
   const handleComplete = async () => {
-    if (!getAccessToken()) { toast.error('Not authenticated.'); setStep(0); return }
+    if (!getAccessToken()) { toast.error('Not authenticated'); setStep(0); return }
     setBuilding(true)
     try {
       await learnerAPI.onboard({

@@ -63,7 +63,7 @@ export default function DoubtChatPage() {
   const sendMessage = useCallback(async (text: string) => {
     const trimmed = text.trim()
     if (!trimmed || isStreaming) return
-    if (trimmed.length < 3) { toast.error('Give me a bit more to work with — try writing a complete question.'); return }
+    if (trimmed.length < 3) { toast.error('Give me a bit more to work with — try writing a complete question'); return }
     if (trimmed.length > 1500) { toast.error("That's a detailed one! Try breaking it into a shorter question."); return }
     setInput('')
     const userMsg: Message = { id: crypto.randomUUID(), role: 'user', content: text, timestamp: new Date() }
@@ -135,7 +135,7 @@ export default function DoubtChatPage() {
       return
     }
     if (file.size > 5 * 1024 * 1024) {
-      toast.error('Image must be under 5 MB.')
+      toast.error('Image must be under 5 MB')
       e.target.value = ''
       return
     }

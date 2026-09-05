@@ -142,7 +142,7 @@ function ModuleRow({ module, index, planId, isUnlocked }: { module: CourseModule
       toast.success('Quiz ready!', { duration: 2000 })
       navigate(`/quiz/${data.quiz_id}`)
     } catch {
-      toast.error('Could not generate quiz')
+      toast.error('Could not generate quiz — try again')
     } finally {
       setQuizLoading(false)
     }

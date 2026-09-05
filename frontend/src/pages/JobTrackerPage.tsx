@@ -262,7 +262,7 @@ function AddJobPanel({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
   const { steps, applyStep, reset } = useAgentTimeline()
 
   const analyze = async () => {
-    if (jd.trim().length < 20) { toast.error('Paste a fuller job description (at least a sentence or two).'); return }
+    if (jd.trim().length < 20) { toast.error('Paste a fuller job description (at least a sentence or two)'); return }
     setAnalyzing(true)
     setAnalysis(null)
     reset()
