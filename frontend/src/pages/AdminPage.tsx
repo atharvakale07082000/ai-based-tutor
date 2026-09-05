@@ -285,7 +285,7 @@ function HFModelsPanel() {
                 </div>
               </div>
 
-              <Button size="sm" variant="outline" onClick={() => handleTest(key)} loading={testing === key}>Test Model</Button>
+              <Button size="sm" variant="outline" onClick={() => handleTest(key)} loading={testing === key}>Test model</Button>
 
               {!!testResults[key] && (
                 <pre style={{ marginTop: 10, fontSize: 10, background: 'var(--paper-2)', border: '1px solid var(--line-1)', borderRadius: 'var(--r-2)', padding: 10, overflowX: 'auto', color: 'var(--pos)', maxHeight: 120 }}>

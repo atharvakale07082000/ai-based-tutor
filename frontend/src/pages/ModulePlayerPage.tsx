@@ -307,7 +307,7 @@ export default function ModulePlayerPage() {
             <div className="t-sm fg-2">Ready to test your knowledge with a quiz?</div>
           </div>
           <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-            <Button size="sm" variant="primary" onClick={handleStartQuiz} loading={quizLoading}>Take Quiz</Button>
+            <Button size="sm" variant="primary" onClick={handleStartQuiz} loading={quizLoading}>Take quiz</Button>
             <Button size="sm" variant="ghost" onClick={() => setShowQuizPrompt(false)}>Later</Button>
           </div>
         </div>

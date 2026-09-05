@@ -118,7 +118,7 @@ export default function CoursePlannerPage() {
             inputSize="lg"
             style={{ flex: 1 }}
           />
-          <Button variant="signal" icon="sparkle" onClick={handlePlan} loading={isPlanning}>Build Plan</Button>
+          <Button variant="signal" icon="sparkle" onClick={handlePlan} loading={isPlanning}>Build plan</Button>
         </div>
 
         {/* Suggestion chips */}
