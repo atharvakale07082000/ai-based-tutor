@@ -173,7 +173,9 @@ def _patch_chat_pipeline(monkeypatch, specialist, agents=("progress",)):
     monkeypatch.setattr(handler_mod.orchestrator, "build_router", lambda: object())
     monkeypatch.setattr(handler_mod.orchestrator, "route", _fake_route)
     monkeypatch.setattr(
-        handler_mod, "build_specialist", lambda key, session_id=None: specialist
+        handler_mod,
+        "build_specialist",
+        lambda key, session_id=None, learner_id=None, learner=None: specialist,
     )
 
 
@@ -314,13 +316,82 @@ async def test_tool_adapter_returns_registry_result(monkeypatch):
         result = {"ok": True}
         error = None
 
+    seen = {}
+
     async def _fake_call(name, args):
-        assert name == "get_proficiency" and args == {"learner_id": "L1"}
+        seen.update(name=name, args=args)
         return _Result()
 
     monkeypatch.setattr(tools.tool_registry, "call", _fake_call)
-    out = await tools.get_proficiency.__wrapped__("L1")  # call underlying coro
+    scoped = tools.learner_scoped_tools("L1")
+    out = await scoped["get_proficiency"].__wrapped__()  # call underlying coro
     assert out == {"ok": True}
+    # The id reaches the registry even though the caller never supplied one.
+    assert seen == {"name": "get_proficiency", "args": {"learner_id": "L1"}}
+
+
+def test_learner_scoped_tools_hide_the_id_from_the_model():
+    """
+    The model must not be able to name the learner it acts on. These tools used to take
+    `learner_id` as a parameter, so identity was enforced by the model copying a UUID
+    correctly — the wrong trust boundary, and the cause of confident "you have no
+    progress" answers whenever it got the copy wrong.
+    """
+    import inspect
+
+    for name, fn in tools.learner_scoped_tools("L1").items():
+        params = inspect.signature(fn.__wrapped__).parameters
+        assert "learner_id" not in params, (
+            f"{name} still exposes learner_id to the model"
+        )
+
+
+@pytest.mark.asyncio
+async def test_scoped_tool_ignores_a_foreign_id(monkeypatch):
+    """Even a model that invents a learner_id kwarg cannot redirect the write."""
+
+    class _Result:
+        result = {"quiz_id": "q1"}
+        error = None
+
+    seen = {}
+
+    async def _fake_call(name, args):
+        seen.update(args)
+        return _Result()
+
+    monkeypatch.setattr(tools.tool_registry, "call", _fake_call)
+    save_quiz = tools.learner_scoped_tools("MINE")["save_quiz"].__wrapped__
+    with pytest.raises(TypeError):
+        await save_quiz(
+            topic="t", bloom_level="apply", questions=[], learner_id="THEIRS"
+        )
+
+    await save_quiz(topic="t", bloom_level="apply", questions=[])
+    assert seen["learner_id"] == "MINE"
+
+
+def test_every_specialist_scoped_tool_name_is_real():
+    """`learner_tools` names are resolved by string — a typo would silently drop a tool."""
+    from app.agents.specialists import SPECIALISTS
+
+    for key, spec in SPECIALISTS.items():
+        unknown = set(spec.learner_tools) - tools.LEARNER_SCOPED
+        assert not unknown, f"{key} names unknown learner-scoped tools: {unknown}"
+
+
+def test_specialist_omits_scoped_tools_without_a_learner():
+    """No learner id -> the tool is absent, never bound to an empty id."""
+    from app.agents.specialists import build_specialist
+
+    with_learner = build_specialist("progress", learner_id="L1")
+    without = build_specialist("progress")
+
+    def _names(agent):
+        return {t.tool_name for t in agent.tool_registry.registry.values()}
+
+    assert "save_progress" in _names(with_learner)
+    assert "save_progress" not in _names(without)
 
 
 # ── guardrail hook ────────────────────────────────────────────────────────────
@@ -385,3 +456,58 @@ def test_grounding_collected_from_tool_result_message_event():
     assert "812" in state.grounding[0]
     # The mechanical tool workflow still never reaches the learner.
     assert all(e.get("type") != "tool_result" for e in wire)
+
+
+# ── specialist registry / routing prompt ──────────────────────────────────────
+
+
+class TestSpecialistRegistryStaysInSyncWithRouting:
+    """
+    The specialist roster lives in two places: `SPECIALISTS` (code) and the
+    `## Specialists` list in `prompts/orchestrator.yaml` (what the router actually
+    reads). Adding a specialist to one and not the other silently makes it unroutable —
+    `orchestrator._VALID` filters out anything the model names that isn't in the
+    registry, and the model can only name what the prompt describes.
+
+    These do NOT generate the prompt from the registry: that would change the routing
+    prompt, and routing is the behaviour the model-swap checklist in config.py exists to
+    protect. Pinning them in sync catches the drift without touching what the model sees.
+    """
+
+    def test_every_specialist_is_described_to_the_router(self):
+        from app.agents.specialists import SPECIALISTS
+        from app.prompts.loader import get_section
+
+        system = get_section("orchestrator", "system")
+        for key in SPECIALISTS:
+            assert f"- {key}:" in system, (
+                f"specialist {key!r} is in SPECIALISTS but not described in "
+                "orchestrator.yaml — the router can never choose it"
+            )
+
+    def test_the_router_is_not_offered_a_specialist_that_does_not_exist(self):
+        import re
+
+        from app.agents.specialists import SPECIALISTS
+        from app.prompts.loader import get_section
+
+        system = get_section("orchestrator", "system")
+        block = system.split("## Specialists", 1)[1].split("##", 1)[0]
+        described = set(re.findall(r"^\s*-\s+([a-z_]+):", block, re.M))
+        unknown = described - set(SPECIALISTS)
+        assert not unknown, (
+            f"orchestrator.yaml offers specialists that do not exist: {unknown}. "
+            "The router would pick them and orchestrator._VALID would silently drop "
+            "the choice, falling back to the keyword heuristic."
+        )
+
+    def test_every_specialist_has_a_role_prompt(self):
+        from app.agents.specialists import SPECIALISTS
+        from app.prompts.loader import get_section
+
+        roles = get_section("react_agent", "roles")
+        for key, spec in SPECIALISTS.items():
+            assert spec.role_name in roles, (
+                f"{key!r} names role {spec.role_name!r}, which react_agent.yaml does "
+                "not define — it would silently fall back to a generic tutor prompt"
+            )

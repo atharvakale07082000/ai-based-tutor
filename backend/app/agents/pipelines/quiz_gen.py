@@ -9,15 +9,27 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
+from app.agents.progress import BLOOM_LEVELS, bloom_for_elo
 from app.agents.steps import StepEmit, step_emitter
 from app.observability import traced_pipeline
 
-_BLOOM_ORDER = ["remember", "understand", "apply", "analyze", "evaluate", "create"]
+
+async def _effective_settings(learner_id: str):
+    """Org agent settings overlaid with this learner's own. Never fails a quiz."""
+    from app.agents.agent_settings import DEFAULTS, resolve
+    from app.db.mongo import PROJ, col_app_settings, col_learners
+
+    try:
+        org = await col_app_settings().find_one({"_id": "agent_settings"}) or {}
+        learner = await col_learners().find_one({"id": learner_id}, PROJ) or {}
+        return resolve({k: v for k, v in org.items() if k != "_id"}, learner)
+    except Exception:  # noqa: BLE001 - settings are a preference, not a dependency
+        return DEFAULTS
 
 
 async def _resolve_bloom(request: dict) -> str:
+    """Proficiency picks the level, recent mood can ease it, the ceiling caps it."""
     from app.db.mongo import col_quizzes
-    from app.hf.quiz_questions import bloom_for_elo
 
     bloom = request.get("bloom_level") or bloom_for_elo(request.get("elo", 500.0))
     if not request.get("bloom_level"):
@@ -29,10 +41,14 @@ async def _resolve_bloom(request: dict) -> str:
         )
         negative = sum(1 for q in recent if q.get("sentiment_mood") == "negative")
         if negative >= 2:
-            idx = _BLOOM_ORDER.index(bloom) if bloom in _BLOOM_ORDER else 2
+            idx = BLOOM_LEVELS.index(bloom) if bloom in BLOOM_LEVELS else 2
             if idx > 0:
-                bloom = _BLOOM_ORDER[idx - 1]
-    return bloom
+                bloom = BLOOM_LEVELS[idx - 1]
+
+    # The difficulty ceiling is the one admin/learner setting with a real consumer:
+    # it caps how demanding questions may get, on top of everything above.
+    settings = await _effective_settings(request.get("learner_id", ""))
+    return settings.cap_bloom(bloom)
 
 
 async def run_quiz_gen(request: dict, emit: StepEmit = None) -> dict:

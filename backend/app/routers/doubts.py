@@ -9,13 +9,11 @@ Endpoints:
   POST /doubts/caption             — caption / describe an uploaded image
 """
 
-import json
 import uuid
 from datetime import datetime, timezone
 
 import structlog
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
-from fastapi.responses import StreamingResponse
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
@@ -25,6 +23,7 @@ from app.hf.doubt_solver import stream_doubt_response
 from app.hf.image_captioner import caption_image
 from app.hf.speech_to_text import transcribe_audio
 from app.schemas.doubts import DoubtStreamRequest
+from app.sse import SSE_DONE, sse_frame, sse_stream_response
 
 limiter = Limiter(key_func=get_remote_address)
 router = APIRouter()
@@ -55,9 +54,13 @@ async def stream_doubt(
             full_response = ""
             async for token in stream:
                 full_response += token
-                yield f"data: {json.dumps({'token': token})}\n\n"
+                # Typed frames, matching the chat contract. The old `{"token": …}`
+                # shape had no `type`, so the shared SSE client could not consume it
+                # and the client destructured `token` off *every* frame — including
+                # the error frame below, which appended "undefined" to the answer.
+                yield sse_frame({"type": "token", "content": token})
 
-            yield "data: [DONE]\n\n"
+            yield SSE_DONE
 
             if learner:
                 now = datetime.now(timezone.utc).isoformat()
@@ -115,15 +118,19 @@ async def stream_doubt(
                 log.warning("doubt_eval_sample_failed", error=str(e)[:200])
 
         except Exception as e:
-            log.error("doubt_stream_error", error=str(e))
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
-            yield "data: [DONE]\n\n"
+            # Full detail server-side only. `str(e)` on the wire leaked connection
+            # strings and provider errors to the caller; the chat endpoint has always
+            # sent a generic message and this now matches it.
+            log.error("doubt_stream_error", error=str(e)[:500], exc_info=True)
+            yield sse_frame(
+                {
+                    "type": "error",
+                    "message": "I could not finish that answer — send your question again.",
+                }
+            )
+            yield SSE_DONE
 
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
+    return sse_stream_response(event_generator())
 
 
 _AUDIO_TYPES = {

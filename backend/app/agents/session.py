@@ -13,31 +13,24 @@ from __future__ import annotations
 
 import structlog
 
-from app.agents.progress import calculate_elo_update
-from app.agents.progress import MASTERY_ELO
+from app.agents.progress import (
+    BLOOM_BY_ELO,
+    BLOOM_LEVELS,
+    MASTERY_ELO,
+    bloom_for_elo,
+    calculate_elo_update,
+)
 from app.guardrails import sanitize_quiz_batch
 from app.prompts.loader import get_curriculum_config
 from app.tools import tool_registry
 
 log = structlog.get_logger()
 
-# Elo band -> Bloom level (ported from the v1 quiz agent).
-BLOOM_LEVEL_BY_ELO: list[tuple[tuple[int, int], str]] = [
-    ((0, 300), "remember"),
-    ((300, 450), "understand"),
-    ((450, 600), "apply"),
-    ((600, 720), "analyze"),
-    ((720, 870), "evaluate"),
-    ((870, 1001), "create"),
-]
-_BLOOM_LEVELS = [lvl for _, lvl in BLOOM_LEVEL_BY_ELO]
-
-
-def get_bloom_level(elo: float) -> str:
-    for (low, high), level in BLOOM_LEVEL_BY_ELO:
-        if low <= elo < high:
-            return level
-    return "understand"
+# Elo band -> Bloom level. One home: agents/progress.py, next to MASTERY_ELO. This
+# module and hf/quiz_questions.py each kept their own byte-identical copy before.
+BLOOM_LEVEL_BY_ELO = BLOOM_BY_ELO
+_BLOOM_LEVELS = BLOOM_LEVELS
+get_bloom_level = bloom_for_elo
 
 
 async def _tool(name: str, **args) -> dict:

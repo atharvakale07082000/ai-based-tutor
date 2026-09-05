@@ -163,3 +163,58 @@ class TestSuperuserSeeding:
         assert jwt_mod.verify_password(
             "a-strong-new-password", update["hashed_password"]
         )
+
+
+class TestDoubtStreamDoesNotLeakExceptions:
+    """
+    `/doubts/stream` used to send `str(e)` to the client on failure, while the chat
+    endpoint sent a generic message. Exception text carries connection strings, provider
+    URLs and key fragments, so it must never reach the wire.
+    """
+
+    @pytest.mark.asyncio
+    async def test_error_frame_is_generic(self):
+        import app.routers.doubts as doubts_mod
+
+        secret = "mongodb+srv://admin:hunter2@cluster0.example.net/ai_tutor"
+
+        async def _boom(*_args, **_kwargs):
+            raise RuntimeError(f"connection refused: {secret}")
+
+        body = MagicMock()
+        body.question = "why does this fail?"
+        body.topic_context = None
+        body.history = []
+        body.session_id = None
+
+        learners = MagicMock()
+        learners.return_value.find_one = AsyncMock(return_value=None)
+
+        with (
+            # The slowapi decorator wants a real Request; the limiter is not what is
+            # under test here, so switch it off rather than fabricate an ASGI scope.
+            patch.object(doubts_mod.limiter, "enabled", False),
+            patch.object(doubts_mod, "stream_doubt_response", _boom),
+            patch.object(doubts_mod, "col_learners", learners),
+        ):
+            response = await doubts_mod.stream_doubt(
+                request=MagicMock(), body=body, user_id="u1"
+            )
+            wire = "".join([chunk async for chunk in response.body_iterator])
+
+        assert secret not in wire, (
+            "the doubt stream leaked exception detail to the client"
+        )
+        assert "connection refused" not in wire
+        assert '"type": "error"' in wire, f"expected a typed error frame, got: {wire!r}"
+        assert "[DONE]" in wire, "the stream must still terminate cleanly"
+
+    def test_no_raw_exception_interpolation_in_the_router(self):
+        """Pin the shape shut at the source, not just for this one exception."""
+        from pathlib import Path
+
+        import app.routers.doubts as doubts_mod
+
+        src = Path(doubts_mod.__file__).read_text()
+        assert "'error': str(e)" not in src
+        assert '"error": str(e)' not in src

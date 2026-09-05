@@ -166,7 +166,10 @@ export default function ModulePlayerPage() {
                 {[1, 2, 3, 4].map((i) => <div key={i} className="skel" style={{ height: 14, borderRadius: 4 }} />)}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 16, padding: '10px 14px', background: 'color-mix(in srgb, var(--accent) 8%, var(--paper-1))', border: '1px solid color-mix(in srgb, var(--accent) 20%, transparent)', borderRadius: 'var(--r-2)' }}>
                   <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent)', animation: 'pulse 1.2s ease-in-out infinite', flexShrink: 0 }} />
-                  <span className="t-sm" style={{ color: 'var(--accent)' }}>Preparing your content — this takes about 10 seconds</span>
+                  {/* No duration promised. Generation waits on the model's rate limiter,
+                      which can hold a call for up to a minute — so "about 10 seconds" made
+                      a normal busy period look like a broken page. */}
+                  <span className="t-sm" style={{ color: 'var(--accent)' }}>Writing this lesson for you — it can take a moment</span>
                 </div>
               </div>
             ) : (

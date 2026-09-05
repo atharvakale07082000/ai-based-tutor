@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/Button'
 import { Icon } from '@/components/ui/Icon'
 import { ValueBar } from '@/components/ui/Progress'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { Skeleton } from '@/components/ui/Skeleton'
 
 // Instrument readout: mono label over a big tabular display number.
 // `signal` marks the one headline metric (job readiness) in amber.
@@ -92,7 +93,7 @@ export default function DashboardPage() {
     staleTime: 1000 * 60 * 5,
   })
 
-  const { data: leaderboardData } = useQuery({
+  const { data: leaderboardData, isLoading: leaderboardLoading } = useQuery({
     queryKey: ['leaderboard'],
     queryFn: () => leaderboardAPI.get().then((r) => r.data),
     staleTime: 1000 * 60 * 2,
@@ -387,8 +388,20 @@ export default function DashboardPage() {
                 {entry.streak > 0 && <span className="t-xs fg-2" style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}><Icon name="flame" size={10} />{entry.streak}</span>}
               </div>
             ))}
+            {/* "Loading…" used to live in the empty branch, so a genuinely empty board
+                showed a spinner that never resolved. Loading and empty are now distinct. */}
             {board.length === 0 && (
-              <EmptyState icon="target" title="Leaderboard loading…" body="Rankings update after quiz sessions." size="sm" />
+              leaderboardLoading ? (
+                <Skeleton h={72} />
+              ) : (
+                <EmptyState
+                  icon="target"
+                  title="No one ranked yet"
+                  body="Finish a quiz to put yourself on the board."
+                  action={{ label: 'Find a quiz', onClick: () => navigate('/learn') }}
+                  size="sm"
+                />
+              )
             )}
           </Card>
         </div>

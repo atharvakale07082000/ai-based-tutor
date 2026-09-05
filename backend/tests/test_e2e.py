@@ -481,8 +481,12 @@ class TestE2E_Quiz:
 class TestE2E_Doubts:
     """
     /api/v1/doubts/stream returns Server-Sent Events (text/event-stream).
-    Tokens arrive as:  data: {"token": "..."}\n\n
+    Tokens arrive as:  data: {"type": "token", "content": "..."}\n\n
+    Failures as:       data: {"type": "error", "message": "..."}\n\n
     Terminator:        data: [DONE]\n\n
+
+    Typed frames (rather than the old untyped `{"token": …}`) are what let the browser
+    share one SSE client across chat, doubts and interviews.
     """
 
     @pytest.mark.asyncio
@@ -512,6 +516,12 @@ class TestE2E_Doubts:
         assert resp.status_code == 200
         # The mock yields "Python list comprehensions let you build lists concisely."
         assert "comprehension" in resp.text.lower() or "data:" in resp.text
+        # Frames must be TYPED. The browser shares one SSE client across chat, doubts and
+        # interviews, and it skips frames without a `type` — an untyped `{"token": …}`
+        # frame would be silently dropped by every consumer.
+        assert '"type": "token"' in resp.text, (
+            f"doubt frames lost their type field: {resp.text[:200]!r}"
+        )
 
     @pytest.mark.asyncio
     async def test_E2E_D03_doubts_requires_auth(self, client):

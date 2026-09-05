@@ -3,6 +3,7 @@ import { useNavigate, Navigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { authAPI, learnerAPI, systemAPI, setAccessToken } from '@/lib/api'
 import { useLearnerStore } from '@/stores/learnerStore'
+import { SUB_SKILLS_RATED } from '@/lib/platformFacts'
 
 /* ============================================================================
    "THE RATING" — Atelier landing page.
@@ -58,7 +59,7 @@ function targetRating(role: string): number {
 const AGENTS = [
   { sign: 'PLAN',   name: 'Curriculum Planner',  duty: 'Drafts your week toward the target role; adapts every Sunday.' },
   { sign: 'QUIZ',   name: 'Quiz Generator',      duty: 'Questions calibrated to your current rating on each concept.' },
-  { sign: 'TRACK',  name: 'Progress Tracker',    duty: 'Rates 32 sub-skills and surfaces the ones slipping.' },
+  { sign: 'TRACK',  name: 'Progress Tracker',    duty: `Rates ${SUB_SKILLS_RATED} sub-skills and surfaces the ones slipping.` },
   { sign: 'ASSIST', name: 'Learning Assistant',  duty: 'Answers doubts and cites the material it drew from.' },
   { sign: 'INTV',   name: 'Interview Coach',     duty: 'Interviews you to unlock the next module — no coasting.' },
   { sign: 'JOBS',   name: 'Job Tracker',         duty: 'Maps every listing against your skills and closes the gaps.' },
@@ -296,9 +297,9 @@ export default function LandingPage() {
             </button>
           </div>
           <div className="bp-hero-facts">
-            <span><b>32</b> sub-skills rated</span>
+            <span><b>{SUB_SKILLS_RATED}</b> sub-skills rated</span>
             <span className="bp-dot">·</span>
-            <span><b>6</b> agents on call</span>
+            <span><b>{AGENTS.length}</b> agents on call</span>
             <span className="bp-dot">·</span>
             <span>spaced-repetition built in</span>
           </div>

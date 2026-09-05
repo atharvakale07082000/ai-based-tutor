@@ -19,24 +19,14 @@ import structlog
 
 log = structlog.get_logger()
 
-BLOOM_LEVELS = ["remember", "understand", "apply", "analyze", "evaluate", "create"]
-
-BLOOM_BY_ELO: list[tuple[tuple[int, int], str]] = [
-    ((0, 300), "remember"),
-    ((300, 450), "understand"),
-    ((450, 600), "apply"),
-    ((600, 720), "analyze"),
-    ((720, 870), "evaluate"),
-    ((870, 1001), "create"),
-]
-
-
-def bloom_for_elo(elo: float) -> str:
-    """Map an ELO score to the appropriate Bloom taxonomy level."""
-    for (lo, hi), level in BLOOM_BY_ELO:
-        if lo <= elo < hi:
-            return level
-    return "understand"
+# The Elo -> Bloom ladder lives in agents/progress.py alongside MASTERY_ELO (it was
+# duplicated here and in agents/session.py). Re-exported so existing importers of
+# `from app.hf.quiz_questions import bloom_for_elo` keep working.
+from app.agents.progress import (  # noqa: E402,F401
+    BLOOM_BY_ELO,
+    BLOOM_LEVELS,
+    bloom_for_elo,
+)
 
 
 async def get_or_generate_quiz_questions(
@@ -50,7 +40,9 @@ async def get_or_generate_quiz_questions(
     """
     from app.db.mongo import col_quiz_bank
 
-    entry = await col_quiz_bank().find_one({"topic": topic, "bloom_level": bloom_level}, {"_id": 0, "questions": 1})
+    entry = await col_quiz_bank().find_one(
+        {"topic": topic, "bloom_level": bloom_level}, {"_id": 0, "questions": 1}
+    )
     cached = (entry or {}).get("questions", [])
     if len(cached) >= count:
         # Shuffle so repeated requests feel varied

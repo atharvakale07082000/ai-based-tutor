@@ -19,6 +19,7 @@ from strands import Agent
 
 from app.agents import tools
 from app.agents.hooks import GuardrailHook
+from app.agents.learner_context import LearnerContext
 from app.agents.model import get_nim_model
 from app.agents.skills import load_skill, skills_prompt_block
 from app.config import settings
@@ -31,7 +32,11 @@ class SpecialistSpec:
     role_name: str  # key in react_agent.yaml roles:
     tool_desc: str  # description the orchestrator sees for this agent-as-tool
     skills: tuple[str, ...]
-    domain_tools: tuple
+    domain_tools: tuple  # stateless tools, shared across requests
+    # Names of learner-bound tools (see tools.learner_scoped_tools). Resolved per
+    # request against the authenticated learner — never handed to the model as an
+    # argument, so it cannot pass someone else's id or garble its own.
+    learner_tools: tuple[str, ...] = ()
 
 
 SPECIALISTS: dict[str, SpecialistSpec] = {
@@ -45,6 +50,7 @@ SPECIALISTS: dict[str, SpecialistSpec] = {
         ),
         skills=("explanation", "web-research"),
         domain_tools=tuple(tools.DOUBT_TOOLS),
+        learner_tools=("get_proficiency",),
     ),
     "quiz": SpecialistSpec(
         key="quiz",
@@ -55,6 +61,7 @@ SPECIALISTS: dict[str, SpecialistSpec] = {
         ),
         skills=("quiz-authoring",),
         domain_tools=tuple(tools.QUIZ_TOOLS),
+        learner_tools=("get_proficiency", "save_quiz"),
     ),
     "curriculum": SpecialistSpec(
         key="curriculum",
@@ -66,6 +73,7 @@ SPECIALISTS: dict[str, SpecialistSpec] = {
         ),
         skills=("curriculum-design", "web-research"),
         domain_tools=tuple(tools.CURRICULUM_TOOLS),
+        learner_tools=("get_proficiency",),
     ),
     "progress": SpecialistSpec(
         key="progress",
@@ -77,6 +85,7 @@ SPECIALISTS: dict[str, SpecialistSpec] = {
         ),
         skills=("progress-tracking",),
         domain_tools=tuple(tools.PROGRESS_TOOLS),
+        learner_tools=("get_proficiency", "save_progress"),
     ),
     "assistant": SpecialistSpec(
         key="assistant",
@@ -88,16 +97,38 @@ SPECIALISTS: dict[str, SpecialistSpec] = {
         ),
         skills=("explanation", "web-research", "interview-coaching"),
         domain_tools=tuple(tools.ASSISTANT_TOOLS),
+        learner_tools=(
+            "get_proficiency",
+            "save_quiz",
+            "save_progress",
+            "get_due_topics",
+        ),
     ),
 }
 
 
-def _system_prompt(spec: SpecialistSpec) -> str:
+def _system_prompt(spec: SpecialistSpec, learner: LearnerContext | None = None) -> str:
+    """Role + skills + reasoning protocol, then the learner briefing.
+
+    ORDER IS LOAD-BEARING — do not append anything stable after the learner block:
+
+    * everything above the briefing is identical for every learner, so the provider can
+      KV-cache that prefix across all of them (the same property ``orchestrator.yaml``
+      is deliberately written for). Learner data used to travel in the *user* turn,
+      which defeated caching entirely and read as data-to-parse rather than
+      instructions-to-follow;
+    * putting the briefing last also puts it closest to the question, which is where
+      instructions get followed best.
+    """
     roles = get_section("react_agent", "roles")
     role_text = roles.get(spec.role_name, "You are a helpful AI tutor.")
     skills_block = skills_prompt_block(list(spec.skills))
     reasoning_block = get_section("react_agent", "reasoning_protocol")
-    return f"{role_text}\n\n{skills_block}\n\n{reasoning_block}".strip()
+    parts = [role_text, skills_block, reasoning_block]
+    if learner is not None:
+        # Empty for a learner we know nothing about — see LearnerContext.render.
+        parts.append(learner.render())
+    return "\n\n".join(p for p in parts if p).strip()
 
 
 def _session_kwargs(session_id: str) -> dict:
@@ -127,20 +158,39 @@ def _session_kwargs(session_id: str) -> dict:
     }
 
 
-def build_specialist(key: str, session_id: str | None = None) -> Agent:
+def build_specialist(
+    key: str,
+    session_id: str | None = None,
+    learner_id: str | None = None,
+    learner: LearnerContext | None = None,
+) -> Agent:
     """Construct (uncached) the specialist Agent for a routing key.
 
     When ``session_id`` (a chat thread id) is given, the agent is wired to that
     thread's persisted conversation (Strands ``FileSessionManager``) so Ask Atelier
     remembers earlier turns across the whole thread. Without it the agent is stateless
     (the generation pipelines that reuse this builder stay memoryless).
+
+    ``learner_id`` binds this agent's learner-scoped tools to one learner. Without it
+    those tools are **omitted entirely** rather than bound to an empty id — a tool that
+    silently reads nobody's records is worse than a tool the agent doesn't have, because
+    the empty result reads as "this learner has no progress".
+
+    ``learner`` is the briefing appended to the system prompt so the agent pitches its
+    answer at this person. Omit it (pipelines do) and the prompt is exactly what it was
+    before personalisation existed.
     """
     spec = SPECIALISTS[key]
+    scoped = tools.learner_scoped_tools(learner_id) if learner_id else {}
     return Agent(
         name=spec.role_name,
         model=get_nim_model("specialist"),
-        system_prompt=_system_prompt(spec),
-        tools=[load_skill, *spec.domain_tools],
+        system_prompt=_system_prompt(spec, learner),
+        tools=[
+            load_skill,
+            *spec.domain_tools,
+            *(scoped[n] for n in spec.learner_tools if n in scoped),
+        ],
         hooks=[GuardrailHook()],
         callback_handler=None,  # we drive streaming via stream_async ourselves
         **(_session_kwargs(session_id) if session_id else {}),

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { doubtsAPI, hfAPI } from '@/lib/api'
+import { doubtsAPI, hfAPI, streamSSE } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Icon } from '@/components/ui/Icon'
@@ -73,42 +73,34 @@ export default function DoubtChatPage() {
     setMessages((prev) => [...prev, { id: assistantId, role: 'assistant', content: '', timestamp: new Date() }])
     setIsStreaming(true)
 
+    // Held in an object so the failure flag survives the event callback's closure.
+    const failure: { message: string | null } = { message: null }
+
     try {
-      const response = await fetch(doubtsAPI.streamUrl(), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('ai_tutor_token') ?? ''}`,
-        },
-        body: JSON.stringify({
+      let full = ''
+      await streamSSE(
+        '/doubts/stream',
+        {
           question: text,
           topic_context: topicContext,
           session_id: sessionId,
           history: messages.slice(-6).map((m) => ({ role: m.role, content: m.content })),
-        }),
-      })
+        },
+        (event) => {
+          if (event.type === 'error') {
+            // The server sends a written reason. Showing it beats the old behaviour,
+            // where an error frame had no `token` key and appended the string
+            // "undefined" to the visible answer.
+            failure.message = String(event.message ?? '')
+            return
+          }
+          if (event.type !== 'token') return
+          full += String(event.content ?? '')
+          setMessages((prev) => prev.map((m) => m.id === assistantId ? { ...m, content: full } : m))
+        },
+      )
 
-      if (!response.ok || !response.body) throw new Error('Stream failed')
-
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      let full = ''
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        const chunk = decoder.decode(value, { stream: true })
-        const lines = chunk.split('\n').filter((l) => l.startsWith('data: '))
-        for (const line of lines) {
-          const json = line.slice(6).trim()
-          if (json === '[DONE]') break
-          try {
-            const { token } = JSON.parse(json)
-            full += token
-            setMessages((prev) => prev.map((m) => m.id === assistantId ? { ...m, content: full } : m))
-          } catch { /* skip */ }
-        }
-      }
+      if (failure.message) throw new Error(failure.message)
 
       if (messages.length >= 3) {
         const allText = messages.map((m) => m.content).join(' ')
@@ -118,8 +110,10 @@ export default function DoubtChatPage() {
           addDoubtSession({ id: sessionId, topic_context: topicContext, sentiment_mood: mood, started_at: new Date().toISOString(), message_count: messages.length })
         } catch { /* non-critical */ }
       }
-    } catch {
-      toast.error('I hit a snag — send your question again and I\'ll come right back.')
+    } catch (err) {
+      // Prefer the server's own explanation; fall back to the generic line.
+      const msg = err instanceof Error && err.message ? err.message : ''
+      toast.error(msg || 'I hit a snag — send your question again and I\'ll come right back.')
       setMessages((prev) => prev.filter((m) => m.id !== assistantId))
     } finally {
       setIsStreaming(false)

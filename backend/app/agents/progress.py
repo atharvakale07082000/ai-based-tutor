@@ -14,6 +14,39 @@ K_FACTOR = 32.0
 # one of those hardcoded its own `700` before this constant was hoisted here.
 MASTERY_ELO: float = 700.0
 
+# ── Elo → cognitive level ─────────────────────────────────────────────────────
+# The other half of the proficiency model, hoisted here for the same reason as
+# MASTERY_ELO: this ladder existed twice, byte-identical, in `hf/quiz_questions.py`
+# (BLOOM_BY_ELO / bloom_for_elo) and `agents/session.py` (BLOOM_LEVEL_BY_ELO /
+# get_bloom_level). Both now re-export from here, so quiz generation, the session
+# engine and the chat specialists agree on what level a learner is at.
+
+BLOOM_LEVELS: list[str] = [
+    "remember",
+    "understand",
+    "apply",
+    "analyze",
+    "evaluate",
+    "create",
+]
+
+BLOOM_BY_ELO: list[tuple[tuple[int, int], str]] = [
+    ((0, 300), "remember"),
+    ((300, 450), "understand"),
+    ((450, 600), "apply"),
+    ((600, 720), "analyze"),
+    ((720, 870), "evaluate"),
+    ((870, 1001), "create"),
+]
+
+
+def bloom_for_elo(elo: float) -> str:
+    """Map an Elo score to the appropriate Bloom taxonomy level."""
+    for (low, high), level in BLOOM_BY_ELO:
+        if low <= elo < high:
+            return level
+    return "understand"
+
 
 def calculate_elo_update(
     current_elo: float, score: float, expected_score: float = 0.5

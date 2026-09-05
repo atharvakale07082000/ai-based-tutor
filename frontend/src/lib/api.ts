@@ -139,6 +139,34 @@ function _forceLogout() {
   window.location.href = '/'
 }
 
+// ── Token refresh ─────────────────────────────────────────────────────────────
+// Shared by the axios interceptor AND the SSE helpers below. The streaming paths
+// use raw `fetch` (they need the response body as a stream), so they never pass
+// through the interceptor — without this they died on an expired token with a bare
+// "stream failed" and no re-login. Access tokens last 30 minutes; interviews and
+// course generation routinely run across that boundary.
+//
+// De-duplicated: several streams can 401 at once (chat + a background query), and
+// firing N parallel refreshes races the backend into rotating the token N times.
+
+let _refreshInFlight: Promise<string | null> | null = null
+
+function _refreshAccessToken(): Promise<string | null> {
+  if (!_refreshInFlight) {
+    _refreshInFlight = axios
+      .post(`${BASE_URL}/auth/refresh`, {}, { withCredentials: true })
+      .then(({ data }) => {
+        setAccessToken(data.access_token)
+        return data.access_token as string
+      })
+      .catch(() => null)
+      .finally(() => {
+        _refreshInFlight = null
+      })
+  }
+  return _refreshInFlight
+}
+
 // Auto-refresh on 401; version check + auto-invalidation on every success
 // Backend guarantees 401 means only "token invalid/expired" — login wrong-password is 400.
 api.interceptors.response.use(
@@ -154,16 +182,14 @@ api.interceptors.response.use(
       if (!original._retry) {
         // First 401 — silently try to refresh the access token once
         original._retry = true
-        try {
-          const { data } = await axios.post(`${BASE_URL}/auth/refresh`, {}, { withCredentials: true })
-          setAccessToken(data.access_token)
-          original.headers.Authorization = `Bearer ${data.access_token}`
+        const fresh = await _refreshAccessToken()
+        if (fresh) {
+          original.headers.Authorization = `Bearer ${fresh}`
           return api(original)
-        } catch {
-          // Refresh also failed — session is dead
-          _forceLogout()
-          return Promise.reject(error)
         }
+        // Refresh also failed — session is dead
+        _forceLogout()
+        return Promise.reject(error)
       }
       // Already retried — still 401, session is dead
       _forceLogout()
@@ -359,7 +385,9 @@ export const doubtsAPI = {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
   },
-  streamUrl: () => `${BASE_URL}/doubts/stream`,
+  // No streamUrl helper: doubts stream through `streamSSE('/doubts/stream', …)` like
+  // every other streaming endpoint. Handing out a bare URL is what let the page build
+  // its own reader (and its own auth header) and drift from the shared one.
 }
 
 // ─── Progress ─────────────────────────────────────────────────────────────────
@@ -484,13 +512,21 @@ export interface OrgSkillGap {
   avg_elo: number
 }
 
+/** Org-wide agent settings. Fractions 0-1, not percentages. */
+export interface AgentSettings {
+  difficulty_ceiling: number
+}
+
 export const adminAPI = {
   getLearners: (search = '', page = 1) =>
     api.get<{ items: AdminLearner[]; total: number }>('/admin/learners', { params: { search, page } }),
   getSkillGaps: () =>
     api.get<{ items: OrgSkillGap[]; mastery_elo: number }>('/admin/skill-gaps'),
-  updateConfig: (config: { quiz_frequency?: number; difficulty_ceiling?: number; escalation_threshold?: number }) =>
-    api.put('/admin/config', config),
+  // Only settings an agent actually reads. `quiz_frequency` / `escalation_threshold`
+  // were retired server-side — they named systems the platform does not have.
+  getConfig: () => api.get<AgentSettings>('/admin/config'),
+  updateConfig: (config: Partial<AgentSettings>) =>
+    api.put<{ config: AgentSettings; applied: Partial<AgentSettings> }>('/admin/config', config),
 }
 
 // ─── Courses ──────────────────────────────────────────────────────────────────
@@ -821,7 +857,8 @@ export const activityAPI = {
 
 // ─── Assistant V2 ─────────────────────────────────────────────────────────────
 
-export type V2EventType = 'routing' | 'reasoning' | 'token' | 'action' | 'done' | 'error'
+export type V2EventType =
+  | 'routing' | 'reasoning' | 'token' | 'action' | 'done' | 'error' | 'guardrail' | 'step'
 
 export interface V2RoutingEvent   { type: 'routing';   agent: string; reason: string }
 export interface V2ReasoningEvent { type: 'reasoning'; content: string }
@@ -829,6 +866,12 @@ export interface V2TokenEvent     { type: 'token';     content: string }
 export interface V2ActionEvent    { type: 'action';    kind: string; payload: Record<string, unknown> }
 export interface V2DoneEvent      { type: 'done';      steps: number; total_ms: number }
 export interface V2ErrorEvent     { type: 'error';     message: string }
+/**
+ * The input guardrail refused the prompt and no answer will follow. Carries a written
+ * explanation — it must be shown, not swallowed. (It previously had no handler, so a
+ * blocked prompt made the learner's message disappear with no reason given.)
+ */
+export interface V2GuardrailEvent { type: 'guardrail'; message: string }
 
 export interface StepEvent { type: 'step'; id: string; label: string; status: 'active' | 'done' | 'error' }
 
@@ -839,6 +882,7 @@ export type V2Event =
   | V2ActionEvent
   | V2DoneEvent
   | V2ErrorEvent
+  | V2GuardrailEvent
   | StepEvent
 
 // ─── Stream cancellation ──────────────────────────────────────────────────────
@@ -849,6 +893,8 @@ export type V2Event =
 export interface StreamOptions {
   /** Abort the in-flight stream. On abort the promise resolves quietly (no throw). */
   signal?: AbortSignal
+  /** Extra request headers (e.g. the chat thread's `X-Session-Id`). */
+  headers?: Record<string, string>
 }
 
 /** True for the `AbortError` DOMException browsers raise when a fetch/reader is aborted. */
@@ -856,68 +902,40 @@ export function isAbortError(err: unknown): boolean {
   return typeof err === 'object' && err !== null && (err as { name?: string }).name === 'AbortError'
 }
 
-// Single chat endpoint: /api/v1/chat (BASE_URL already includes /api/v1).
-export const chatAPI = {
-  streamChat: async (
-    message: string,
-    onEvent: (event: V2Event) => void,
-    history?: Array<{ role: string; content: string }>,
-    context?: Record<string, unknown>,
-    /** Stable chat-thread id → enables persistent per-thread memory server-side. */
-    sessionId?: string,
-    options?: StreamOptions,
-  ): Promise<void> => {
-    const signal = options?.signal
-    if (signal?.aborted) return
-    let response: Response
-    try {
-      response = await fetch(`${BASE_URL}/chat`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: accessToken ? `Bearer ${accessToken}` : '',
-          ...(sessionId ? { 'X-Session-Id': sessionId } : {}),
-        },
-        body: JSON.stringify({ message, history: history ?? [], context: context ?? {} }),
-        signal,
-      })
-    } catch (err) {
-      if (isAbortError(err) || signal?.aborted) return
-      throw err
-    }
-    if (!response.ok || !response.body) throw new Error('V2 stream failed')
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder()
-    try {
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        const chunk = decoder.decode(value, { stream: true })
-        const lines = chunk.split('\n').filter((l) => l.startsWith('data: '))
-        for (const line of lines) {
-          const json = line.slice(6).trim()
-          if (json === '[DONE]') return
-          try {
-            const event = JSON.parse(json)
-            if (event.type) onEvent(event)
-          } catch { /* skip malformed */ }
-        }
+// ─── SSE frame parsing ────────────────────────────────────────────────────────
+// Pure and stateful-per-stream, exported so it can be tested byte-split at every
+// offset without a network. This buffering is load-bearing: a `data:` frame split
+// across two network reads produces one truncated line, and a reader that parses
+// line-by-line without carry-over silently drops it. That was the cause of missing
+// characters in chat answers.
+
+export const SSE_DONE = '[DONE]'
+
+export function createSSEParser() {
+  let buffer = ''
+  return {
+    /** Feed one decoded chunk; returns the `data:` payloads it completed, in order. */
+    push(chunk: string): string[] {
+      buffer += chunk
+      const lines = buffer.split('\n')
+      // The last element is whatever came after the final newline — possibly half a
+      // frame. Hold it back until the next chunk completes it.
+      buffer = lines.pop() ?? ''
+      const payloads: string[] = []
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue
+        const payload = line.slice(6).trim()
+        if (payload) payloads.push(payload)
       }
-    } catch (err) {
-      reader.cancel().catch(() => {})
-      if (isAbortError(err) || signal?.aborted) return // user pressed Stop — not an error
-      throw new Error(err instanceof Error ? err.message : 'Stream read error')
-    } finally {
-      // Aborting mid-stream leaves the body locked; releasing is a no-op if already done.
-      if (signal?.aborted) reader.cancel().catch(() => {})
-    }
-  },
+      return payloads
+    },
+  }
 }
 
-// ─── Generic agent step streaming ─────────────────────────────────────────────
-// Reusable SSE driver for any endpoint that streams typed JSON events terminated
-// by the `[DONE]` sentinel (course generation, quiz review, interview review, …).
-// Buffers partial frames so events split across network reads parse correctly.
+// ─── Generic SSE streaming ────────────────────────────────────────────────────
+// The single browser SSE driver. Every streaming endpoint goes through it: chat,
+// doubts, quiz review, course generation, interview turns, JD analysis, loops.
+// Handles frame buffering, silent token refresh, and abort-as-a-normal-outcome.
 
 export async function streamSSE(
   path: string,
@@ -928,39 +946,49 @@ export async function streamSSE(
   const signal = options?.signal
   // Already cancelled before we even hit the network — nothing to do.
   if (signal?.aborted) return
-  let response: Response
-  try {
-    response = await fetch(`${BASE_URL}${path}`, {
+
+  const send = (token: string | null) =>
+    fetch(`${BASE_URL}${path}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: accessToken ? `Bearer ${accessToken}` : '',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(options?.headers ?? {}),
       },
       body: JSON.stringify(body ?? {}),
       signal,
     })
+
+  let response: Response
+  try {
+    response = await send(accessToken)
+    // An expired access token must not kill a live stream. Raw fetch bypasses the
+    // axios interceptor, so the refresh-and-retry is done here explicitly.
+    if (response.status === 401) {
+      const fresh = await _refreshAccessToken()
+      if (!fresh) {
+        _forceLogout()
+        return
+      }
+      response = await send(fresh)
+    }
   } catch (err) {
     if (isAbortError(err) || signal?.aborted) return
     throw err
   }
+
   if (!response.ok || !response.body) throw new Error(`Stream failed: ${response.status}`)
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
-  let buffer = ''
+  const parser = createSSEParser()
   try {
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split('\n')
-      buffer = lines.pop() ?? '' // keep the last, possibly-partial line for the next read
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue
-        const json = line.slice(6).trim()
-        if (!json) continue
-        if (json === '[DONE]') return
+      for (const payload of parser.push(decoder.decode(value, { stream: true }))) {
+        if (payload === SSE_DONE) return
         try {
-          const event = JSON.parse(json)
+          const event = JSON.parse(payload)
           if (event && event.type) onEvent(event)
         } catch { /* skip malformed frame */ }
       }
@@ -973,4 +1001,31 @@ export async function streamSSE(
     // Aborting mid-stream leaves the body locked; releasing is a no-op if already done.
     if (signal?.aborted) reader.cancel().catch(() => {})
   }
+}
+
+// Single chat endpoint: /api/v1/chat (BASE_URL already includes /api/v1).
+// A thin wrapper over streamSSE — it used to be a second, subtly different reader
+// (no frame buffering, no token refresh), which is why chat lost characters.
+export const chatAPI = {
+  streamChat: (
+    message: string,
+    onEvent: (event: V2Event) => void,
+    history?: Array<{ role: string; content: string }>,
+    context?: Record<string, unknown>,
+    /** Stable chat-thread id → enables persistent per-thread memory server-side. */
+    sessionId?: string,
+    options?: StreamOptions,
+  ): Promise<void> =>
+    streamSSE(
+      '/chat',
+      { message, history: history ?? [], context: context ?? {} },
+      (event) => onEvent(event as unknown as V2Event),
+      {
+        ...options,
+        headers: {
+          ...(options?.headers ?? {}),
+          ...(sessionId ? { 'X-Session-Id': sessionId } : {}),
+        },
+      },
+    ),
 }

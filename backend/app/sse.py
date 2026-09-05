@@ -36,9 +36,19 @@ def sse_frame(ev: dict) -> str:
     return f"data: {json.dumps(ev)}\n\n"
 
 
-def sse_stream_response(gen: AsyncIterator[str]) -> StreamingResponse:
-    """Wrap an already-framed generator in a correctly-headed streaming response."""
-    return StreamingResponse(gen, media_type="text/event-stream", headers=SSE_HEADERS)
+def sse_stream_response(
+    gen: AsyncIterator[str], headers: dict[str, str] | None = None
+) -> StreamingResponse:
+    """Wrap an already-framed generator in a correctly-headed streaming response.
+
+    ``headers`` adds to (never replaces) ``SSE_HEADERS`` — the chat endpoint echoes
+    its session/correlation ids this way instead of restating the buffering headers.
+    """
+    return StreamingResponse(
+        gen,
+        media_type="text/event-stream",
+        headers={**SSE_HEADERS, **(headers or {})},
+    )
 
 
 def sse_response(

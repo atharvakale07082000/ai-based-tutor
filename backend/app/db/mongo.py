@@ -142,6 +142,15 @@ def col_evidence() -> AsyncCollection:
     return get_db()["evidence"]
 
 
+def col_app_settings() -> AsyncCollection:
+    """Org-wide runtime settings (one doc per section, e.g. ``agent_settings``).
+
+    Persisted rather than held in memory: the agent config used to live in a module-level
+    dict, so it reset on every restart and each instance had its own copy.
+    """
+    return get_db()["app_settings"]
+
+
 # ─── Startup ──────────────────────────────────────────────────────────────────
 
 

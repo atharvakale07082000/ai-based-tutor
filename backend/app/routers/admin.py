@@ -8,27 +8,36 @@ mutate global agent config, so authentication alone is not enough. Same gate as 
 Endpoints:
   GET  /admin/learners     — paginated learner list with proficiency + mood
   GET  /admin/skill-gaps   — org-wide skill gap per topic, aggregated from real proficiency
-  PUT  /admin/config       — update runtime agent config (quiz frequency, difficulty cap)
-  GET  /admin/config       — read current agent config
+  PUT  /admin/config       — update org-wide agent settings (persisted, clamped)
+  GET  /admin/config       — read effective org-wide agent settings
   POST /admin/send-digest  — manually trigger the weekly progress digest for a user
 """
+
+import dataclasses
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.agents.agent_settings import resolve, sanitize
 from app.agents.progress import MASTERY_ELO
 from app.auth.jwt import require_superuser
-from app.db.mongo import PROJ, col_doubts, col_learners
+from app.db.mongo import PROJ, col_app_settings, col_doubts, col_learners
 
 router = APIRouter()
 log = structlog.get_logger()
 
 
-_agent_config = {
-    "quiz_frequency": 3,
-    "difficulty_ceiling": 0.8,
-    "escalation_threshold": 3,
-}
+# Org-wide agent settings live in Mongo (`app_settings/agent_settings`), not in a
+# module-level dict. The dict version reset on every restart, diverged between
+# instances, and — more to the point — no agent ever read it, so the panel reported
+# success while changing nothing. `agents/agent_settings.py` owns the schema; only
+# settings with a real consumer exist there.
+_SETTINGS_DOC = "agent_settings"
+
+
+async def _org_settings() -> dict:
+    doc = await col_app_settings().find_one({"_id": _SETTINGS_DOC}) or {}
+    return {k: v for k, v in doc.items() if k != "_id"}
 
 
 @router.get("/learners")
@@ -135,15 +144,21 @@ async def get_skill_gaps(
 
 @router.put("/config")
 async def update_config(config: dict, user_id: str = Depends(require_superuser)):
-    """Update one or more runtime agent configuration values."""
-    _agent_config.update({k: v for k, v in config.items() if k in _agent_config})
-    return {"config": _agent_config}
+    """Update the org-wide agent settings. Unknown keys are ignored, values clamped."""
+    patch = sanitize(config)
+    if patch:
+        await col_app_settings().update_one(
+            {"_id": _SETTINGS_DOC}, {"$set": patch}, upsert=True
+        )
+        log.info("agent_settings_updated", changed=sorted(patch), by=user_id)
+    return {"config": await _org_settings(), "applied": patch}
 
 
 @router.get("/config")
 async def get_config(user_id: str = Depends(require_superuser)):
-    """Return the current runtime agent configuration."""
-    return _agent_config
+    """Return the effective org-wide agent settings (stored values over defaults)."""
+    effective = resolve(await _org_settings())
+    return {f.name: getattr(effective, f.name) for f in dataclasses.fields(effective)}
 
 
 @router.post("/send-digest")

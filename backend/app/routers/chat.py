@@ -2,24 +2,24 @@
 
 from __future__ import annotations
 
-import json
 import time
 import uuid
 from typing import Literal
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from structlog.contextvars import bind_contextvars
 
 from app.agents.handler import handler
+from app.agents.learner_context import LearnerContext
 from app.agents.steps import StepTimeline
 from app.agents.stream_adapter import TraceState
 from app.auth.jwt import get_current_user_id
 from app.db.mongo import PROJ, col_learners
 from app.guardrails import check_input
 from app.observability import observation, trace_attributes
+from app.sse import SSE_DONE, sse_frame, sse_stream_response
 
 router = APIRouter()
 log = structlog.get_logger()
@@ -99,16 +99,27 @@ async def v2_chat(
                         reason=guard.reason,
                         session_id=session_id,
                     )
-                    yield f"data: {json.dumps({'type': 'guardrail', 'message': 'That request looks like an attempt to override my instructions — I can only help with learning.'})}\n\n"
+                    yield sse_frame(
+                        {
+                            "type": "guardrail",
+                            "message": "That request looks like an attempt to override my instructions — I can only help with learning.",
+                        }
+                    )
                     return
 
-                learner = (
+                learner_doc = (
                     await col_learners().find_one({"user_id": user_id}, PROJ) or {}
                 )
+                # The learner's profile now reaches the agent as a briefing in the
+                # SYSTEM prompt (bounded, and phrased as instructions), instead of a raw
+                # JSON dump of the whole proficiency map in the user turn.
+                learner = LearnerContext.from_doc(
+                    learner_doc,
+                    current_topic=str(body.context.get("current_topic") or ""),
+                )
                 context = {
-                    "learner_id": learner.get("id", ""),
+                    "learner_id": learner_doc.get("id", ""),
                     "current_topic": body.context.get("current_topic", ""),
-                    "proficiency": learner.get("topic_proficiency_map") or {},
                     "history": [m.model_dump() for m in body.history[-6:]],
                     **body.context,
                     # Stable chat-thread id (client sends its thread id as X-Session-Id) enables
@@ -128,7 +139,9 @@ async def v2_chat(
                 # The handler performs the always-on LLM routing decision itself and
                 # emits it as the first `routing` event; we frame the StepTimeline around
                 # the events it yields (routing → reasoning/token/action → done).
-                async for event in handler.run_chat(stripped, context, trace=trace):
+                async for event in handler.run_chat(
+                    stripped, context, trace=trace, learner=learner
+                ):
                     etype = event.get("type")
                     if etype == "routing":
                         agent_name = event.get("agent", "assistant")
@@ -147,21 +160,21 @@ async def v2_chat(
                                 "routing_reason": event.get("reason"),
                             }
                         )
-                        yield f"data: {json.dumps(event)}\n\n"
-                        yield f"data: {json.dumps(tl.done('route'))}\n\n"
-                        yield f"data: {json.dumps(tl.start('work'))}\n\n"
+                        yield sse_frame(event)
+                        yield sse_frame(tl.done("route"))
+                        yield sse_frame(tl.start("work"))
                         continue
                     if etype == "token":
                         answer_text += str(event.get("content", ""))
                         if not answered:
                             answered = True
-                            yield f"data: {json.dumps(tl.done('work'))}\n\n"
-                            yield f"data: {json.dumps(tl.start('answer'))}\n\n"
+                            yield sse_frame(tl.done("work"))
+                            yield sse_frame(tl.start("answer"))
                     elif etype == "done":
                         # Close the final step *before* forwarding 'done' so the terminal
                         # event of the stream stays 'done' (clients rely on this).
-                        yield f"data: {json.dumps(tl.done('answer' if answered else 'work'))}\n\n"
-                    yield f"data: {json.dumps(event)}\n\n"
+                        yield sse_frame(tl.done("answer" if answered else "work"))
+                    yield sse_frame(event)
 
                 # The assistant reply is the trace output — what a reviewer reads first
                 # in the trace list and what trace-level evaluators grade.
@@ -214,7 +227,12 @@ async def v2_chat(
                     status_message=str(e)[:500],
                     output=answer_text or None,
                 )
-                yield f"data: {json.dumps({'type': 'error', 'message': 'Something went wrong on my end — send your question again and I will be right back.'})}\n\n"
+                yield sse_frame(
+                    {
+                        "type": "error",
+                        "message": "Something went wrong on my end — send your question again and I will be right back.",
+                    }
+                )
 
             finally:
                 latency_ms = round((time.perf_counter() - start) * 1000)
@@ -225,15 +243,9 @@ async def v2_chat(
                     latency_ms=latency_ms,
                     had_error=had_error,
                 )
-                yield "data: [DONE]\n\n"
+                yield SSE_DONE
 
-    return StreamingResponse(
+    return sse_stream_response(
         event_stream(),
-        media_type="text/event-stream",
-        headers={
-            "X-Accel-Buffering": "no",
-            "Cache-Control": "no-cache",
-            "X-Session-Id": session_id,
-            "X-Correlation-Id": correlation_id,
-        },
+        headers={"X-Session-Id": session_id, "X-Correlation-Id": correlation_id},
     )

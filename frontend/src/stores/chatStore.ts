@@ -16,6 +16,13 @@ export interface ChatAction {
   payload: Record<string, unknown>
 }
 
+/** One entry in a turn's progress timeline, mirroring the backend's `step` event. */
+export interface ChatStep {
+  id: string
+  label: string
+  status: 'active' | 'done' | 'error'
+}
+
 /** How a turn came to replace an earlier one. Drives the honesty note in the UI. */
 export type ChatRevision = 'regenerated' | 'edited'
 
@@ -26,11 +33,22 @@ export interface ChatMessage {
   streaming?: boolean
   /** The agent's live reasoning ("how I'm thinking through this"), streamed in. */
   reasoning: string
+  /**
+   * Server-driven progress timeline for the turn (route → work → answer). The backend
+   * has always emitted these `step` events; they were dropped on the floor, which is why
+   * the "Thinking…" panel looked dead on turns where the model emits no <reasoning> block.
+   */
+  steps?: ChatStep[]
   actions: ChatAction[]
   /** The learner pressed Stop — whatever streamed is kept, but it is a partial answer. */
   stopped?: boolean
   /** Learner-facing failure text for a turn that never completed. Enables Retry. */
   error?: string
+  /**
+   * The input guardrail refused this prompt. Distinct from `error`: nothing went wrong,
+   * and re-sending the same words will be refused again — so no Retry is offered.
+   */
+  blocked?: boolean
   /** Set when this turn replaced an earlier one (regenerate / edit & resend). */
   revised?: ChatRevision
 }

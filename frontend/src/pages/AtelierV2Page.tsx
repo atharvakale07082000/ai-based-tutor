@@ -272,8 +272,29 @@ export default function AtelierV2Page() {
                 case 'token':
                   return { ...msg, content: msg.content + event.content }
 
+                // Progress timeline. The backend emits these on every turn; before this
+                // they fell through to `default` and were discarded, leaving the panel
+                // empty whenever the model skipped its <reasoning> block.
+                case 'step': {
+                  const steps = msg.steps ?? []
+                  const at = steps.findIndex((s) => s.id === event.id)
+                  const next = { id: event.id, label: event.label, status: event.status }
+                  return {
+                    ...msg,
+                    steps: at === -1
+                      ? [...steps, next]
+                      : steps.map((s, i) => (i === at ? next : s)),
+                  }
+                }
+
                 case 'action':
                   return { ...msg, actions: [...msg.actions, { kind: event.kind, payload: event.payload }] }
+
+                // The prompt was refused before any LLM call. The server wrote an
+                // explanation; keep the bubble and show it, rather than letting the
+                // empty-bubble cleanup below delete the turn silently.
+                case 'guardrail':
+                  return { ...msg, streaming: false, blocked: true, error: event.message }
 
                 case 'done':
                   return { ...msg, streaming: false }
@@ -713,7 +734,8 @@ export default function AtelierV2Page() {
                   </span>
                   {msg.streaming && <Badge tone="pos" size="xs" dot>Writing…</Badge>}
                   {msg.stopped && !msg.streaming && <Badge tone="warn" size="xs">Stopped</Badge>}
-                  {msg.error && !msg.streaming && <Badge tone="neg" size="xs">Failed</Badge>}
+                  {msg.error && !msg.streaming && !msg.blocked && <Badge tone="neg" size="xs">Failed</Badge>}
+                  {msg.blocked && <Badge tone="warn" size="xs">Not answered</Badge>}
                 </div>
 
                 {/* User message */}
@@ -777,7 +799,10 @@ export default function AtelierV2Page() {
                   <>
                     {/* Live reasoning — how the agent is thinking through it */}
                     <ReasoningStream
-                      segments={msg.reasoning ? [{ text: msg.reasoning }] : []}
+                      segments={[
+                        ...(msg.steps ?? []).map((s) => ({ id: s.id, text: s.label, status: s.status })),
+                        ...(msg.reasoning ? [{ text: msg.reasoning }] : []),
+                      ]}
                       active={!!msg.streaming && !msg.content}
                     />
 
@@ -803,24 +828,36 @@ export default function AtelierV2Page() {
                     {msg.error && !msg.streaming && (
                       <div
                         style={{
-                          marginTop: 10, padding: '10px 12px', background: 'var(--neg-soft)',
+                          marginTop: 10, padding: '10px 12px',
+                          background: msg.blocked ? 'var(--paper-2)' : 'var(--neg-soft)',
                           border: '1px solid var(--line-2)', borderRadius: 'var(--r-2)',
                           display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
                         }}
                       >
-                        <Icon name="alert" size={13} style={{ color: 'var(--neg)', flexShrink: 0 }} />
-                        <span className="t-sm" style={{ color: 'var(--neg)', flex: 1, minWidth: 140 }}>
+                        <Icon
+                          name={msg.blocked ? 'lock' : 'alert'}
+                          size={13}
+                          style={{ color: msg.blocked ? 'var(--ink-2)' : 'var(--neg)', flexShrink: 0 }}
+                        />
+                        <span
+                          className="t-sm"
+                          style={{ color: msg.blocked ? 'var(--ink-1)' : 'var(--neg)', flex: 1, minWidth: 140 }}
+                        >
                           {msg.error}
                         </span>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          icon="refresh"
-                          disabled={streaming}
-                          onClick={() => rerun(msg.id)}
-                        >
-                          Retry
-                        </Button>
+                        {/* No Retry on a guardrail block: nothing failed, and re-sending the
+                            same wording is refused again. Rephrasing is the way forward. */}
+                        {!msg.blocked && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            icon="refresh"
+                            disabled={streaming}
+                            onClick={() => rerun(msg.id)}
+                          >
+                            Retry
+                          </Button>
+                        )}
                       </div>
                     )}
 

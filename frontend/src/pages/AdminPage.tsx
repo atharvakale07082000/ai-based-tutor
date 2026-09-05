@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Routes, Route, Link, Navigate, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { Card } from '@/components/ui/Card'
@@ -16,7 +16,10 @@ const MOOD_EMOJI: Record<string, string> = { POSITIVE: '😊', NEGATIVE: '😟',
 
 function AdminOverview() {
   const [search, setSearch] = useState('')
-  const [config, setConfig] = useState({ quiz_frequency: 3, difficulty_ceiling: 80, escalation_threshold: 3 })
+  // Only settings an agent actually reads live here. "Quiz Frequency" and
+  // "Escalation Threshold" were retired: they named systems this platform does not
+  // have, and the whole panel wrote to an in-memory dict nothing read.
+  const [ceiling, setCeiling] = useState(100)
 
   const { data: learners, isLoading } = useQuery({
     queryKey: ['admin', 'learners', search],
@@ -33,10 +36,22 @@ function AdminOverview() {
     staleTime: 1000 * 60 * 5,
   })
 
+  // Seed the slider from the stored value so it shows what is actually in force.
+  const { data: storedConfig } = useQuery({
+    queryKey: ['adminConfig'],
+    queryFn: () => adminAPI.getConfig().then((r) => r.data),
+    staleTime: 1000 * 60,
+  })
+  useEffect(() => {
+    if (typeof storedConfig?.difficulty_ceiling === 'number') {
+      setCeiling(Math.round(storedConfig.difficulty_ceiling * 100))
+    }
+  }, [storedConfig])
+
   const configMutation = useMutation({
-    mutationFn: adminAPI.updateConfig,
-    onSuccess: () => toast.success('Agent config updated'),
-    onError: () => toast.error('Could not update config'),
+    mutationFn: () => adminAPI.updateConfig({ difficulty_ceiling: ceiling / 100 }),
+    onSuccess: () => toast.success('Agent settings saved'),
+    onError: () => toast.error('Could not save agent settings'),
   })
 
   return (
@@ -146,30 +161,29 @@ function AdminOverview() {
         </div>
       </Card>
 
-      {/* Agent config */}
+      {/* Agent settings */}
       <Card padding="md">
-        <div className="caps fg-2" style={{ marginBottom: 16 }}>Agent Configuration</div>
+        <div className="caps fg-2" style={{ marginBottom: 6 }}>Agent Settings</div>
+        <div className="t-xs fg-3" style={{ marginBottom: 16, maxWidth: 460, lineHeight: 1.5 }}>
+          Applies to every learner who has not set their own. Quiz difficulty is chosen from
+          each learner's proficiency; this caps how demanding it may get.
+        </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-          {([
-            { key: 'quiz_frequency' as const,       label: 'Quiz Frequency',        unit: 'per week',      min: 1, max: 14  },
-            { key: 'difficulty_ceiling' as const,    label: 'Difficulty Ceiling',    unit: '%',             min: 20, max: 100 },
-            { key: 'escalation_threshold' as const,  label: 'Escalation Threshold',  unit: 'failed attempts', min: 1, max: 10  },
-          ]).map(({ key, label, unit, min, max }) => (
-            <div key={key}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                <span className="t-sm fg-1">{label}</span>
-                <span className="t-sm fg-0 mono" style={{ fontWeight: 600 }}>{config[key]} {unit}</span>
-              </div>
-              <input
-                type="range" min={min} max={max}
-                value={config[key]}
-                onChange={(e) => setConfig((c) => ({ ...c, [key]: Number(e.target.value) }))}
-                style={{ width: '100%', accentColor: 'var(--ink-0)', height: 4 }}
-              />
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+              <span className="t-sm fg-1">Difficulty ceiling</span>
+              <span className="t-sm fg-0 mono" style={{ fontWeight: 600 }}>{ceiling}%</span>
             </div>
-          ))}
+            <input
+              type="range" min={20} max={100}
+              value={ceiling}
+              aria-label="Difficulty ceiling, percent"
+              onChange={(e) => setCeiling(Number(e.target.value))}
+              style={{ width: '100%', accentColor: 'var(--ink-0)', height: 4 }}
+            />
+          </div>
           <div style={{ paddingTop: 4 }}>
-            <Button variant="primary" onClick={() => configMutation.mutate(config)} loading={configMutation.isPending}>Save Agent Config</Button>
+            <Button variant="primary" onClick={() => configMutation.mutate()} loading={configMutation.isPending}>Save agent settings</Button>
           </div>
         </div>
       </Card>

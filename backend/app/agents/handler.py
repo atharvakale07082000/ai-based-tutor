@@ -20,13 +20,13 @@ real time instead of as a silent multi-second gap.
 from __future__ import annotations
 
 import asyncio
-import json
 from contextlib import aclosing
 from typing import Any, AsyncIterator, Awaitable, Callable
 
 import structlog
 
 from app.agents import orchestrator
+from app.agents.learner_context import LearnerContext
 from app.agents.model import throttle_notices
 from app.agents.prompt_utils import history_messages
 from app.agents.routing_meta import display_name
@@ -35,8 +35,6 @@ from app.agents.stream_adapter import TraceState, finish_events, translate_event
 
 log = structlog.get_logger()
 
-
-_INTERNAL_CTX_KEYS = {"history", "thread_id"}
 
 # Learner-facing note for an upstream capacity wait. First person, calm, and free of
 # infrastructure jargon — it rides the existing thinking channel, not a new event type.
@@ -94,20 +92,26 @@ async def _consume(
 
 
 def _build_prompt(query: str, context: dict, *, include_history: bool = True) -> str:
-    """Compose the learner-context blob + recent history + query into one prompt.
+    """Compose recent history + the learner's message into one user turn.
 
     When the thread has persistent memory (a Strands session), ``include_history`` is
     False — the session already carries prior turns, so re-injecting them here would
     duplicate context.
+
+    This used to lead with ``Learner context: {json blob}``. That blob carried the whole
+    proficiency map (up to ~108 topics) on every single turn, defeated prefix KV-caching,
+    and existed partly so the model could read ``learner_id`` back out of it for tool
+    calls. Identity is now bound server-side (``tools.learner_scoped_tools``) and the
+    learner briefing lives in the system prompt (``LearnerContext.render``), so the user
+    turn is just what the learner actually said.
     """
-    ctx = {k: v for k, v in context.items() if k not in _INTERNAL_CTX_KEYS}
-    parts = [f"Learner context: {json.dumps(ctx, default=str)}"]
+    parts = []
     if include_history:
         turns = history_messages(context.get("history"))
         if turns:
             convo = "\n".join(f"{t['role']}: {t['content']}" for t in turns)
             parts.append(f"Recent conversation:\n{convo}")
-    parts.append(f"Current message: {query}")
+    parts.append(query)
     return "\n\n".join(parts)
 
 
@@ -120,12 +124,16 @@ class AgentHandler:
         context: dict,
         *,
         trace: TraceState | None = None,
+        learner: LearnerContext | None = None,
     ) -> AsyncIterator[dict]:
         """Yield wire-contract events: routing -> specialist trace/tokens -> done.
 
         ``trace`` lets the caller keep the per-stream ``TraceState`` after the stream
         ends — the chat router uses its ``grounding`` (tool results, never emitted) as
         the retrieval context for the online faithfulness eval.
+
+        ``learner`` is the briefing appended to each specialist's system prompt so the
+        answer is pitched at this person. Omitted -> the prompt is what it always was.
         """
         query = (query or "").strip()
         if not query:
@@ -166,8 +174,14 @@ class AgentHandler:
 
             # ── specialist stream(s) ────────────────────────────────────────────
             try:
+                learner_id = (context.get("learner_id") or "").strip() or None
                 for idx, key in enumerate(agents):
-                    specialist = build_specialist(key, session_id=thread_id)
+                    specialist = build_specialist(
+                        key,
+                        session_id=thread_id,
+                        learner_id=learner_id,
+                        learner=learner,
+                    )
                     step_prompt = prompt
                     if transcript:
                         step_prompt = (
