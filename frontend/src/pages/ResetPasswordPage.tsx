@@ -36,7 +36,7 @@ export default function ResetPasswordPage() {
       navigate('/')
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      toast.error(msg ?? 'Reset failed — the link may have expired.')
+      toast.error(msg ?? 'Could not reset your password — the link may have expired, request a new one')
     } finally {
       setLoading(false)
     }

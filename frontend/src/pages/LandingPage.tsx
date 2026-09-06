@@ -98,7 +98,7 @@ function AuthOverlay({ onClose, initialMode = 'signin' }: { onClose: () => void;
         toast.success('Reset link sent — check your inbox.')
         setMode('signin')
       } catch {
-        toast.error('Could not send reset link. Try again.')
+        toast.error('Could not send the reset link — check the address and try again')
       } finally { setLoading(false) }
       return
     }
@@ -118,7 +118,7 @@ function AuthOverlay({ onClose, initialMode = 'signin' }: { onClose: () => void;
       navigate('/dashboard')
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      toast.error(msg ?? 'Could not authenticate. Check your credentials.')
+      toast.error(msg ?? 'Could not sign you in — check your email and password')
     } finally { setLoading(false) }
   }
 

@@ -244,7 +244,7 @@ export default function QuizPage() {
         } else if (event.type === 'action' && event.kind === 'quiz_scored') {
           scored = event.payload as QuizScored
         } else if (event.type === 'error') {
-          toast.error(String(event.message ?? 'Could not submit quiz results'))
+          toast.error(String(event.message ?? 'Could not submit your answers — they are still here, try again'))
         }
       })
       const s = scored as QuizScored | null  // assigned inside the SSE callback; cast so TS keeps the union
@@ -256,9 +256,9 @@ export default function QuizPage() {
         // Sync XP from the updated learner profile and invalidate progress cache
         queryClient.invalidateQueries({ queryKey: ['progress'] })
       } else {
-        toast.error('Could not submit quiz results')
+        toast.error('Could not submit your answers — they are still here, try again')
       }
-    } catch { toast.error('Could not submit quiz results') }
+    } catch { toast.error('Could not submit your answers — they are still here, try again') }
     finally {
       setSubmitting(false)
       updateAgentStatus('progress', { status: 'active' })
@@ -317,7 +317,7 @@ export default function QuizPage() {
     try {
       const { data } = await quizAPI.explain(quiz.quiz_id, currentIdx)
       setExplanation(data.explanation)
-    } catch { toast.error('Could not generate explanation') }
+    } catch { toast.error('Could not write an explanation — try again') }
     finally { setExplanationLoading(false) }
   }
 

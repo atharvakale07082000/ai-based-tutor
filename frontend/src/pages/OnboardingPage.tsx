@@ -119,7 +119,7 @@ export default function OnboardingPage() {
       setStep(1)
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      toast.error(msg ?? 'Authentication failed. Please try again.')
+      toast.error(msg ?? 'Could not sign you in — check your email and password')
     } finally {
       setAuthLoading(false)
     }
@@ -140,7 +140,7 @@ export default function OnboardingPage() {
 
   // ── Final: save profile & launch career path ─────────────────────────────────
   const handleComplete = async () => {
-    if (!getAccessToken()) { toast.error('Not authenticated'); setStep(0); return }
+    if (!getAccessToken()) { toast.error('Your session expired — sign in again'); setStep(0); return }
     setBuilding(true)
     try {
       await learnerAPI.onboard({
@@ -158,7 +158,7 @@ export default function OnboardingPage() {
       toast('Building your personalised curriculum in the background…', { icon: '⚙️', duration: 4000 })
       navigate('/dashboard')
     } catch {
-      toast.error('Could not save your profile. Please try again.')
+      toast.error('Could not save your profile — try again')
       setBuilding(false)
     }
   }

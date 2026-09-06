@@ -143,7 +143,7 @@ export default function DoubtChatPage() {
       const { data } = await doubtsAPI.caption(file)
       setInput((prev) => `[Image: ${data.caption}]\n${prev}`)
       toast.success('Image captioned')
-    } catch { toast.error('Could not caption image') }
+    } catch { toast.error('Could not read that image — try a different one') }
   }
 
   const MOOD_EMOJI: Record<string, string> = { POSITIVE: '😊', NEGATIVE: '😟', NEUTRAL: '😐' }

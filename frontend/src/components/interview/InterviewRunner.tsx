@@ -658,7 +658,7 @@ export default function InterviewRunner({
             setQuestions([toQuestion(event)]); setCurrentQIdx(0)
           }
           else if (event.type === 'finished') setFinished(true)
-          else if (event.type === 'error') toast.error(String(event.message ?? 'Could not start interview'))
+          else if (event.type === 'error') toast.error(String(event.message ?? 'Could not start the interview — try again'))
         },
       )
       if (!gotQuestion) throw new Error('no question')
@@ -668,7 +668,7 @@ export default function InterviewRunner({
         setRecovery({ message: 'The interviewer never sent your first question. Nothing is lost — try again.', action: 'restart' })
         setPhase('error')
       } else {
-        toast.error('Could not start interview')
+        toast.error('Could not start the interview — try again')
         setPhase('intro')
       }
     }
@@ -822,7 +822,7 @@ export default function InterviewRunner({
           } else if (event.type === 'finished') {
             setFinished(true)
           } else if (event.type === 'error') {
-            toast.error(String(event.message ?? 'Evaluation failed'))
+            toast.error(String(event.message ?? 'Could not score that answer — your answer was saved, try again'))
           }
         },
       )
@@ -952,7 +952,7 @@ export default function InterviewRunner({
           } else if (event.type === 'action' && event.kind === 'interview_scored') {
             scored = event.payload as FinalResult
           } else if (event.type === 'error') {
-            toast.error(String(event.message ?? 'Could not finalize interview'))
+            toast.error(String(event.message ?? 'Could not finish scoring — try again'))
           }
         },
       )

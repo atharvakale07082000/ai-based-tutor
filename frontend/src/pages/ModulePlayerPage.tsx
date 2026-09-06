@@ -73,7 +73,7 @@ export default function ModulePlayerPage() {
   const regenerateMutation = useMutation({
     mutationFn: () => contentAPI.regenerate(moduleId!),
     onSuccess: () => toast.success('Content regeneration started'),
-    onError: () => toast.error('Could not regenerate content'),
+    onError: () => toast.error('Could not rewrite this lesson — try again'),
   })
 
   const handleImageDrop = async (e: React.DragEvent<HTMLDivElement>) => {
@@ -86,7 +86,7 @@ export default function ModulePlayerPage() {
       setDoubtInput((prev) => `[Image: ${data.caption}]\n${prev}`)
       toast.success('Image captioned')
     } catch {
-      toast.error('Could not caption image')
+      toast.error('Could not read that image — try a different one')
     } finally {
       setCaptionLoading(false)
     }

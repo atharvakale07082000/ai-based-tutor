@@ -57,12 +57,12 @@ export default function JobTrackerPage() {
     try {
       await jobsAPI.update(job.id, { stage })
       refresh()
-    } catch { toast.error('Could not move the application') }
+    } catch { toast.error('Could not move that application — try again') }
   }
 
   const removeJob = async (job: JobApplication) => {
     try { await jobsAPI.remove(job.id); refresh() }
-    catch { toast.error('Could not delete the application') }
+    catch { toast.error('Could not delete that application — try again') }
   }
 
   // Designing the loop researches the company and picks its rounds, so it streams a
@@ -75,14 +75,14 @@ export default function JobTrackerPage() {
         if (event.type === 'action' && event.kind === 'loop_created') {
           loopId = String((event.payload as { loop_id: string }).loop_id)
         } else if (event.type === 'error') {
-          toast.error(String(event.message ?? 'Could not design your interview loop'))
+          toast.error(String(event.message ?? 'Could not build your interview loop — try again in a moment'))
         }
       })
       if (!loopId) throw new Error('no loop')
       refresh()
       navigate(`/loops/${loopId}`)
     } catch {
-      toast.error('Could not design your interview loop')
+      toast.error('Could not build your interview loop — try again in a moment')
     } finally {
       setBuildingLoopFor(null)
     }
@@ -97,7 +97,7 @@ export default function JobTrackerPage() {
     try {
       const { data: quiz } = await quizAPI.generate(rec.skill)
       navigate(`/quiz/${quiz.quiz_id}`)
-    } catch { toast.error(`Could not start a quiz on ${rec.skill}`) }
+    } catch { toast.error(`Could not start a quiz on ${rec.skill} — try again`) }
   }
 
   return (
@@ -274,13 +274,13 @@ function AddJobPanel({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
         } else if (event.type === 'action' && event.kind === 'jd_analyzed') {
           result = event.payload as JDAnalysis
         } else if (event.type === 'error') {
-          toast.error(String(event.message ?? 'Could not analyze the job'))
+          toast.error(String(event.message ?? 'Could not read that job description — try again'))
         }
       })
       const r = result as JDAnalysis | null
       if (r) setAnalysis(r)
-      else toast.error('Could not analyze the job. Try again.')
-    } catch { toast.error('Could not analyze the job. Try again.') }
+      else toast.error('Could not read that job description — check it pasted in full, then try again')
+    } catch { toast.error('Could not read that job description — check it pasted in full, then try again') }
     finally { setAnalyzing(false) }
   }
 
@@ -301,7 +301,7 @@ function AddJobPanel({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
       })
       toast.success('Added to your board')
       onSaved()
-    } catch { toast.error('Could not save the application') }
+    } catch { toast.error('Could not save that application — try again') }
     finally { setSaving(false) }
   }
 

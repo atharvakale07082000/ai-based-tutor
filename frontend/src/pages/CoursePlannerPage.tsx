@@ -80,7 +80,7 @@ export default function CoursePlannerPage() {
         } else if (event.type === 'action' && event.kind === 'plan_created') {
           createdPlanId = String((event.payload as { plan_id: string }).plan_id)
         } else if (event.type === 'error') {
-          toast.error(String(event.message ?? 'Could not generate plan. Try again.'))
+          toast.error(String(event.message ?? 'Could not build your plan — try again'))
         }
       })
       if (createdPlanId) {
@@ -88,10 +88,10 @@ export default function CoursePlannerPage() {
         await refetch()
         navigate(`/courses/${createdPlanId}`)
       } else {
-        toast.error('Could not generate plan. Try again.')
+        toast.error('Could not build your plan — try again')
       }
     } catch {
-      toast.error('Could not generate plan. Try again.')
+      toast.error('Could not build your plan — try again')
     } finally {
       setIsPlanning(false)
     }
