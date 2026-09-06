@@ -85,7 +85,7 @@ function ActionCardView({ action, onNavigate }: { action: ActionCard; onNavigate
           {String(payload.question_count)} questions · {String(payload.bloom_level)} level
         </div>
         <Button size="sm" variant="primary" onClick={() => onNavigate(String(payload.url))}>
-          Take Quiz
+          Take quiz
         </Button>
       </div>
     )
@@ -101,7 +101,7 @@ function ActionCardView({ action, onNavigate }: { action: ActionCard; onNavigate
           {String(payload.module_count)} modules · {String(payload.weeks)} weeks
         </div>
         <Button size="sm" variant="primary" onClick={() => onNavigate(String(payload.url))}>
-          View Course
+          View course
         </Button>
       </div>
     )

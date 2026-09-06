@@ -1259,7 +1259,7 @@ export default function InterviewRunner({
               </div>
 
               <Button variant="primary" full iconRight="arrow" onClick={startInterviewStream}>
-                Start Interview
+                Start interview
               </Button>
             </div>
           )}
@@ -1337,7 +1337,7 @@ export default function InterviewRunner({
                       onClick={handleSubmitCode}
                       disabled={!codeValue.trim()}
                     >
-                      Submit Answer
+                      Submit answer
                     </Button>
                   </div>
                 </div>
@@ -1399,7 +1399,7 @@ export default function InterviewRunner({
                   {/* Submit typed answer */}
                   {!isRecording && transcript.trim() && (
                     <Button variant="primary" full style={{ marginTop: 12 }} onClick={() => evaluateAnswer(transcript)}>
-                      Submit Answer
+                      Submit answer
                     </Button>
                   )}
                 </div>
