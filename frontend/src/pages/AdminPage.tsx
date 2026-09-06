@@ -311,8 +311,8 @@ export default function AdminPage() {
       <div style={{ padding: '48px 28px', maxWidth: 600, margin: '0 auto' }}>
         <EmptyState
           icon="lock"
-          title="Restricted"
-          body="The admin dashboard is available to the superuser account only."
+          title="Admins only"
+          body="The admin dashboard shows every learner's progress and profile. It is open to admin accounts only."
           action={{ label: 'Back to dashboard', onClick: () => navigate('/dashboard') }}
         />
       </div>

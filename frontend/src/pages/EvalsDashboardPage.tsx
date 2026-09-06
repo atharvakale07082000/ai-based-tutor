@@ -70,8 +70,8 @@ export default function EvalsDashboardPage() {
       <div style={{ padding: '48px 28px', maxWidth: 600, margin: '0 auto' }}>
         <EmptyState
           icon="lock"
-          title="Restricted"
-          body="The evaluations dashboard is available to the superuser account only."
+          title="Admins only"
+          body="The evaluations dashboard shows how Atelier's answers are being scored. It is open to admin accounts only."
           action={{ label: 'Back to dashboard', onClick: () => navigate('/dashboard') }}
         />
       </div>
@@ -96,7 +96,12 @@ export default function EvalsDashboardPage() {
       {isError && <p className="t-sm" style={{ color: 'var(--neg)' }}>Could not load evals.</p>}
 
       {data && data.overall.total === 0 && (
-        <EmptyState icon="target" title="No evals yet" body="Evals are sampled randomly from live requests. Use the assistant a few times and they'll appear here." />
+        <EmptyState
+          icon="target"
+          title="Nothing scored yet"
+          body="Scores appear here once Atelier has answered a few questions."
+          action={{ label: 'Open the assistant', onClick: () => navigate('/atelier') }}
+        />
       )}
 
       {data && data.overall.total > 0 && (
