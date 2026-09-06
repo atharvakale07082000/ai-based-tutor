@@ -243,7 +243,7 @@ async def sse_step_stream(
             await queue.put(
                 {
                     "type": "error",
-                    "message": "Something went wrong on my end — please try again.",
+                    "message": "Something went wrong on my end — try again",
                 }
             )
         finally:

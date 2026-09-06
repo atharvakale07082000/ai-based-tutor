@@ -125,7 +125,7 @@ async def stream_doubt(
             yield sse_frame(
                 {
                     "type": "error",
-                    "message": "I could not finish that answer — send your question again.",
+                    "message": "I could not finish that answer — send your question again",
                 }
             )
             yield SSE_DONE

@@ -289,7 +289,7 @@ async def _drive(
         )
         yield {
             "type": "error",
-            "message": "The interview hit a problem — please try again.",
+            "message": "The interview hit a problem — try again",
         }
         return
 
@@ -309,7 +309,7 @@ async def _drive(
             )
             yield {
                 "type": "error",
-                "message": "The interviewer didn't send a question — please try again.",
+                "message": "No question came through — try again",
             }
             return
         next_id = int(interview.get("turn_count", 0)) + 1
@@ -357,7 +357,7 @@ async def _drive(
             )
             yield {
                 "type": "error",
-                "message": "The interviewer ended before asking anything — please try again.",
+                "message": "The interview ended before any question came through — start it again",
             }
             return
         await col_interviews().update_one(
@@ -451,7 +451,7 @@ async def _answer_turn(
         log.error(
             "interview_evaluate_failed", interview_id=interview_id, error=str(e)[:200]
         )
-        yield {"type": "error", "message": "Could not score that answer — try again."}
+        yield {"type": "error", "message": "Could not score that answer — try again"}
         return
     # evaluate_answer pushed this evaluation into answers[]; mirror it locally so the
     # in-memory copy (and the answered/total counter below) stays consistent.
@@ -478,7 +478,10 @@ async def _answer_turn(
     # 2) Resume the paused agent with the answer + eval so it picks the next question.
     cur_id = interview.get("current_interrupt_id")
     if not cur_id:
-        yield {"type": "error", "message": "This interview is not awaiting an answer."}
+        yield {
+            "type": "error",
+            "message": "This interview isn't waiting on an answer right now",
+        }
         return
 
     max_q = _max_questions(interview)

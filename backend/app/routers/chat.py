@@ -230,7 +230,7 @@ async def v2_chat(
                 yield sse_frame(
                     {
                         "type": "error",
-                        "message": "Something went wrong on my end — send your question again and I will be right back.",
+                        "message": "Something went wrong on my end — send your question again",
                     }
                 )
 

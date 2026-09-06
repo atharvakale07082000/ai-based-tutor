@@ -137,7 +137,10 @@ class AgentHandler:
         """
         query = (query or "").strip()
         if not query:
-            yield {"type": "error", "message": "Query cannot be empty."}
+            yield {
+                "type": "error",
+                "message": "Your message was empty — type a question and send it",
+            }
             return
 
         state = trace if trace is not None else TraceState()
@@ -217,7 +220,7 @@ class AgentHandler:
                 log.error("agent_handler_run_error", error=str(e)[:300], agents=agents)
                 yield {
                     "type": "error",
-                    "message": "Something went wrong on my end — send your question again.",
+                    "message": "Something went wrong on my end — send your question again",
                 }
                 return
 

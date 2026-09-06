@@ -227,7 +227,7 @@ def translate_event(
         events.append(
             {
                 "type": "error",
-                "message": "The agent had to stop early — please try again.",
+                "message": "That answer stopped early — send your question again",
             }
         )
         return events
