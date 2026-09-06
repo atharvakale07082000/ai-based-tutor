@@ -1,7 +1,6 @@
 ---
 name: curriculum-design
 description: Sequence a personalized Atelier learning path from the learner's goals and proficiency gaps using the topic graph.
-allowed-tools: classify_topic get_topic_graph get_proficiency web_search
 ---
 
 # Curriculum design

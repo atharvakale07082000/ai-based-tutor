@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import os
 
 import structlog
@@ -45,7 +46,9 @@ def _make_client(provider: str):
 
     token = settings.HF_TOKEN or None
     if not token:
-        log.error("hf_token_missing", msg="HF_TOKEN not set — ALL inference calls will fail")
+        log.error(
+            "hf_token_missing", msg="HF_TOKEN not set — ALL inference calls will fail"
+        )
 
     try:
         return InferenceClient(token=token, provider=provider)
@@ -61,8 +64,14 @@ def _make_client(provider: str):
 def get_hf_client(provider: str = "hf-inference"):
     """Return a cached InferenceClient (or ResilientGenerationClient). Resets on repeated auth failures."""
     if _auth_failures.get(provider, 0) >= _AUTH_FAILURE_THRESHOLD:
-        log.error("hf_client_circuit_open", provider=provider, failures=_auth_failures[provider])
-        raise RuntimeError(f"HF provider '{provider}' circuit open after {_auth_failures[provider]} auth failures")
+        log.error(
+            "hf_client_circuit_open",
+            provider=provider,
+            failures=_auth_failures[provider],
+        )
+        raise RuntimeError(
+            f"HF provider '{provider}' circuit open after {_auth_failures[provider]} auth failures"
+        )
 
     if provider not in _clients:
         _clients[provider] = _make_client(provider)
@@ -96,6 +105,7 @@ async def hf_chat_completion_with_resilience(
     max_tokens: int = 512,
     temperature: float = 0.1,
     timeout_s: float = 30.0,
+    response_format: dict | None = None,
 ) -> str:
     """
     Non-streaming HF chat completion wrapped with retry + circuit breaker.
@@ -108,13 +118,17 @@ async def hf_chat_completion_with_resilience(
     async def _call():
         """Execute a single non-streaming chat-completion attempt."""
         client = get_hf_client(provider)
+        extra = {"response_format": response_format} if response_format else {}
         response = await asyncio.wait_for(
             asyncio.to_thread(
-                client.chat_completion,
-                model=model_id,
-                messages=messages,
-                max_tokens=max_tokens,
-                temperature=temperature,
+                functools.partial(
+                    client.chat_completion,
+                    model=model_id,
+                    messages=messages,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    **extra,
+                )
             ),
             timeout=timeout_s,
         )

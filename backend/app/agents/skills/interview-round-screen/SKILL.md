@@ -1,7 +1,6 @@
 ---
 name: interview-round-screen
 description: Conduct and evaluate the recruiter-screen round of an Atelier interview loop — motivation, background walk-through, role fit, and a light technical sanity check.
-allowed-tools: get_proficiency generate_explanation
 ---
 
 # Recruiter screen round

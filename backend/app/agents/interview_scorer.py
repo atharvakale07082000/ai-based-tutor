@@ -3,7 +3,10 @@ Interview Scoring Agent — a fixed 3-step pipeline that cross-checks all Q&A pa
 against module knowledge and produces a scoring matrix + final score/10.
 
 Pipeline: analyze_answers → build_scoring_matrix → compute_final_score.
-(Plain sequential functions — no graph engine; each step is a single LLM call.)
+(Plain sequential functions — no graph engine.) Only steps 1 and 3 call a model.
+Step 2 used to be a third call that mapped the step-1 analysis onto a 0-10 score, but its
+inputs fully determined its output — the model was executing a lookup table. It is now a
+pure transform, and _SCORE_BY_ANALYSIS is that table, written down once.
 """
 
 from __future__ import annotations
@@ -26,8 +29,6 @@ def _chat(prompt: str, max_tokens: int = 1200, temperature: float = 0.1) -> str:
     model_cfg = HF_MODELS["DOUBT_SOLVER"]
     provider = model_cfg["provider"]
     client = get_hf_client(provider)
-    # Truncate oversized prompts before sending
-    prompt = prompt[:7000]
     try:
         resp = client.chat_completion(
             model=model_cfg["model_id"],
@@ -56,13 +57,18 @@ class ScoringState(TypedDict):
     transcriptions: list[dict]  # [{question_id, answer_text}]
     bar: float  # 0-10 pass threshold (see agents/bar.py)
     analyses: list[dict]  # set by analyze_answers node
-    scoring_matrix: list[dict]  # set by build_scoring_matrix node
+    scoring_matrix: list[dict]  # derived from `analyses` in code, no model call
     final_score: float  # 0-10, set by compute_final_score node
     summary: str
     passed: bool
 
 
 # ─── Node 1: Analyze Answers ──────────────────────────────────────────────────
+
+
+# Per-question budget for the transcript block, so 8 long answers cannot push the
+# prompt's trailing output-format section out of the model's context.
+_MAX_ANSWER_CHARS = 800
 
 
 def _node_analyze_answers(state: ScoringState) -> dict:
@@ -78,7 +84,14 @@ def _node_analyze_answers(state: ScoringState) -> dict:
                 f'Candidate answer: "{t.get("answer_text", "").strip() or "[No answer provided]"}"'
             )
 
-    qa_block = "\n\n".join(pairs) if pairs else "No Q&A pairs available."
+    # Bound each ANSWER, never the assembled prompt. `analyze_answers` ends with its
+    # `## Output format` block, so the old `prompt[:7000]` cut the JSON schema off a long
+    # transcript; extract_json_array then returned None and every question scored 0.
+    qa_block = (
+        "\n\n".join(p[:_MAX_ANSWER_CHARS] for p in pairs)
+        if pairs
+        else "No Q&A pairs available."
+    )
 
     prompt = render_prompt(
         "interview_scorer",
@@ -102,8 +115,35 @@ def _node_analyze_answers(state: ScoringState) -> dict:
 # ─── Node 2: Build Scoring Matrix ─────────────────────────────────────────────
 
 
+# (correctness, depth_achieved) -> 0-10 score. Only used when the model omits or garbles
+# "score"; the anchors match the scale in the analyze_answers prompt.
+_SCORE_BY_ANALYSIS = {
+    ("correct", "deep"): 10,
+    ("correct", "adequate"): 8,
+    ("correct", "surface"): 7,
+    ("partial", "deep"): 6,
+    ("partial", "adequate"): 5,
+    ("partial", "surface"): 4,
+    ("incorrect", "deep"): 2,
+    ("incorrect", "adequate"): 2,
+    ("incorrect", "surface"): 1,
+}
+
+
+def _score_for(analysis: dict) -> int:
+    """The analysis' own score, clamped — or the table value when it is missing/unusable."""
+    raw = analysis.get("score")
+    try:
+        return max(0, min(10, int(raw)))
+    except (TypeError, ValueError):
+        pass
+    correctness = str(analysis.get("correctness", "incorrect")).lower()
+    depth = str(analysis.get("depth_achieved", "surface")).lower()
+    return _SCORE_BY_ANALYSIS.get((correctness, depth), 0)
+
+
 def _node_build_scoring_matrix(state: ScoringState) -> dict:
-    """Assign numeric scores 0-10 to each answer based on the analysis."""
+    """Project the analysis onto the scoring matrix. No LLM call — this step is deterministic."""
     if not state["analyses"]:
         log.warning(
             "scorer_no_analyses", transcription_count=len(state["transcriptions"])
@@ -120,31 +160,22 @@ def _node_build_scoring_matrix(state: ScoringState) -> dict:
         ]
         return {"scoring_matrix": matrix}
 
-    analyses_text = json.dumps(state["analyses"], indent=2)
-
-    prompt = render_prompt(
-        "interview_scorer",
-        "scoring_matrix",
-        module_title=state["module_title"],
-        analyses_text=analyses_text,
-    )
-
-    try:
-        text = _chat(prompt, 900, 0.1)
-        matrix = extract_json_array(text) or []
-    except Exception as e:
-        log.error("scorer_matrix_failed", error=str(e)[:200])
-        # Degrade gracefully: assign mid-range score for each analysed entry
-        matrix = [
-            {
-                "question_id": a.get("question_id"),
-                "score": 5,
-                "justification": "Could not score — evaluation service temporarily unavailable.",
-                "concepts_covered": a.get("concepts_addressed", []),
-                "concepts_missed": a.get("key_gaps", []),
-            }
-            for a in state["analyses"]
-        ]
+    matrix = [
+        {
+            "question_id": a.get("question_id"),
+            "score": _score_for(a),
+            "justification": (
+                a.get("justification")
+                or "Scored from the recorded analysis of this answer."
+            ),
+            # Accept the pre-fold key names too, so an in-flight/cached analysis still maps.
+            "concepts_covered": a.get(
+                "concepts_covered", a.get("concepts_addressed", [])
+            ),
+            "concepts_missed": a.get("concepts_missed", a.get("key_gaps", [])),
+        }
+        for a in state["analyses"]
+    ]
 
     log.info("scorer_matrix_built", entries=len(matrix))
     return {"scoring_matrix": matrix}

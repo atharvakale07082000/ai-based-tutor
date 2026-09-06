@@ -18,6 +18,14 @@ import json
 import re
 from typing import Any
 
+# Ask the provider to constrain the response to JSON. Passed to NVIDIA NIM only —
+# generation_client drops it on the HF-Together fallback, so the "Return ONLY the JSON"
+# instruction in prompts/*.yaml stays load-bearing and must not be deleted.
+# Only for prompts whose top level is an OBJECT: json_object mode does not admit a
+# top-level array, so the array-returning prompts (analyze_answers, design_rounds,
+# flashcard generate, trend distill) deliberately do not pass it.
+JSON_OBJECT: dict = {"type": "json_object"}
+
 _FENCE_RE = re.compile(r"```(?:json)?", re.IGNORECASE)
 
 

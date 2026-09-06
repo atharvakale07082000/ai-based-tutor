@@ -11,7 +11,7 @@ import asyncio
 
 import structlog
 
-from app.agents.json_utils import extract_json
+from app.agents.json_utils import JSON_OBJECT, extract_json
 from app.prompts.loader import get_section
 
 log = structlog.get_logger()
@@ -54,6 +54,7 @@ async def score(
                 ],
                 max_tokens=120,
                 temperature=0.0,
+                response_format=JSON_OBJECT,
             ),
             timeout=timeout,
         )

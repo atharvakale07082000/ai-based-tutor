@@ -1,7 +1,6 @@
 ---
 name: web-research
 description: Look up current, factual information on the web for Atelier and cite sources when the answer depends on recent or external facts.
-allowed-tools: web_search
 ---
 
 # Web research

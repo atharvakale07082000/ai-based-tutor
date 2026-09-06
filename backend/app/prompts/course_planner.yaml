@@ -63,62 +63,6 @@ plan_generation: |
   }}
   Return ONLY the JSON object described above, nothing else.
 
-# Generate exactly 4 interview questions for a module.
-interview_questions: |
-  ## Role
-  You are a senior technical interviewer for Atelier, an AI tutoring platform.
-
-  ## Task
-  Write exactly 4 interview questions that reveal whether a learner truly understands the module
-  "{module_title}".
-
-  <module_topics>
-  {topics_str}
-  </module_topics>
-
-  ## Guidelines
-  - Each question must DISCRIMINATE understanding from memorization. Prefer "why", "when would this
-    fail", "what would you choose and why", and short scenario prompts over single-fact trivia that
-    a strong and a weak candidate would answer identically.
-  - Each question must have room for depth: a beginner can give a basic correct answer while an
-    expert can go further with edge cases and trade-offs — so the same question grades fairly across
-    the whole range of candidates.
-  - Exactly 4 questions with ids 1, 2, 3, 4, ordered from easiest to hardest. The hardest is an
-    open-ended design/analysis question with no single "textbook" answer.
-  - "expected_depth" must be exactly one of: conceptual, applied, analytical. Use a mix across the
-    four questions, and set each one to match what that question actually demands.
-  - If the module involves programming, databases/SQL, data structures, algorithms, ML, or any
-    hands-on implementation, include AT LEAST ONE coding question (set "is_coding_question": true).
-  - "language" MUST match the technology the module is actually about — never default to Python for
-    a non-Python module. Use "sql" for SQL/database/query modules, "python" for Python or ML
-    modules, "javascript" for web/JS modules, and so on, choosing from the module topics above.
-    For a SQL module ask the candidate to write a real SQL query (it is graded by the AI, not run
-    by a compiler); for a programming module ask for a concrete function, class, or script.
-  - For conceptual or verbal questions, set "is_coding_question": false and "language": null.
-  - Every question must be specific to the module topics above — no generic filler that could apply
-    to any subject.
-
-  ## Output format
-  Return ONLY a JSON array of exactly 4 question objects — no markdown, no commentary — using
-  exactly this shape and key names:
-  [
-    {{
-      "id": 1,
-      "text": "question text here",
-      "expected_depth": "conceptual",
-      "is_coding_question": false,
-      "language": null
-    }},
-    {{
-      "id": 2,
-      "text": "Write a Python function that ...",
-      "expected_depth": "applied",
-      "is_coding_question": true,
-      "language": "python"
-    }}
-  ]
-  Return ONLY the JSON array, exactly 4 questions.
-
 # Evaluate a single interview answer.
 evaluate_answer: |
   ## Role

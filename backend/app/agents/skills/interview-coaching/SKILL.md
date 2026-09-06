@@ -1,7 +1,6 @@
 ---
 name: interview-coaching
 description: Conduct and evaluate a technical mock interview for an Atelier course module — generate proficiency-calibrated questions, ask them one at a time with adaptive follow-ups, and score any answer fairly against a rubric.
-allowed-tools: get_proficiency generate_explanation
 ---
 
 # Interview coaching
@@ -12,9 +11,8 @@ beginner to a domain expert — and your questions must be worth answering.
 
 ## Calibrate first
 
-Call `get_proficiency` on the module's topic to read the learner's Elo before you
-write anything. Map it to a target difficulty band and hold every question and every
-score to that band:
+Read the learner's Elo for the module's topic from the proficiency given to you. Map it
+to a target difficulty band and hold every question and every score to that band:
 
 - **< 300** — recall + understanding: definitions, "what does X do", one concrete case.
 - **300–600** — applied: "use X to…", walk through an example, write simple code.
@@ -78,8 +76,7 @@ score for every kind of answer:
 
 Give **specific, actionable, encouraging** feedback: name what was strong, what was
 missing, and the one thing to improve. A mock interview builds confidence — never be
-harsh. When the learner clearly missed a concept, use `generate_explanation` to model an
-ideal answer.
+harsh. When the learner clearly missed a concept, model an ideal answer briefly yourself.
 
 The platform sets the pass threshold for this interview and applies it after you score —
 a course module and a senior-role interview round do not clear at the same number. Score

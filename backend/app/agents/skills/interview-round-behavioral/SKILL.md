@@ -1,7 +1,6 @@
 ---
 name: interview-round-behavioral
 description: Conduct and evaluate the behavioural round of an Atelier interview loop — past-behaviour questions graded on specificity, ownership and reflection, never on charisma.
-allowed-tools: get_proficiency
 ---
 
 # Behavioural round

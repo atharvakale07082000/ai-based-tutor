@@ -272,7 +272,6 @@ def test_all_skills_load():
         "curriculum-design",
         "progress-tracking",
         "interview-coaching",
-        "job-analysis",
     ):
         assert name in catalog, f"missing skill {name}"
         assert catalog[name].description and catalog[name].instructions

@@ -1,7 +1,6 @@
 ---
 name: quiz-authoring
 description: Author an adaptive, Bloom-calibrated Atelier quiz matched to the learner's proficiency, then persist it.
-allowed-tools: get_proficiency score_difficulty generate_quiz save_quiz
 ---
 
 # Quiz authoring

@@ -15,7 +15,7 @@ import re
 
 import structlog
 
-from app.agents.json_utils import extract_json
+from app.agents.json_utils import JSON_OBJECT, extract_json
 from app.agents.progress import MASTERY_ELO
 from app.hf.client import hf_chat_completion_with_resilience
 from app.hf.models import HF_MODELS, TOKEN_BUDGETS
@@ -42,6 +42,7 @@ async def parse_jd(jd_text: str) -> dict:
         max_tokens=TOKEN_BUDGETS.get("course_plan", 600),
         temperature=0.1,
         timeout_s=30.0,
+        response_format=JSON_OBJECT,
     )
     data = extract_json(raw) or {}
     skills = data.get("required_skills") or []

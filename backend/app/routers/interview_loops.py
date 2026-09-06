@@ -407,7 +407,7 @@ async def debrief_loop_stream(
 async def _build_debrief(loop: dict, emit) -> dict:
     """Summarise every round against its bar into an actionable debrief."""
     from app.agents.course_planner import _chat
-    from app.agents.json_utils import extract_json
+    from app.agents.json_utils import JSON_OBJECT, extract_json
     from app.agents.steps import StepTimeline, step_emitter
     from app.prompts.loader import render_prompt
 
@@ -445,7 +445,7 @@ async def _build_debrief(loop: dict, emit) -> dict:
             rounds_block="\n".join(lines),
         )
         try:
-            text = await asyncio.to_thread(_chat, prompt, 700, 0.3)
+            text = await asyncio.to_thread(_chat, prompt, 700, 0.3, JSON_OBJECT)
             parsed = extract_json(text) or {}
         except Exception as e:  # noqa: BLE001 - a failed debrief degrades, never 500s
             log.warning("loop_debrief_failed", error=str(e)[:200])

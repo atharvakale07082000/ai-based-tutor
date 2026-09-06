@@ -1,7 +1,6 @@
 ---
 name: interview-round-coding
 description: Conduct and evaluate the coding round of an Atelier interview loop — one substantial problem probed to the candidate's ceiling, graded on reasoning and correctness rather than syntax.
-allowed-tools: get_proficiency generate_explanation
 ---
 
 # Coding round

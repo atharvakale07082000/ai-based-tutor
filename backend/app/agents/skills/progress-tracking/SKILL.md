@@ -1,7 +1,6 @@
 ---
 name: progress-tracking
 description: Update the learner's Elo proficiency on Atelier after a quiz and capture their mood from reflections.
-allowed-tools: get_proficiency calculate_elo analyze_sentiment save_progress
 ---
 
 # Progress tracking

@@ -1,7 +1,6 @@
 ---
 name: explanation
 description: Explain a concept clearly at the learner's Bloom level on Atelier, grounded in their current topic.
-allowed-tools: get_proficiency generate_explanation
 ---
 
 # Bloom-aware explanation

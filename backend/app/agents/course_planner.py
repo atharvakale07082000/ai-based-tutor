@@ -18,21 +18,28 @@ from app.db.mongo import PROJ, col_course_plans, col_interviews, col_learners
 from app.agents.bar import DEFAULT_BAR
 from app.hf.client import get_hf_client
 from app.hf.models import HF_MODELS
-from app.agents.json_utils import extract_json
+from app.agents.json_utils import JSON_OBJECT, extract_json
 from app.agents.steps import StepEmit
 from app.prompts.loader import render_prompt
 
 log = structlog.get_logger()
 
 
-def _chat(prompt: str, max_tokens: int = 2000, temperature: float = 0.2) -> str:
+def _chat(
+    prompt: str,
+    max_tokens: int = 2000,
+    temperature: float = 0.2,
+    response_format: dict | None = None,
+) -> str:
     model_cfg = HF_MODELS["DOUBT_SOLVER"]
     client = get_hf_client(model_cfg["provider"])
+    extra = {"response_format": response_format} if response_format else {}
     resp = client.chat_completion(
         model=model_cfg["model_id"],
         messages=[{"role": "user", "content": prompt}],
         max_tokens=max_tokens,
         temperature=temperature,
+        **extra,
     )
     return (resp.choices[0].message.content or "").strip()
 
@@ -113,7 +120,7 @@ async def _generate_plan_json(goal: str, search_results: list[dict]) -> dict:
     prompt = render_prompt("course_planner", "plan_generation", goal=goal, ctx=ctx)
 
     raw = await asyncio.wait_for(
-        asyncio.to_thread(_chat, prompt, 3000, 0.2), timeout=90.0
+        asyncio.to_thread(_chat, prompt, 3000, 0.2, JSON_OBJECT), timeout=90.0
     )
     plan = extract_json(raw)
     if plan is None:
@@ -379,7 +386,7 @@ async def evaluate_answer(
     )
 
     t0 = time.perf_counter()
-    text = await asyncio.to_thread(_chat, prompt, 300, 0.1)
+    text = await asyncio.to_thread(_chat, prompt, 300, 0.1, JSON_OBJECT)
     evaluation = extract_json(text) or {}
     evaluation["question_id"] = question_id
     evaluation["answer_text"] = answer_text

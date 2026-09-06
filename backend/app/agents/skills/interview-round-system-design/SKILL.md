@@ -1,7 +1,6 @@
 ---
 name: interview-round-system-design
 description: Conduct and evaluate the system-design round of an Atelier interview loop — one open design problem graded on requirements, trade-offs and failure reasoning, never on naming technologies.
-allowed-tools: get_proficiency generate_explanation web_search
 ---
 
 # System design round

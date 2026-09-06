@@ -162,7 +162,7 @@ def _normalize_review(data: dict | None) -> dict:
 
 async def _review_with_llm(lang: str, code: str, stdin: str) -> dict:
     """Default backend: an LLM reads the code and reports what it would do (never executes it)."""
-    from app.agents.json_utils import extract_json
+    from app.agents.json_utils import JSON_OBJECT, extract_json
     from app.hf.client import hf_chat_completion_with_resilience
     from app.hf.models import HF_MODELS
     from app.prompts.loader import render_prompt
@@ -183,6 +183,7 @@ async def _review_with_llm(lang: str, code: str, stdin: str) -> dict:
             max_tokens=600,
             temperature=0.1,
             timeout_s=_REVIEW_TIMEOUT_S,
+            response_format=JSON_OBJECT,
         )
     except Exception as e:  # noqa: BLE001
         log.warning("code_review_failed", lang=lang, error=str(e)[:200])
