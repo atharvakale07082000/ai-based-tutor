@@ -48,7 +48,7 @@ export default function ProfilePage() {
       toast.success('Profile updated')
       setEditing(false)
     },
-    onError: () => toast.error('Could not save changes'),
+    onError: () => toast.error('Could not save your changes — try again'),
   })
 
   const handleSave = () => {

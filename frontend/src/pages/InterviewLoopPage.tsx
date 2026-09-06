@@ -53,7 +53,7 @@ export default function InterviewLoopPage() {
       toast.success('Round reset — the next attempt will ask different questions')
       qc.invalidateQueries({ queryKey: ['loop', loopId] })
     },
-    onError: () => toast.error('Could not reset that round'),
+    onError: () => toast.error('Could not reset that round — try again'),
   })
 
   const runDebrief = async () => {
@@ -65,12 +65,12 @@ export default function InterviewLoopPage() {
         if (event.type === 'step') {
           applyStep(event as unknown as { id: string; label: string; status: 'active' | 'done' | 'error' })
         } else if (event.type === 'error') {
-          toast.error(String(event.message ?? 'Debrief failed'))
+          toast.error(String(event.message ?? 'Could not write your debrief — try again'))
         }
       })
       await qc.invalidateQueries({ queryKey: ['loop', loopId] })
     } catch {
-      toast.error('Could not write your debrief')
+      toast.error('Could not write your debrief — try again')
     } finally {
       setDebriefing(false)
     }

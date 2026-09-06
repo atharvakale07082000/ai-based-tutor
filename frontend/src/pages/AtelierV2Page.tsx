@@ -20,8 +20,8 @@ import { ReasoningStream } from '@/components/agents/ReasoningStream'
 import { useSpeechInput } from '@/hooks/useSpeechInput'
 
 const MAX_CHARS = 2000
-const TOO_LONG = "Let's keep it under 2,000 characters — try breaking it into a shorter question."
-const STREAM_FAILED = "That answer didn't come through."
+const TOO_LONG = "Let's keep it under 2,000 characters — try breaking it into a shorter question"
+const STREAM_FAILED = "That answer didn't come through — send it again"
 
 /**
  * Regenerate / edit-and-resend only rewrite what the learner *sees*. The thread's

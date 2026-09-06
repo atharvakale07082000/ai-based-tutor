@@ -51,7 +51,7 @@ function AdminOverview() {
   const configMutation = useMutation({
     mutationFn: () => adminAPI.updateConfig({ difficulty_ceiling: ceiling / 100 }),
     onSuccess: () => toast.success('Agent settings saved'),
-    onError: () => toast.error('Could not save agent settings'),
+    onError: () => toast.error('Could not save agent settings — try again'),
   })
 
   return (
@@ -233,7 +233,7 @@ function HFModelsPanel() {
       setTestResults((prev) => ({ ...prev, [modelKey]: data }))
       toast.success(`${modelKey} test successful`)
     } catch (err) {
-      toast.error(`${modelKey} test failed`)
+      toast.error(`Could not reach ${modelKey} — try again`)
       setTestResults((prev) => ({ ...prev, [modelKey]: { error: String(err) } }))
     } finally {
       setTesting(null) }

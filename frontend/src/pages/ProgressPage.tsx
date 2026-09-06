@@ -153,7 +153,7 @@ export default function ProgressPage() {
               URL.revokeObjectURL(url)
               toast.success('Report downloaded', { id: tid })
             } catch {
-              toast.error('Could not download report', { id: tid })
+              toast.error('Could not download your report — try again', { id: tid })
             }
           }}
         >

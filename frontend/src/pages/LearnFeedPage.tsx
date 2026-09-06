@@ -375,7 +375,7 @@ export default function LearnFeedPage() {
   const discoveryMut = useMutation({
     mutationFn: () => feedAPI.runDiscovery(),
     onSuccess: () => toast.success('Trend discovery started — feed will refresh shortly'),
-    onError: () => toast.error('Discovery failed'),
+    onError: () => toast.error('Could not refresh your feed — try again'),
   })
 
   const handleSnooze = useCallback((id: string) => snoozeMut.mutate({ id, hours: 24 }), [snoozeMut])
